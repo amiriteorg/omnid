@@ -21,15 +21,18 @@ pub struct Politeness {
 
 impl Politeness {
     pub fn default_for(network: Network) -> Self {
+        // Concurrency is across sites; each site still gets one request at a
+        // time with `site_delay` between them.
         let (concurrency, delay_secs) = match network {
-            Network::Clearnet => (8, 1),
-            // Relays are volunteers and most onion services are one small
-            // machine behind a slow circuit.
-            Network::Onion => (4, 5),
-            Network::I2p => (2, 5),
+            Network::Clearnet => (32, 1),
+            // Most onion services are one small machine behind a slow
+            // circuit, so the per-site delay is long; parallelism across
+            // sites is what makes an onion crawl fast.
+            Network::Onion => (16, 5),
+            Network::I2p => (4, 5),
             // FProxy fetches through the local node; more parallelism only
             // queues up inside it.
-            Network::Hyphanet => (1, 2),
+            Network::Hyphanet => (2, 2),
             // Magnets are indexed from the link itself, without a fetch.
             Network::Magnet => (16, 0),
         };

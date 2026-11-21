@@ -11,6 +11,7 @@ license.workspace = true
 omnid-core.workspace = true
 arti-client.workspace = true
 bytes.workspace = true
+flate2.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 hyper.workspace = true

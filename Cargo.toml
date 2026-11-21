@@ -32,13 +32,21 @@ bytes = "1"
 clap = { version = "4", features = ["derive", "env"] }
 data-encoding = "2"
 dirs = "7"
+flate2 = "1"
 http = "1"
 html5ever = "0.40"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 md-5 = "0.11"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "charset", "http2"] }
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls",
+    "charset",
+    "http2",
+    "gzip",
+    "brotli",
+    "deflate",
+] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -54,3 +62,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = { version = "2", features = ["serde"] }
 webpki-roots = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
