@@ -120,6 +120,12 @@ cd android && ./gradlew assembleRelease
 adb install app/build/outputs/apk/release/app-release.apk
 ```
 
+`scripts/android-smoke.sh [--fresh] [APK]` installs the build on a headless
+emulator it creates (a Pixel 7 on Android 16, arm64, with a 16 GB data partition) and checks that
+the daemon starts, Tor bootstraps, the search page and the name show, the
+notification follows the charger, and nothing crashed; `scripts/android-smoke.sh
+stop` shuts the emulator down.
+
 Needs the Android SDK with an NDK, JDK 17 and the `aarch64-linux-android` Rust
 target. Release builds are signed with the key named in
 `android/keystore.properties` (git-ignored; `storeFile`, `storePassword`,
