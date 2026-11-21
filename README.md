@@ -229,8 +229,9 @@ The Android app's browser:
   stream that fails is tried once more on a new circuit for that site.
 - Private mode only: cookies and storage last until the browser closes.
   Firefox's resist-fingerprinting is on, WebRTC, WebGL, geolocation and
-  prefetching are off, HTTPS only on the clearnet (onions are exempt), strict
-  tracking protection, no Safe Browsing lookups. Site permissions (camera,
+  prefetching are off, HTTPS only on the clearnet (onions are exempt, and a
+  `.i2p` site without HTTPS is reloaded over HTTP: I2P, like Tor for onions,
+  encrypts the whole way), strict tracking protection, no Safe Browsing lookups. Site permissions (camera,
   microphone, location, notifications) are refused, downloads are off, and
   screenshots and the recent-apps thumbnail are blocked unless allowed in ⋮.
 
@@ -247,8 +248,7 @@ The Android app's browser:
   as far as resist-fingerprinting allows. Use Tor Browser where that matters.
   GeckoView must be updated with every Firefox release, which carries its
   security fixes (`android/app/build.gradle.kts`).
-- `.i2p` sites without HTTPS hit the browser's HTTPS-only rule (onions are
-  exempt), and the phone has no i2pd unless one is installed and configured.
+- The phone has no I2P router unless one is installed and configured.
 - GeckoView takes the APK from 24 MB to 103 MB, with native libraries
   compressed in the APK and unpacked on install.
 - Through the SOCKS proxy, `.i2p` requests reach the site with your client's

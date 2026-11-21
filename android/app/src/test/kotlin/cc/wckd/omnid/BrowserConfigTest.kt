@@ -52,6 +52,16 @@ class BrowserConfigTest {
     }
 
     @Test
+    fun retriesI2pSitesOverHttp() {
+        for (url in listOf("https://stats.i2p/", "https://Forum.I2P./x?y", "https://abcd.b32.i2p:8443/")) {
+            assertTrue(url, BrowserConfig.retriesOverHttp(url))
+        }
+        for (url in listOf("http://stats.i2p/", "https://example.com/", "https://x.onion/", "https://example.i2p.com/", "https://i2p/", "not a url", "https://[::1/", null)) {
+            assertFalse("$url", BrowserConfig.retriesOverHttp(url))
+        }
+    }
+
+    @Test
     fun showsAddressesShortAndWithoutTheScheme() {
         val onion = "2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion"
         assertEquals("2gzyxa5i…53wid.onion", BrowserConfig.displayAddress("http://$onion/"))

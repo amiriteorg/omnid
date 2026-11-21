@@ -556,7 +556,10 @@ class BrowserActivity : Activity() {
             "<h1 style='margin:0 0 .5rem;font-size:21.6px;font-weight:650;color:#EEF2FF'>${escape(getString(R.string.browser_error_title))}</h1>" +
             "<p style='margin:0 0 1.25rem'>${escape(reason)}</p>" +
             "<p style='margin:0;word-break:break-all;color:#8690BD;font:12.5px/1.5 monospace'>${escape(uri.orEmpty())}</p>" +
-            "<p style='margin:.5rem 0 0;color:#8690BD;font-size:12.5px'>${escape(getString(R.string.browser_error_code, "0x" + Integer.toHexString(error.code)))}</p>"
+            "<p style='margin:.5rem 0 0;color:#8690BD;font-size:12.5px'>${escape(getString(R.string.browser_error_code, "0x" + Integer.toHexString(error.code)))}</p>" +
+            // A .i2p site over HTTPS: reload it over HTTP with an exception for this site, before
+            // the error is drawn. Gecko gives error pages that call; without it the error shows.
+            (if (BrowserConfig.retriesOverHttp(uri)) "<script>if(document.reloadWithHttpsOnlyException){document.body.hidden=true;document.reloadWithHttpsOnlyException()}</script>" else "")
         return "data:text/html;charset=utf-8," + Uri.encode(html)
     }
 }

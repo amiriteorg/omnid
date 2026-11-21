@@ -1,5 +1,7 @@
 package cc.wckd.omnid
 
+import java.net.URI
+
 /**
  * How omnid's browser is set up before GeckoView starts, and what it opens. Plain Kotlin, so the
  * rules are unit-tested on the JVM.
@@ -95,6 +97,18 @@ internal object BrowserConfig {
         scheme?.lowercase() == "magnet" -> Target.ELSEWHERE
         // tel:, intent:, file:, content: and the rest would leave the browser or read the phone.
         else -> Target.REFUSE
+    }
+
+    /**
+     * Whether a load that failed is tried again over plain HTTP. HTTPS-only mode upgrades every
+     * address before it loads, and few `.i2p` sites serve HTTPS. I2P encrypts the whole way, as Tor
+     * does for onion services (which Gecko leaves alone on its own), so HTTP is not readable on
+     * the way there.
+     */
+    fun retriesOverHttp(url: String?): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase()?.trimEnd('.') ?: return false
+        return uri.scheme.equals("https", ignoreCase = true) && host.endsWith(".i2p")
     }
 
     /**
