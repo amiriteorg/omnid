@@ -164,6 +164,26 @@ pub struct Gateway {
     tor: Option<tor::TorTransport>,
 }
 
+/// The TLS every connection omnid makes uses: Mozilla's roots (webpki-roots), checked by rustls
+/// itself. Not the platform verifier reqwest would pick, which on Android needs the app's JNI
+/// context (without it every HTTPS page panicked) and elsewhere may look up revocation on its own,
+/// outside the gateway.
+pub(crate) fn tls_config() -> Result<rustls::ClientConfig, BoxError> {
+    let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+    let provider = std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    Ok(rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()?
+        .with_root_certificates(roots)
+        .with_no_client_auth())
+}
+
+/// [`tls_config`] for reqwest, which leaves ALPN to a config it is handed.
+fn http_tls() -> Result<rustls::ClientConfig, BoxError> {
+    let mut tls = tls_config()?;
+    tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    Ok(tls)
+}
+
 impl Gateway {
     /// Builds the transports. Tor starts bootstrapping in the background, so
     /// with `tor_dir` set this must be called inside a Tokio runtime.
@@ -172,6 +192,7 @@ impl Gateway {
         let _already_installed = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
         let mut clearnet = reqwest::Client::builder()
+            .tls_backend_preconfigured(http_tls()?)
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(&cfg.user_agent)
             .timeout(cfg.clearnet_timeout)
@@ -182,6 +203,7 @@ impl Gateway {
         }
         let overlay = |proxy: Option<&Url>| -> Result<reqwest::Client, BoxError> {
             let mut builder = reqwest::Client::builder()
+                .tls_backend_preconfigured(http_tls()?)
                 .redirect(reqwest::redirect::Policy::none())
                 .user_agent(&cfg.user_agent)
                 .timeout(cfg.overlay_timeout)

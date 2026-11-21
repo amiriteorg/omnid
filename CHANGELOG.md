@@ -2,6 +2,11 @@
 
 ## 0.1.2 (2026-11-21)
 
+- Fixed: on the phone, every clearnet page over HTTPS failed. reqwest checked certificates with
+  the platform verifier, which on Android panics unless the app hands it its context; the 0.1.1
+  crawler rarely left onion sites, so it hardly showed. Every connection now checks certificates
+  against Mozilla's roots (webpki-roots) with rustls, as the Tor path already did, which also
+  keeps the platform from making revocation lookups of its own outside the gateway.
 - The crawler goes wide before deep. Links within a site no longer use up the hops from a seed:
   `--max-depth` (now 5) counts sites, `--max-site-depth` (4) pages within a site, and
   `--max-site-pages` (500) caps any one site; sites take turns in the queue. The phone crawls 4
