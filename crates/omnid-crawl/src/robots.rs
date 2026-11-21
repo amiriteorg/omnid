@@ -74,3 +74,86 @@ impl RobotsCache {
         Ok(allowed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use axum::http::StatusCode;
+    use axum::routing::get;
+    use omnid_net::GatewayConfig;
+
+    use super::*;
+
+    /// A site whose robots.txt answers with `status` and `body`, counting
+    /// how often it is asked.
+    async fn site(status: u16, body: &'static str) -> (String, Arc<AtomicUsize>) {
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counter = asked.clone();
+        let app = axum::Router::new().route(
+            "/robots.txt",
+            get(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move { (StatusCode::from_u16(status).unwrap(), body) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (base, asked)
+    }
+
+    fn gateway() -> Gateway {
+        Gateway::new(GatewayConfig { tor_dir: None, allow_private_addresses: true, ..GatewayConfig::default() })
+            .unwrap()
+    }
+
+    async fn allowed(cache: &RobotsCache, gateway: &Gateway, url: &str) -> bool {
+        cache.allowed(gateway, &Source::parse(url).unwrap()).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn applies_rules_for_our_agent_and_caches_them() {
+        let (base, asked) =
+            site(200, "User-agent: *\nDisallow: /private\n\nUser-agent: omnid\nDisallow: /no-omnid\n").await;
+        let (cache, gateway) = (RobotsCache::new("omnid"), gateway());
+        assert!(!allowed(&cache, &gateway, &format!("{base}/no-omnid/page")).await, "our own group applies");
+        assert!(allowed(&cache, &gateway, &format!("{base}/private/x")).await, "not the * group, once ours exists");
+        assert!(allowed(&cache, &gateway, &format!("{base}/")).await);
+        assert_eq!(asked.load(Ordering::SeqCst), 1, "fetched once per site");
+    }
+
+    #[tokio::test]
+    async fn a_missing_robots_txt_allows_everything() {
+        let (base, _) = site(404, "").await;
+        assert!(allowed(&RobotsCache::new("omnid"), &gateway(), &format!("{base}/anything")).await);
+    }
+
+    #[tokio::test]
+    async fn a_server_error_disallows_everything_for_now() {
+        let (base, asked) = site(503, "").await;
+        let (cache, gateway) = (RobotsCache::new("omnid"), gateway());
+        assert!(!allowed(&cache, &gateway, &format!("{base}/")).await);
+        assert!(!allowed(&cache, &gateway, &format!("{base}/other")).await);
+        assert_eq!(asked.load(Ordering::SeqCst), 1, "the refusal is cached too");
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_site_is_an_error_not_a_verdict() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let cache = RobotsCache::new("omnid");
+        let source = Source::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
+        assert!(cache.allowed(&gateway(), &source).await.is_err());
+        assert!(cache.sites.lock().unwrap().is_empty(), "nothing cached for a site that did not answer");
+    }
+
+    #[tokio::test]
+    async fn sources_without_robots_txt_are_allowed_without_a_fetch() {
+        let cache = RobotsCache::new("omnid");
+        let magnet = Source::parse("magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10").unwrap();
+        assert!(cache.allowed(&gateway(), &magnet).await.unwrap());
+    }
+}

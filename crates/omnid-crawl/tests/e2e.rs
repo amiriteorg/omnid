@@ -86,6 +86,10 @@ fn crawler(index: Arc<SearchIndex>, store: Arc<CrawlStore>, max_pages: Option<u6
 }
 
 fn crawler_with(index: Arc<SearchIndex>, store: Arc<CrawlStore>, cfg: CrawlConfig) -> Crawler {
+    crawler_with_safety(index, store, cfg, Safety::from_lists("", "forbidden phrase"))
+}
+
+fn crawler_with_safety(index: Arc<SearchIndex>, store: Arc<CrawlStore>, cfg: CrawlConfig, safety: Safety) -> Crawler {
     let gateway = Gateway::new(GatewayConfig {
         tor_dir: None,
         i2p_proxy: None,
@@ -94,7 +98,6 @@ fn crawler_with(index: Arc<SearchIndex>, store: Arc<CrawlStore>, cfg: CrawlConfi
         ..GatewayConfig::default()
     })
     .unwrap();
-    let safety = Safety::from_lists("", "forbidden phrase");
     let no_delay = Politeness { concurrency: 4, site_delay: Duration::ZERO };
     let cfg = CrawlConfig {
         politeness: HashMap::from([(Network::Clearnet, no_delay)]),
@@ -189,6 +192,54 @@ async fn drains_a_store_bigger_than_the_working_set_without_stalling() {
     let stats = crawl(crawler, &[&base]).await;
     assert_eq!(stats.indexed, 5, "{stats:?}");
     assert!(started.elapsed() < Duration::from_secs(4), "took {:?}", started.elapsed());
+}
+
+#[tokio::test]
+async fn revisits_drop_vanished_and_newly_blocked_pages() {
+    let gone = Arc::new(AtomicBool::new(false));
+    let flag = gone.clone();
+    let app = Router::new()
+        .route("/robots.txt", get(|| async { StatusCode::NOT_FOUND }))
+        .route("/fruit", get(|| async { Html("<title>Fruit</title><p>all about apples</p>") }))
+        .route(
+            "/vanishing",
+            get(move || {
+                let gone = flag.load(Ordering::SeqCst);
+                async move {
+                    if gone {
+                        StatusCode::NOT_FOUND.into_response()
+                    } else {
+                        Html("<p>a vanishing page</p>").into_response()
+                    }
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let seeds = [format!("{base}/fruit"), format!("{base}/vanishing")];
+    let seeds: Vec<&str> = seeds.iter().map(String::as_str).collect();
+
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let run = |safety: Safety| crawler_with_safety(index.clone(), store.clone(), CrawlConfig::default(), safety);
+
+    let first = crawl(run(Safety::default()), &seeds).await;
+    assert_eq!(first.indexed, 2, "{first:?}");
+    assert_eq!(hits(&index, "apples", &[]).len(), 1);
+    assert_eq!(hits(&index, "vanishing", &[]).len(), 1);
+
+    // The page is gone and "apples" is now a blocked term; seeds are
+    // revisited at once even though they are fresh.
+    gone.store(true, Ordering::SeqCst);
+    let second = crawl(run(Safety::from_lists("", "apples")), &seeds).await;
+    assert_eq!((second.blocked, second.failed), (1, 1), "{second:?}");
+    assert!(hits(&index, "apples", &[]).is_empty(), "a newly blocked page leaves the index");
+    assert!(hits(&index, "vanishing", &[]).is_empty(), "a 404 leaves the index");
+
+    // Blocked for good: seeding it again does not fetch it.
+    let third = crawl(run(Safety::default()), &seeds[..1]).await;
+    assert_eq!((third.fetched, third.indexed), (0, 0), "{third:?}");
 }
 
 #[tokio::test]
