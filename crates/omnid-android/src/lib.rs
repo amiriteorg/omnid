@@ -31,14 +31,22 @@ struct Running {
 
 /// Starts the daemon if it is not running and returns its port. Crawling
 /// starts paused; the caller applies its battery and network policy with
-/// [`set_paused`]. `hyphanet_node` is a Hyphanet node's FProxy elsewhere (the
-/// owner's computer over Tailscale, say), or empty for one on this phone.
-pub fn start(data_dir: &Path, token: &str, hyphanet_node: &str) -> Result<u16> {
-    start_with(data_dir, token, hyphanet_node, true)
+/// [`set_paused`]. `hyphanet_node` is a Hyphanet node's FProxy and
+/// `i2p_router` an i2pd HTTP proxy elsewhere (the owner's computer over
+/// Tailscale, say), each empty for none.
+pub fn start(data_dir: &Path, token: &str, hyphanet_node: &str, i2p_router: &str) -> Result<u16> {
+    start_with(data_dir, token, Routers { hyphanet_node, i2p_router }, true)
+}
+
+/// What the app was told about routers elsewhere: addresses, or empty.
+#[derive(Clone, Copy, Default)]
+struct Routers<'a> {
+    hyphanet_node: &'a str,
+    i2p_router: &'a str,
 }
 
 /// `networks: false` leaves out Tor and the DHT, for tests.
-fn start_with(data_dir: &Path, token: &str, hyphanet_node: &str, networks: bool) -> Result<u16> {
+fn start_with(data_dir: &Path, token: &str, routers: Routers, networks: bool) -> Result<u16> {
     let mut running = RUNNING.lock().expect("daemon lock poisoned");
     if let Some(running) = running.as_ref() {
         return Ok(running.daemon.addr().port());
@@ -55,7 +63,7 @@ fn start_with(data_dir: &Path, token: &str, hyphanet_node: &str, networks: bool)
     // Operators can drop lists into the app's data directory.
     let list = |name: &str| Some(data_dir.join(name)).filter(|p| p.exists());
     let safety = Safety::load(list("denylist.txt").as_deref(), list("blocked-terms.txt").as_deref())?;
-    let gateway = gateway(data_dir, hyphanet_node, networks)?;
+    let gateway = gateway(data_dir, routers, networks)?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -86,19 +94,36 @@ fn start_with(data_dir: &Path, token: &str, hyphanet_node: &str, networks: bool)
     Ok(port)
 }
 
-/// The phone's gateway: Tor in the app's data directory, and the Hyphanet
-/// node it was given, if any.
-fn gateway(data_dir: &Path, hyphanet_node: &str, networks: bool) -> Result<GatewayConfig> {
+/// The phone's gateway: Tor in the app's data directory, and the routers it
+/// was given ahead of the phone's own: the i2pd app's proxy and a node's
+/// FProxy on this phone, where they listen by default, stay as the fallback.
+fn gateway(data_dir: &Path, routers: Routers, networks: bool) -> Result<GatewayConfig> {
     let mut gateway = GatewayConfig { tor_dir: networks.then(|| data_dir.join("tor")), ..GatewayConfig::default() };
-    let node = hyphanet_node.trim();
-    if !node.is_empty() {
-        let fproxy = gateway.fproxy.insert(node.parse().with_context(|| format!("Hyphanet node {node:?}"))?);
-        anyhow::ensure!(
-            matches!(fproxy.scheme(), "http" | "https") && fproxy.host().is_some(),
-            "Hyphanet node {node:?} is not an http address"
-        );
+    if let Some(node) = elsewhere(routers.hyphanet_node, "Hyphanet node", &["http", "https"])? {
+        gateway.fproxies.retain(|n| *n != node);
+        gateway.fproxies.insert(0, node);
+    }
+    // i2pd's proxy speaks plain HTTP only.
+    if let Some(router) = elsewhere(routers.i2p_router, "I2P router", &["http"])? {
+        gateway.i2p_proxies.retain(|r| *r != router);
+        gateway.i2p_proxies.insert(0, router);
     }
     Ok(gateway)
+}
+
+/// A router's address as the app passes it, or `None` for an empty one.
+fn elsewhere(address: &str, what: &str, schemes: &[&str]) -> Result<Option<url::Url>> {
+    let address = address.trim();
+    if address.is_empty() {
+        return Ok(None);
+    }
+    let url: url::Url = address.parse().with_context(|| format!("{what} {address:?}"))?;
+    anyhow::ensure!(
+        schemes.contains(&url.scheme()) && url.host().is_some(),
+        "{what} {address:?} is not an {} address",
+        schemes.join(" or ")
+    );
+    Ok(Some(url))
 }
 
 /// Stops crawling, commits the index and shuts the daemon down.
@@ -177,9 +202,11 @@ pub extern "system" fn Java_cc_wckd_omnid_Native_start<'local>(
     data_dir: JString<'local>,
     token: JString<'local>,
     hyphanet_node: JString<'local>,
+    i2p_router: JString<'local>,
 ) -> jint {
     env.with_env(|_| -> Result<jint, NativeError> {
-        let port = start(Path::new(&data_dir.to_string()), &token.to_string(), &hyphanet_node.to_string())
+        let (node, router) = (hyphanet_node.to_string(), i2p_router.to_string());
+        let port = start(Path::new(&data_dir.to_string()), &token.to_string(), &node, &router)
             .map_err(|e| NativeError::Daemon(format!("{e:#}")))?;
         Ok(jint::from(port))
     })
@@ -285,15 +312,34 @@ mod logcat {
 mod tests {
     use super::*;
 
+    fn urls(urls: &[url::Url]) -> Vec<&str> {
+        urls.iter().map(url::Url::as_str).collect()
+    }
+
     #[test]
-    fn takes_a_hyphanet_node_elsewhere() {
+    fn takes_routers_elsewhere_ahead_of_the_phones_own() {
         let dir = Path::new("unused");
-        let local = gateway(dir, " ", false).unwrap().fproxy.unwrap();
-        assert_eq!(local.as_str(), "http://127.0.0.1:8888/", "none given: a node on this phone");
-        let remote = gateway(dir, "http://100.101.102.103:8888/", false).unwrap().fproxy.unwrap();
-        assert_eq!(remote.as_str(), "http://100.101.102.103:8888/");
+        let local = gateway(dir, Routers { hyphanet_node: " ", i2p_router: "" }, false).unwrap();
+        assert_eq!(urls(&local.fproxies), ["http://127.0.0.1:8888/"], "none given: a node on this phone");
+        assert_eq!(urls(&local.i2p_proxies), ["http://127.0.0.1:4444/"], "and the i2pd app");
+
+        let remote = gateway(
+            dir,
+            Routers { hyphanet_node: "http://100.101.102.103:8888/", i2p_router: "http://100.101.102.103:4444/" },
+            false,
+        )
+        .unwrap();
+        assert_eq!(urls(&remote.fproxies), ["http://100.101.102.103:8888/", "http://127.0.0.1:8888/"]);
+        assert_eq!(urls(&remote.i2p_proxies), ["http://100.101.102.103:4444/", "http://127.0.0.1:4444/"]);
+
+        let same = gateway(dir, Routers { i2p_router: "http://127.0.0.1:4444/", ..Routers::default() }, false).unwrap();
+        assert_eq!(urls(&same.i2p_proxies), ["http://127.0.0.1:4444/"], "the phone's own, once");
+
         for node in ["ftp://100.101.102.103/", "100.101.102.103:8888", "not a url"] {
-            assert!(gateway(dir, node, false).is_err(), "{node}");
+            assert!(gateway(dir, Routers { hyphanet_node: node, ..Routers::default() }, false).is_err(), "{node}");
+        }
+        for router in ["https://100.101.102.103:4444/", "100.101.102.103:4444"] {
+            assert!(gateway(dir, Routers { i2p_router: router, ..Routers::default() }, false).is_err(), "{router}");
         }
     }
 
@@ -303,10 +349,10 @@ mod tests {
     #[ignore = "live: reaches Tor and the DHT"]
     fn live_stops_with_tor_and_the_dht_running() {
         let dir = std::env::temp_dir().join(format!("omnid-android-live-{}", std::process::id()));
-        start_with(&dir, "token", "", true).unwrap();
+        start_with(&dir, "token", Routers::default(), true).unwrap();
         std::thread::sleep(Duration::from_secs(20));
         stop();
-        let again = start_with(&dir, "token", "", true).unwrap();
+        let again = start_with(&dir, "token", Routers::default(), true).unwrap();
         assert_ne!(again, 0, "and starts again after");
         stop();
         let _ = std::fs::remove_dir_all(dir);
@@ -319,9 +365,14 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("omnid-android-test-{}", std::process::id()));
         // Without Tor or the DHT, so the test stays off the network. A node
         // elsewhere that does not answer: the status says where omnid looked.
-        let started = start_with(&dir, "token", "http://127.0.0.1:9", false).unwrap();
+        let elsewhere = Routers { hyphanet_node: "http://127.0.0.1:9", i2p_router: "http://127.0.0.1:10" };
+        let started = start_with(&dir, "token", elsewhere, false).unwrap();
         assert_ne!(started, 0);
-        assert_eq!(start_with(&dir, "token", "", false).unwrap(), started, "a second start reuses the daemon");
+        assert_eq!(
+            start_with(&dir, "token", Routers::default(), false).unwrap(),
+            started,
+            "a second start reuses the daemon"
+        );
         assert_ne!(browser_proxy_port(), 0, "the browser's proxy is up");
         new_identity();
         set_paused(true, "waiting for a charger");
@@ -335,6 +386,7 @@ mod tests {
         assert!(body.starts_with("HTTP/1.1 200"), "{body}");
         assert!(body.contains("waiting for a charger"), "{body}");
         assert!(body.contains("no FProxy at http://127.0.0.1:9/"), "{body}");
+        assert!(body.contains("no i2pd HTTP proxy at http://127.0.0.1:10/"), "{body}");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -95,8 +95,8 @@ fn crawler_with(index: Arc<SearchIndex>, store: Arc<CrawlStore>, cfg: CrawlConfi
 fn crawler_with_safety(index: Arc<SearchIndex>, store: Arc<CrawlStore>, cfg: CrawlConfig, safety: Safety) -> Crawler {
     let gateway = Gateway::new(GatewayConfig {
         tor_dir: None,
-        i2p_proxy: None,
-        fproxy: None,
+        i2p_proxies: vec![],
+        fproxies: vec![],
         allow_private_addresses: true,
         ..GatewayConfig::default()
     })
@@ -280,7 +280,7 @@ async fn refuses_private_addresses_by_default() {
 async fn reports_missing_routers_plainly() {
     let gateway = Gateway::new(GatewayConfig {
         tor_dir: None,
-        i2p_proxy: Some("http://127.0.0.1:9".parse().unwrap()),
+        i2p_proxies: vec!["http://127.0.0.1:9".parse().unwrap()],
         ..GatewayConfig::default()
     })
     .unwrap();

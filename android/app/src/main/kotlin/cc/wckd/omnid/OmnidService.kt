@@ -65,8 +65,10 @@ class OmnidService : Service() {
         val token = ByteArray(32).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
         native.execute {
             try {
-                val node = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE).getString(HyphanetNode.KEY, "").orEmpty()
-                val port = Native.start(File(filesDir, "omnid").path, token, node)
+                val prefs = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE)
+                val node = prefs.getString(HyphanetNode.KEY, "").orEmpty()
+                val router = prefs.getString(I2pRouter.KEY, "").orEmpty()
+                val port = Native.start(File(filesDir, "omnid").path, token, node, router)
                 endpoint = Endpoint(port, token, Native.browserProxyPort())
                 failure = null
                 val crawlPolicy = CrawlPolicy(this) { paused, reason ->

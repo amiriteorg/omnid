@@ -61,6 +61,11 @@ start_i2pd() {
   local dir=$LIVE/i2pd
   if [ -f "$dir/i2pd.pid" ] && kill -0 "$(cat "$dir/i2pd.pid")" 2>/dev/null; then
     say "i2pd already running"
+  elif nc -z 127.0.0.1 4444 2>/dev/null; then
+    # A router of the machine's own (one kept running for omnid): use it as
+    # it is; `down` leaves it alone, having no PID file for it.
+    say "using the I2P router already on 127.0.0.1:4444"
+    return
   else
     mkdir -p "$dir"
     say "starting i2pd (client only)"

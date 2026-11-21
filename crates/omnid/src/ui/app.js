@@ -506,9 +506,12 @@ window.omnidApp = {
 };
 
 // Where a router's detail says it listens, in words: on this device, or the
-// other machine's address.
+// other machine's address. With several routers ("…; no … at …"), the first
+// that answers.
 function whereIs(detail) {
-  const url = detail.match(/https?:\/\/[^\s/]+/)?.[0];
+  const routers = detail.split("; ");
+  const answering = routers.find((r) => !r.startsWith("no ")) ?? routers[0];
+  const url = answering.match(/https?:\/\/[^\s/]+/)?.[0];
   if (!url) return "";
   const host = new URL(url).hostname;
   return ["127.0.0.1", "localhost", "[::1]"].includes(host) ? "on this device" : `at ${host}`;
@@ -528,8 +531,8 @@ function explain(network, router) {
       return "Torrent lookups are off.";
     case "i2p":
       if (state === "ready") return `I2P sites go through the I2P router ${whereIs(detail) || "on this device"}.`;
-      if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and OMNId uses it right away.";
-      if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router on this phone: the free i2pd app, from F-Droid. OMNId uses it as soon as it runs, with nothing to set up.";
+      if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and OMNId uses it right away, or use a router on your own computer: ⋮ → I2P router.";
+      if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router: the free i2pd app on this phone, from F-Droid, which OMNId uses as soon as it runs, or one on your own computer, over Tailscale for instance: ⋮ → I2P router.";
       return "Reaching .i2p sites needs an I2P router, such as the i2pd app, running on this device.";
     case "hyphanet":
       if (state === "ready") return `Hyphanet sites come through the Hyphanet node ${whereIs(detail) || "on this device"}.`;

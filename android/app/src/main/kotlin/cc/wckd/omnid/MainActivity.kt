@@ -222,6 +222,7 @@ class MainActivity : Activity() {
         }
         menu.add(Menu.NONE, R.string.crawl_anytime, Menu.NONE, R.string.crawl_anytime).isCheckable = true
         menu.add(Menu.NONE, R.string.hyphanet_node, Menu.NONE, R.string.hyphanet_node)
+        menu.add(Menu.NONE, R.string.i2p_router, Menu.NONE, R.string.i2p_router)
         menu.add(Menu.NONE, R.string.stop_omnid, Menu.NONE, R.string.stop_omnid)
         return true
     }
@@ -241,7 +242,11 @@ class MainActivity : Activity() {
             true
         }
         R.string.hyphanet_node -> {
-            askHyphanetNode()
+            askRouter(R.string.hyphanet_node, R.string.hyphanet_node_detail, R.string.hyphanet_node_hint, R.string.hyphanet_node_invalid, HyphanetNode.KEY, HyphanetNode::parse)
+            true
+        }
+        R.string.i2p_router -> {
+            askRouter(R.string.i2p_router, R.string.i2p_router_detail, R.string.i2p_router_hint, R.string.i2p_router_invalid, I2pRouter.KEY, I2pRouter::parse)
             true
         }
         R.string.stop_omnid -> {
@@ -255,13 +260,16 @@ class MainActivity : Activity() {
 
     private fun prefs() = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE)
 
-    /** Where omnid reaches Hyphanet; a change restarts the daemon, which takes it at start. */
-    private fun askHyphanetNode() {
+    /**
+     * A router elsewhere that omnid reaches a network through, saved under [key] as [parse] reads
+     * it; a change restarts the daemon, which takes it at start.
+     */
+    private fun askRouter(title: Int, detail: Int, hint: Int, invalid: Int, key: String, parse: (String) -> String?) {
         fun dp(value: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
-        val current = prefs().getString(HyphanetNode.KEY, "").orEmpty()
+        val current = prefs().getString(key, "").orEmpty()
         val input = EditText(this).apply {
             setText(current)
-            hint = getString(R.string.hyphanet_node_hint)
+            this.hint = getString(hint)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             isSingleLine = true
         }
@@ -270,15 +278,15 @@ class MainActivity : Activity() {
             addView(input)
         }
         AlertDialog.Builder(this)
-            .setTitle(R.string.hyphanet_node)
-            .setMessage(R.string.hyphanet_node_detail)
+            .setTitle(title)
+            .setMessage(detail)
             .setView(frame)
             .setPositiveButton(R.string.save) { _, _ ->
-                val node = HyphanetNode.parse(input.text.toString())
+                val address = parse(input.text.toString())
                 when {
-                    node == null -> Toast.makeText(this, R.string.hyphanet_node_invalid, Toast.LENGTH_LONG).show()
-                    node != current -> {
-                        prefs().edit().putString(HyphanetNode.KEY, node).apply()
+                    address == null -> Toast.makeText(this, invalid, Toast.LENGTH_LONG).show()
+                    address != current -> {
+                        prefs().edit().putString(key, address).apply()
                         restartService()
                     }
                 }
