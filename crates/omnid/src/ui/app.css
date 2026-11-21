@@ -125,7 +125,7 @@ svg.icon { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: no
 .router-list .starting b span { color: var(--warn); }
 .router-list .unreachable b span, .router-list .disabled b span { color: var(--muted); }
 .router-list p { grid-column: 2; margin: 0; font-size: var(--t-body); color: var(--ink-2); }
-.router-list .button { grid-column: 2; justify-self: start; margin-top: 0.4rem; text-decoration: none; }
+.router-list .button { grid-column: 2; justify-self: start; margin-top: 0.4rem; }
 .crawl-row { display: flex; align-items: center; gap: 0.75rem; padding-top: 0.65rem; }
 .crawl-row p { flex: 1; margin: 0; font-size: var(--t-body); color: var(--ink-2); }
 
@@ -171,6 +171,14 @@ svg.icon { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: no
 .net-magnet { --net: var(--magnet); }
 .net-i2p { --net: var(--i2p); }
 .net-hyphanet { --net: var(--hyphanet); }
+
+/* An address typed into the search field, to open or add. */
+.address:empty { display: none; }
+.address { margin-top: 0.9rem; }
+.address-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.75rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.address-row .addr { flex: 1 1 10rem; }
+.address-row .actions { display: flex; gap: 0.5rem; margin-left: auto; }
+.address .submit-result:empty { display: none; }
 
 .summary:empty { display: none; }
 .summary { margin: 0.9rem 0 0.25rem; font-size: var(--t-small); color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -218,14 +226,14 @@ details.files li { overflow-wrap: anywhere; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 .empty { padding: 1.5rem 0; border-top: 1px solid var(--line); color: var(--ink-2); }
-.empty h2 { margin: 0 0 0.35rem; font-size: var(--t-title); color: var(--ink); }
+.empty h2 { margin: 0 0 0.35rem; font-size: var(--t-title); color: var(--ink); overflow-wrap: anywhere; }
 .empty p { margin: 0 0 0.75rem; }
 
 /* Buttons. */
 .button {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; min-height: 48px; padding: 0 1.1rem;
   border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink);
-  font: inherit; font-size: var(--t-body); font-weight: 600; cursor: pointer;
+  font: inherit; font-size: var(--t-body); font-weight: 600; text-decoration: none; cursor: pointer;
   transition: background 160ms var(--ease), border-color 160ms var(--ease);
 }
 .button:hover { border-color: var(--accent); }

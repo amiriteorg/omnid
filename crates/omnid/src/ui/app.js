@@ -159,15 +159,57 @@ function siteKey(url) {
   }
 }
 
+// What was typed, read as an address: an onion or .i2p host, a web URL, a
+// magnet or a Hyphanet key can be opened or added from the search field as
+// well as searched for. A bare clearnet name ("node.js") stays a search.
+function typedAddress(text) {
+  const t = text.trim();
+  if (!t || /\s/.test(t)) return null;
+  if (/^magnet:\?\S+$/i.test(t)) return { network: "magnet", url: t };
+  const key = t.match(/^(?:freenet:|hyphanet:)?((?:USK|SSK|CHK|KSK)@\S+)$/);
+  if (key) return { network: "hyphanet", url: `freenet:${key[1]}` };
+  const url = /^https?:\/\//i.test(t) ? t : /^[a-z0-9.-]+\.(onion|i2p)(\/\S*)?$/i.test(t) ? `http://${t}` : null;
+  let host;
+  try {
+    host = url && new URL(url).hostname;
+  } catch {
+    return null;
+  }
+  if (!host) return null;
+  return { network: host.endsWith(".onion") ? "onion" : host.endsWith(".i2p") ? "i2p" : "clearnet", url };
+}
+
 function sealed(route) {
   return ["onion", "i2p", "hyphanet"].includes(route.network) || route.url.startsWith("https:");
 }
 
-function routeItem(route) {
-  const plainWeb = route.network === "clearnet" && route.url.startsWith("http:");
-  const badge = el("span", { class: `badge net-${route.network}` },
+function badge(route) {
+  return el("span", { class: `badge net-${route.network}` },
     route.network === "magnet" ? icon("magnet") : icon(sealed(route) ? "lock" : "unlock"),
     NETWORK_NAMES[route.network] ?? route.network);
+}
+
+// The typed address, with what can be done with it: open it (where this
+// browser can) and add it to the index.
+function addressRow(route) {
+  if (!route) return [];
+  const open = linkable(route)
+    ? el("a", { class: "button small primary", href: href(route), rel: "noreferrer noopener", target: "_blank" }, "Open")
+    : null;
+  const add = el("button", { class: "button small", type: "button" }, icon("plus"), "Add to index");
+  const note = el("p", { class: "submit-result", "aria-live": "polite" });
+  add.addEventListener("click", () => submitAddress(route.url, note));
+  return [
+    el("div", { class: "address-row" },
+      badge(route),
+      el("span", { class: "addr", title: route.url }, shortAddress(route.url)),
+      el("span", { class: "actions" }, open, add)),
+    note,
+  ];
+}
+
+function routeItem(route) {
+  const plainWeb = route.network === "clearnet" && route.url.startsWith("http:");
   const text = shortAddress(route.url);
   const address = linkable(route)
     ? el("a", { class: "addr", href: href(route), rel: "noreferrer noopener", target: "_blank", title: route.url }, text)
@@ -188,7 +230,7 @@ function routeItem(route) {
       getSelection()?.selectAllChildren(address);
     }
   });
-  return el("li", { class: "route" }, badge, address, plainWeb ? el("span", { class: "plain" }, "not encrypted") : null, copy);
+  return el("li", { class: "route" }, badge(route), address, plainWeb ? el("span", { class: "plain" }, "not encrypted") : null, copy);
 }
 
 function hitItem(hit) {
@@ -279,6 +321,7 @@ async function search({ append = false } = {}) {
   $("clear").hidden = !$("q").value && !browsing;
   const networks = checkedNetworks();
   rememberQuery(text);
+  $("address").replaceChildren(...addressRow(typedAddress(text)));
   if (!text && !browsing) return explore(networks);
   $("explore").hidden = true;
   if (!networks.length) {
@@ -309,7 +352,8 @@ async function search({ append = false } = {}) {
       $("results").append(...items);
     } else {
       swapResults(items);
-      if (!items.length) $("results").append(noResults(text, body.network_counts, networks));
+      // A typed address with nothing indexed yet: its row above says what to do.
+      if (!items.length && !typedAddress(text)) $("results").append(noResults(text, body.network_counts, networks));
     }
     shown = offset + body.hits.length;
     showCounts(body.network_counts);
@@ -598,11 +642,8 @@ $("pause").addEventListener("click", async () => {
   refreshStatus();
 });
 
-$("submit").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const url = $("url").value.trim();
-  if (!url) return;
-  const result = $("submit-result");
+// Queues an address to crawl next and says how that went in `result`.
+async function submitAddress(url, result) {
   try {
     const response = await fetch("/api/submit", {
       method: "POST",
@@ -614,11 +655,18 @@ $("submit").addEventListener("submit", async (event) => {
     result.textContent = response.ok
       ? `Added. omnid will crawl ${body.accepted} (${NETWORK_NAMES[body.network] ?? body.network}) next.`
       : body.error;
-    if (response.ok) $("url").value = "";
+    return response.ok;
   } catch (error) {
     result.className = "submit-result error";
     result.textContent = `omnid did not answer (${error.message}).`;
+    return false;
   }
+}
+
+$("submit").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const url = $("url").value.trim();
+  if (url && (await submitAddress(url, $("submit-result")))) $("url").value = "";
 });
 
 // /?q=words opens with that search, so a search can be linked to.
