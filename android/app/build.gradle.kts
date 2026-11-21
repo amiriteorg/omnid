@@ -34,6 +34,9 @@ android {
             storePassword = props.getProperty("storePassword")
             keyAlias = props.getProperty("keyAlias")
             keyPassword = props.getProperty("keyPassword")
+            // v3 carries a proof-of-rotation, so a replaced key can still
+            // update existing installs.
+            enableV3Signing = true
         }
     } else {
         signingConfigs.getByName("debug")

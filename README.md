@@ -91,8 +91,12 @@ adb install app/build/outputs/apk/release/app-release.apk
 ```
 
 Needs the Android SDK with an NDK, JDK 17 and the `aarch64-linux-android` Rust
-target. Without `android/keystore.properties` the release APK is signed with
-the debug key: fine for sideloading, not for distribution. The app runs the
+target. Release builds are signed with the key named in
+`android/keystore.properties` (git-ignored; `storeFile`, `storePassword`,
+`keyAlias`, `keyPassword`), with APK signature scheme v3, which allows the key to
+be rotated later (every supported Android version verifies v3); without that
+file they fall back to the debug key, which is fine for sideloading only.
+Every update must be signed with the same key, so back the keystore up. The app runs the
 same daemon in a foreground service, shows its search page in a WebView, and
 crawls only on a charger and an unmetered network unless "Crawl on battery
 and mobile data" is on. Share an onion, magnet or link to the app to crawl
