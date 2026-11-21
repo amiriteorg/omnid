@@ -50,22 +50,40 @@ internal object Browser {
             .remoteDebuggingEnabled(false)
             .aboutConfigEnabled(false)
             .consoleOutput(false)
+            // The text size setting is a factor Gecko applies itself, not the phone's font scale.
+            .automaticFontSizeAdjustment(false)
             .build()
         val runtime = try {
             GeckoRuntime.create(context.applicationContext, settings)
         } catch (e: Throwable) {
             return GeckoResult.fromException(e)
         }
-        val level = SecurityLevel.from(context.getSharedPreferences(CrawlPolicy.PREFS, Context.MODE_PRIVATE).getString(SecurityLevel.KEY, null))
-        return verifyPrefs().then { installProxy(runtime) }.then { apply(level) }.map { runtime }
+        return verifyPrefs().then { installProxy(runtime) }.then { applySettings(context, runtime) }.map { runtime }
     }
 
     /**
-     * Sets [level]'s prefs in the running Gecko and reads them back; pages loaded afterwards get
-     * them. Whether pages run JavaScript at all is each tab's session setting, not a pref.
+     * Takes the settings into the running Gecko: the security level's and the image setting's
+     * prefs ([apply]), the text size and the color scheme pages are offered.
      */
-    fun apply(level: SecurityLevel): GeckoResult<Void> {
-        val wanted = level.prefs
+    fun applySettings(context: Context, runtime: GeckoRuntime): GeckoResult<Void> {
+        val prefs = context.getSharedPreferences(CrawlPolicy.PREFS, Context.MODE_PRIVATE)
+        runtime.settings.setFontSizeFactor(Settings.textSize(prefs.getFloat(Settings.TEXT_SIZE, 1f)))
+        runtime.settings.setPreferredColorScheme(
+            when (Settings.theme(prefs.getString(Settings.THEME, null))) {
+                Settings.Theme.SYSTEM -> GeckoRuntimeSettings.COLOR_SCHEME_SYSTEM
+                Settings.Theme.LIGHT -> GeckoRuntimeSettings.COLOR_SCHEME_LIGHT
+                Settings.Theme.DARK -> GeckoRuntimeSettings.COLOR_SCHEME_DARK
+            },
+        )
+        val level = SecurityLevel.from(prefs.getString(SecurityLevel.KEY, null))
+        return apply(Settings.geckoPrefs(level, prefs.getBoolean(Settings.IMAGES, true)))
+    }
+
+    /**
+     * Sets [wanted] in the running Gecko and reads them back; pages loaded afterwards get them.
+     * Whether pages run JavaScript at all is each tab's session setting, not a pref.
+     */
+    fun apply(wanted: Map<String, Any>): GeckoResult<Void> {
         val set = wanted.map { (name, value) ->
             when (value) {
                 is Boolean -> GeckoPreferenceController.setGeckoPref(name, value, GeckoPreferenceController.PREF_BRANCH_USER)

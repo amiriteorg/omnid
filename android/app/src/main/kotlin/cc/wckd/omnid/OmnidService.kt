@@ -68,7 +68,8 @@ class OmnidService : Service() {
                 val prefs = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE)
                 val node = prefs.getString(HyphanetNode.KEY, "").orEmpty()
                 val router = prefs.getString(I2pRouter.KEY, "").orEmpty()
-                val port = Native.start(File(filesDir, "omnid").path, token, node, router)
+                val speed = Settings.crawlSpeed(prefs.getString(Settings.CRAWL_SPEED, null)).ordinal
+                val port = Native.start(File(filesDir, "omnid").path, token, node, router, speed)
                 endpoint = Endpoint(port, token, Native.browserProxyPort())
                 failure = null
                 val crawlPolicy = CrawlPolicy(this) { paused, reason ->

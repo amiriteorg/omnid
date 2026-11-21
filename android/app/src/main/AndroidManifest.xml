@@ -52,6 +52,12 @@
             android:theme="@style/Theme.Omnid.Browser"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- One screen of settings; not exported. -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings" />
+
         <!-- specialUse: a long-running local gateway and index has no closer
              type, and dataSync is cut off after six hours on Android 15. -->
         <service

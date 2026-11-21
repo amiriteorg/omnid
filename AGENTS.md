@@ -18,8 +18,9 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
   (`src/ui`, compiled in), the SOCKS proxy.
 - `crates/omnid-android` + `android/` — JNI bridge and the Kotlin app (platform APIs only, plus
   GeckoView for the browser: `Browser.kt`, `BrowserActivity.kt`, `BrowserConfig.kt`, the plain-Kotlin
-  rules in `Tabs.kt`, `Bookmarks.kt` and `SecurityLevel.kt`, and the extension in
-  `android/app/src/main/assets/browser-proxy/`).
+  rules in `Tabs.kt`, `Bookmarks.kt`, `SecurityLevel.kt`, `Routers.kt` and `Settings.kt`, and the
+  extension in `android/app/src/main/assets/browser-proxy/`; `SettingsActivity.kt` is the settings
+  screen and `Appearance.kt` applies its theme to every screen).
 
 Dependencies point down this list; `omnid-core` depends on no other omnid crate.
 

@@ -10,10 +10,11 @@ internal object Native {
      * Starts the daemon if it is not running and returns its loopback port. Crawling starts
      * paused. [hyphanetNode] is a Hyphanet node's FProxy URL ([HyphanetNode]) and [i2pRouter] an
      * I2P router's HTTP proxy ([I2pRouter]) elsewhere, each empty for only the one on this phone.
-     * Throws [RuntimeException] with the reason when it cannot start.
+     * [crawlSpeed] is the ordinal of [Settings.CrawlSpeed]. Throws [RuntimeException] with the
+     * reason when it cannot start.
      */
     @JvmStatic
-    external fun start(dataDir: String, token: String, hyphanetNode: String, i2pRouter: String): Int
+    external fun start(dataDir: String, token: String, hyphanetNode: String, i2pRouter: String, crawlSpeed: Int): Int
 
     /** Stops crawling, commits the index and shuts the daemon down. */
     @JvmStatic

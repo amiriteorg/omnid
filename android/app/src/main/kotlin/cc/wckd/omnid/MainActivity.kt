@@ -4,8 +4,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityOptions
-import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -15,7 +15,6 @@ import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.text.InputType
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
@@ -31,7 +30,6 @@ import android.window.OnBackInvokedDispatcher
 import android.content.res.ColorStateList
 import android.util.TypedValue
 import android.widget.Button
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -47,10 +45,12 @@ import org.json.JSONObject
  * open in omnid's browser and magnets in the app that handles them.
  */
 class MainActivity : Activity() {
-    private companion object {
-        const val KEY_PAGE = "page"
+    companion object {
+        /** Words to search for, from the browser's address bar. */
+        const val EXTRA_QUERY = "query"
+        private const val KEY_PAGE = "page"
         /** The page's link to the i2pd app (app.js): opens it, or its F-Droid page. */
-        const val I2PD_LINK = "omnid:i2pd"
+        private const val I2PD_LINK = "omnid:i2pd"
     }
 
     private lateinit var web: WebView
@@ -68,10 +68,21 @@ class MainActivity : Activity() {
     /** System Back goes back in the page first; registered only while it can (Android 13+). */
     private var backCallback: Any? = null
     private val onServiceChange: () -> Unit = { runOnUiThread(::show) }
+    private lateinit var drawnWith: Settings.Theme
+    /** Settings → Search as the page was loaded with: networks and languages. */
+    private var searchSettings: Pair<Set<String>, String>? = null
+    /** A search the browser's address bar asked for before the page was ready. */
+    private var pendingQuery: String? = null
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        Appearance.apply(this, base)
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        drawnWith = Appearance.chosen(this)
         restorePage = savedInstanceState?.getString(KEY_PAGE)
         web = WebView(this).apply {
             // The page draws its own; the platform's grey bar would sit on top of it.
@@ -137,11 +148,40 @@ class MainActivity : Activity() {
         }
         startForegroundService(Intent(this, OmnidService::class.java))
         takeShare(intent)
+        takeQuery(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         takeShare(intent)
+        takeQuery(intent)
+    }
+
+    /** Words typed into the browser's address bar that were not an address: search for them. */
+    private fun takeQuery(intent: Intent?) {
+        val query = intent?.getStringExtra(EXTRA_QUERY)?.takeIf { it.isNotBlank() } ?: return
+        intent.removeExtra(EXTRA_QUERY)
+        val endpoint = OmnidService.endpoint
+        if (endpoint == null || loaded != endpoint) pendingQuery = query else loadSearch(endpoint, query)
+    }
+
+    /** The search page as Settings → Search has it, searching [query] if there is one. */
+    private fun loadSearch(endpoint: OmnidService.Endpoint, query: String?) {
+        val wanted = wantedSearch()
+        searchSettings = wanted
+        web.loadUrl(Settings.searchPage(endpoint.origin, wanted.first, wanted.second, query))
+    }
+
+    /** Settings → Search now: the networks a search starts with, and the languages ranked first. */
+    private fun wantedSearch(): Pair<Set<String>, String> {
+        val prefs = prefs()
+        return Settings.networks(prefs.getString(Settings.SEARCH_NETWORKS, null)) to prefs.getString(Settings.SEARCH_LANGUAGES, "").orEmpty()
+    }
+
+    /** What a search page's address says of the same, as [Settings.searchPage] wrote it. */
+    private fun searchOf(page: String): Pair<Set<String>, String> {
+        val uri = Uri.parse(page)
+        return Settings.networks(uri.getQueryParameter("networks")) to uri.getQueryParameter("lang").orEmpty()
     }
 
     override fun onStart() {
@@ -158,6 +198,15 @@ class MainActivity : Activity() {
     /** Back from installing or starting i2pd, say so. */
     override fun onResume() {
         super.onResume()
+        if (Appearance.chosen(this) != drawnWith) {
+            recreate()
+            return
+        }
+        // Settings → Search changed: the page starts again with them, the search kept.
+        val endpoint = loaded
+        if (endpoint != null && searchSettings != null && wantedSearch() != searchSettings) {
+            loadSearch(endpoint, web.url?.let { Uri.parse(it).getQueryParameter("q") })
+        }
         tellPage()
         // The browser's tabs may have opened or closed meanwhile.
         invalidateOptionsMenu()
@@ -221,8 +270,7 @@ class MainActivity : Activity() {
             }
         }
         menu.add(Menu.NONE, R.string.crawl_anytime, Menu.NONE, R.string.crawl_anytime).isCheckable = true
-        menu.add(Menu.NONE, R.string.hyphanet_node, Menu.NONE, R.string.hyphanet_node)
-        menu.add(Menu.NONE, R.string.i2p_router, Menu.NONE, R.string.i2p_router)
+        menu.add(Menu.NONE, R.string.settings, Menu.NONE, R.string.settings)
         menu.add(Menu.NONE, R.string.stop_omnid, Menu.NONE, R.string.stop_omnid)
         return true
     }
@@ -241,12 +289,8 @@ class MainActivity : Activity() {
             prefs().edit().putBoolean(CrawlPolicy.KEY_ANYTIME, !item.isChecked).apply()
             true
         }
-        R.string.hyphanet_node -> {
-            askRouter(R.string.hyphanet_node, R.string.hyphanet_node_detail, R.string.hyphanet_node_hint, R.string.hyphanet_node_invalid, HyphanetNode.KEY, HyphanetNode::parse)
-            true
-        }
-        R.string.i2p_router -> {
-            askRouter(R.string.i2p_router, R.string.i2p_router_detail, R.string.i2p_router_hint, R.string.i2p_router_invalid, I2pRouter.KEY, I2pRouter::parse)
+        R.string.settings -> {
+            startActivity(Intent(this, SettingsActivity::class.java))
             true
         }
         R.string.stop_omnid -> {
@@ -259,41 +303,6 @@ class MainActivity : Activity() {
     }
 
     private fun prefs() = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE)
-
-    /**
-     * A router elsewhere that omnid reaches a network through, saved under [key] as [parse] reads
-     * it; a change restarts the daemon, which takes it at start.
-     */
-    private fun askRouter(title: Int, detail: Int, hint: Int, invalid: Int, key: String, parse: (String) -> String?) {
-        fun dp(value: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
-        val current = prefs().getString(key, "").orEmpty()
-        val input = EditText(this).apply {
-            setText(current)
-            this.hint = getString(hint)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            isSingleLine = true
-        }
-        val frame = FrameLayout(this).apply {
-            setPadding(dp(20), dp(4), dp(20), 0)
-            addView(input)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(detail)
-            .setView(frame)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val address = parse(input.text.toString())
-                when {
-                    address == null -> Toast.makeText(this, invalid, Toast.LENGTH_LONG).show()
-                    address != current -> {
-                        prefs().edit().putString(key, address).apply()
-                        restartService()
-                    }
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
 
     private fun restartService() {
         stopService(Intent(this, OmnidService::class.java))
@@ -313,7 +322,17 @@ class MainActivity : Activity() {
                     // own page only.
                     val page = restorePage?.takeIf { it.startsWith("${endpoint.origin}/?embedded") }
                     restorePage = null
-                    web.loadUrl(page ?: "${endpoint.origin}/?embedded")
+                    val query = pendingQuery
+                    pendingQuery = null
+                    // The page as it was, unless Settings → Search changed since it loaded.
+                    if (page != null && query == null && searchOf(page) == wantedSearch()) {
+                        web.loadUrl(page)
+                        searchSettings = searchOf(page)
+                    } else if (page != null && query == null) {
+                        loadSearch(endpoint, Uri.parse(page).getQueryParameter("q"))
+                    } else {
+                        loadSearch(endpoint, query)
+                    }
                     loaded = endpoint
                 }
                 web.visibility = View.VISIBLE

@@ -15,7 +15,18 @@
   (i2pd's own 5xx pages) hands the request to the next router. The browser's and the SOCKS
   proxy's streams also start on the next router when the first has not answered within 3 seconds.
   The status shows every router.
-- The app takes an I2P router elsewhere under ⋮ → I2P router, such as one on your computer over
+- Settings (⋮ → Settings, on the search page and in the browser): theme (as the phone, light or
+  dark) and text size on web pages; the security level, loading images (off, pages load far faster
+  over Tor) and screenshots; the networks a search starts with, the languages ranked first, and
+  blocked words and blocked sites for the crawler; crawl speed (Gentle, Normal, Fast) and crawling
+  on battery and mobile data; the I2P router and Hyphanet node; the version and licenses.
+  `Native.start` takes the crawl speed.
+- The browser: words typed into the address bar that are not an address search the index; ⋮ gains
+  Reopen closed tab (the last ten, in memory only), Share, Desktop site (per tab) and Settings;
+  video goes full screen from its own controls, hiding the toolbar and system bars until Back.
+- Fixed: the browser crashed when the tab list, hidden after tabs had opened or closed, was laid
+  out again, which switching between a hardware keyboard and touch does.
+- The app takes an I2P router elsewhere under ⋮ → Settings → I2P router, such as one on your computer over
   Tailscale, asked before the i2pd app on the phone, which stays the fallback; a Hyphanet node
   set under ⋮ → Hyphanet node now keeps a node on the phone as its fallback too.
 

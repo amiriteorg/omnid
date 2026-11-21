@@ -8,8 +8,8 @@ import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -17,13 +17,8 @@ import android.os.Bundle
 import android.os.PersistableBundle
 import android.text.Editable
 import android.text.InputType
-import android.text.SpannableStringBuilder
-import android.text.Spanned
 import android.text.TextUtils
 import android.text.TextWatcher
-import android.text.style.ForegroundColorSpan
-import android.text.style.RelativeSizeSpan
-import android.text.style.StyleSpan
 import android.util.Base64
 import android.util.TypedValue
 import android.view.Gravity
@@ -31,6 +26,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -69,7 +65,6 @@ import org.mozilla.geckoview.WebResponse
 class BrowserActivity : Activity() {
     companion object {
         const val EXTRA_URL = "url"
-        private const val KEY_SCREENSHOTS = "browser_screenshots"
         /** Enough for a session of reading; every tab keeps its page in memory. */
         private const val MAX_TABS = 16
 
@@ -81,8 +76,13 @@ class BrowserActivity : Activity() {
         private const val MENU_COPY = 6
         private const val MENU_LEVEL = 7
         private const val MENU_IDENTITY = 8
-        private const val MENU_SCREENSHOTS = 9
         private const val MENU_CLOSE = 10
+        private const val MENU_SHARE = 11
+        private const val MENU_DESKTOP = 12
+        private const val MENU_REOPEN = 13
+        private const val MENU_SETTINGS = 14
+        /** Closed tabs Reopen closed tab can bring back: their addresses, in memory only. */
+        private const val MAX_CLOSED = 10
 
         /** How many tabs are open, for the search page's way back to them. */
         var openTabs = 0
@@ -111,6 +111,8 @@ class BrowserActivity : Activity() {
         var loading = false
         var progress = 0
         var secure: Boolean? = null
+        /** Pages ask for their desktop layout, as a computer's browser would. */
+        var desktop = false
     }
 
     private class Carried(val tabs: TabList<Tab>, val listing: Boolean)
@@ -133,6 +135,13 @@ class BrowserActivity : Activity() {
     private var runtime: GeckoRuntime? = null
     private var tabs = TabList<Tab>(MAX_TABS)
     private var level = SecurityLevel.STANDARD
+    private lateinit var drawnWith: Settings.Theme
+    /** The level, images and text size last taken into Gecko; null before the first time. */
+    private var applied: Triple<SecurityLevel, Boolean, Float>? = null
+    /** Addresses of closed tabs, the latest last. Never saved: the browser is private. */
+    private val closed = ArrayDeque<String>()
+    /** A video (or a page) has the whole screen: no toolbar, no system bars. */
+    private var fullScreen = false
     /** Addresses to open once the runtime is ready. */
     private val pending = mutableListOf<String>()
     /** Counts finds, so a slow answer to an earlier keystroke does not overwrite the latest. */
@@ -146,9 +155,15 @@ class BrowserActivity : Activity() {
     private val mono by lazy { resources.getFont(R.font.space_mono) }
     private val monoBold by lazy { resources.getFont(R.font.space_mono_bold) }
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        Appearance.apply(this, base)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         running = WeakReference(this)
+        drawnWith = Appearance.chosen(this)
         level = SecurityLevel.from(prefs().getString(SecurityLevel.KEY, null))
         applyScreenshotSetting()
         buildViews()
@@ -171,6 +186,46 @@ class BrowserActivity : Activity() {
     override fun onStart() {
         super.onStart()
         shown?.session?.takeIf { it.isOpen }?.setActive(true)
+        takeSettings()
+    }
+
+    /**
+     * Settings changed while the browser was behind: a new theme draws it again, the rest go into
+     * Gecko, and pages loaded under another security level or image setting load again.
+     */
+    private fun takeSettings() {
+        if (Appearance.chosen(this) != drawnWith) {
+            recreate()
+            return
+        }
+        applyScreenshotSetting()
+        val runtime = runtime ?: return
+        val prefs = prefs()
+        val wanted = Triple(
+            SecurityLevel.from(prefs.getString(SecurityLevel.KEY, null)),
+            prefs.getBoolean(Settings.IMAGES, true),
+            Settings.textSize(prefs.getFloat(Settings.TEXT_SIZE, 1f)),
+        )
+        val before = applied
+        if (wanted == before) return
+        Browser.applySettings(this, runtime).accept(
+            {
+                applied = wanted
+                level = wanted.first
+                // The text size reflows a page by itself; the rest needs it loaded again.
+                if (before != null && (before.first != wanted.first || before.second != wanted.second)) {
+                    for (tab in tabs.all) {
+                        allowScripts(tab.session, tab.url)
+                        if (tab.url != null) tab.session.reload()
+                    }
+                }
+            },
+            { error ->
+                // Gecko kept the old level: so does the setting.
+                before?.let { prefs.edit().putString(SecurityLevel.KEY, it.first.name).apply() }
+                Toast.makeText(this, getString(R.string.browser_level_failed, error?.message ?: error.toString()), Toast.LENGTH_LONG).show()
+            },
+        )
     }
 
     override fun onStop() {
@@ -211,6 +266,7 @@ class BrowserActivity : Activity() {
     private fun goBack() {
         val tab = shown
         when {
+            fullScreen -> tab?.session?.exitFullScreen() ?: setFullScreen(false)
             findBar.visibility == View.VISIBLE -> closeFind()
             tabList.visibility == View.VISIBLE && tab != null -> showTabList(false)
             tab == null -> finishAndRemoveTask()
@@ -226,6 +282,7 @@ class BrowserActivity : Activity() {
 
     private fun start(ready: GeckoRuntime) {
         runtime = ready
+        takeSettings()
         carried?.let { kept ->
             carried = null
             tabs = kept.tabs
@@ -292,6 +349,11 @@ class BrowserActivity : Activity() {
 
     /** Closes [tab]; [then] is shown next if it is still open, else the tab that takes its place. */
     private fun closeTab(tab: Tab, then: Tab? = null) {
+        tab.url?.takeIf { Uri.parse(it).let { u -> BrowserConfig.isWebPage(u.scheme, u.host) } }?.let { url ->
+            closed.remove(url)
+            closed.addLast(url)
+            if (closed.size > MAX_CLOSED) closed.removeFirst()
+        }
         if (geckoView.session === tab.session) geckoView.releaseSession()
         tab.session.close()
         tabs.all.forEach { if (it.opener === tab) it.opener = null }
@@ -469,6 +531,11 @@ class BrowserActivity : Activity() {
             Toast.makeText(this@BrowserActivity, R.string.browser_no_downloads, Toast.LENGTH_LONG).show()
         }
 
+        // A video's full-screen button, or a page asking for the whole screen.
+        override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
+            if (tabOf(session) === shown) setFullScreen(fullScreen)
+        }
+
         override fun onCrash(session: GeckoSession) = recover(session)
 
         override fun onKill(session: GeckoSession) = recover(session)
@@ -569,56 +636,14 @@ class BrowserActivity : Activity() {
 
     private fun askSecurityLevel() {
         val levels = SecurityLevel.entries
-        // Each level's name, and under it, smaller, what it turns off.
-        val items = levels.map { option ->
-            val about = getString(
-                when (option) {
-                    SecurityLevel.STANDARD -> R.string.browser_level_standard_about
-                    SecurityLevel.SAFER -> R.string.browser_level_safer_about
-                    SecurityLevel.SAFEST -> R.string.browser_level_safest_about
-                },
-            )
-            SpannableStringBuilder().apply {
-                append(levelName(option), StyleSpan(Typeface.BOLD), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                append("\n")
-                val start = length
-                append(about)
-                setSpan(ForegroundColorSpan(getColor(R.color.muted)), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                setSpan(RelativeSizeSpan(0.87f), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.browser_security_level)
-            .setSingleChoiceItems(items.toTypedArray<CharSequence>(), levels.indexOf(level)) { dialog, which ->
-                dialog.dismiss()
-                setLevel(levels[which])
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        pickOne(getString(R.string.browser_security_level), levelChoices(), levels.indexOf(level)) { setLevel(levels[it]) }
     }
 
-    private fun levelName(option: SecurityLevel) = getString(
-        when (option) {
-            SecurityLevel.STANDARD -> R.string.browser_level_standard
-            SecurityLevel.SAFER -> R.string.browser_level_safer
-            SecurityLevel.SAFEST -> R.string.browser_level_safest
-        },
-    )
-
-    /** Takes [chosen] into Gecko, then loads every open page again under it. */
+    /** Takes [chosen] into Gecko, as Settings does, then loads every open page again under it. */
     private fun setLevel(chosen: SecurityLevel) {
         if (chosen == level) return
-        Browser.apply(chosen).accept(
-            {
-                level = chosen
-                prefs().edit().putString(SecurityLevel.KEY, chosen.name).apply()
-                for (tab in tabs.all) {
-                    allowScripts(tab.session, tab.url)
-                    if (tab.url != null) tab.session.reload()
-                }
-            },
-            { error -> Toast.makeText(this, getString(R.string.browser_level_failed, error?.message ?: error.toString()), Toast.LENGTH_LONG).show() },
-        )
+        prefs().edit().putString(SecurityLevel.KEY, chosen.name).apply()
+        takeSettings()
     }
 
     private fun bookmarks() = Bookmarks.parse(prefs().getString(Bookmarks.KEY, null))
@@ -752,10 +777,15 @@ class BrowserActivity : Activity() {
         getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(from.windowToken, 0)
     }
 
+    /** Opens what was typed, or searches OMNId's index for it when it is not an address. */
     private fun go() {
-        val target = BrowserConfig.address(address.text.toString())
+        val typed = address.text.toString().trim()
+        val target = BrowserConfig.address(typed)
         if (target == null) {
-            Toast.makeText(this, R.string.browser_not_an_address, Toast.LENGTH_SHORT).show()
+            if (typed.isEmpty()) return
+            hideKeyboard(address)
+            address.clearFocus()
+            startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_QUERY, typed))
             return
         }
         // Focus to the page, so the address bar shows where the page went.
@@ -832,31 +862,35 @@ class BrowserActivity : Activity() {
         PopupMenu(this, anchor).apply {
             menu.add(0, MENU_FORWARD, 0, R.string.browser_forward).isEnabled = tab?.canGoForward == true
             menu.add(0, MENU_NEW_TAB, 1, R.string.browser_new_tab)
-            menu.add(0, MENU_FIND, 2, R.string.browser_find).isEnabled = page != null
-            menu.add(0, MENU_BOOKMARK, 3, if (marked) R.string.browser_unbookmark else R.string.browser_bookmark).isEnabled = page != null
-            menu.add(0, MENU_BOOKMARKS, 4, R.string.browser_bookmarks)
-            menu.add(0, MENU_COPY, 5, R.string.browser_copy_link).isEnabled = page != null
-            menu.add(0, MENU_LEVEL, 6, getString(R.string.browser_security_level_now, levelName(level)))
-            menu.add(0, MENU_IDENTITY, 7, R.string.browser_new_identity)
-            menu.add(0, MENU_SCREENSHOTS, 8, R.string.browser_allow_screenshots).apply {
+            menu.add(0, MENU_REOPEN, 2, R.string.browser_reopen_tab).isEnabled = closed.isNotEmpty() && !tabs.isFull
+            menu.add(0, MENU_FIND, 3, R.string.browser_find).isEnabled = page != null
+            menu.add(0, MENU_BOOKMARK, 4, if (marked) R.string.browser_unbookmark else R.string.browser_bookmark).isEnabled = page != null
+            menu.add(0, MENU_BOOKMARKS, 5, R.string.browser_bookmarks)
+            menu.add(0, MENU_SHARE, 6, R.string.browser_share).isEnabled = page != null
+            menu.add(0, MENU_COPY, 7, R.string.browser_copy_link).isEnabled = page != null
+            menu.add(0, MENU_DESKTOP, 8, R.string.browser_desktop_site).apply {
                 isCheckable = true
-                isChecked = screenshotsAllowed()
+                isChecked = tab?.desktop == true
+                isEnabled = tab != null
             }
-            menu.add(0, MENU_CLOSE, 9, R.string.browser_close)
+            menu.add(0, MENU_LEVEL, 9, getString(R.string.browser_security_level_now, levelName(level)))
+            menu.add(0, MENU_IDENTITY, 10, R.string.browser_new_identity)
+            menu.add(0, MENU_SETTINGS, 11, R.string.settings)
+            menu.add(0, MENU_CLOSE, 12, R.string.browser_close)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     MENU_FORWARD -> tab?.session?.goForward()
                     MENU_NEW_TAB -> openTab(null)
+                    MENU_REOPEN -> closed.removeLastOrNull()?.let { openTab(it) }
                     MENU_FIND -> openFind()
                     MENU_BOOKMARK -> tab?.let(::toggleBookmark)
                     MENU_BOOKMARKS -> showBookmarks()
+                    MENU_SHARE -> page?.let(::share)
                     MENU_COPY -> page?.let { copy(BrowserConfig.shareable(it)) }
+                    MENU_DESKTOP -> tab?.let(::toggleDesktop)
                     MENU_LEVEL -> askSecurityLevel()
                     MENU_IDENTITY -> confirmNewIdentity()
-                    MENU_SCREENSHOTS -> {
-                        prefs().edit().putBoolean(KEY_SCREENSHOTS, !item.isChecked).apply()
-                        applyScreenshotSetting()
-                    }
+                    MENU_SETTINGS -> startActivity(Intent(this@BrowserActivity, SettingsActivity::class.java))
                     MENU_CLOSE -> finishAndRemoveTask()
                 }
                 true
@@ -864,9 +898,52 @@ class BrowserActivity : Activity() {
         }.show()
     }
 
+    /** Hands the page's address to another app; a Hyphanet page as its `freenet:` key. */
+    private fun share(page: String) {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, BrowserConfig.shareable(page))
+        startActivity(Intent.createChooser(send, getString(R.string.browser_share)))
+    }
+
+    /** The page's desktop layout, or back to the phone's, for this tab. */
+    private fun toggleDesktop(tab: Tab) {
+        tab.desktop = !tab.desktop
+        tab.session.settings.userAgentMode =
+            if (tab.desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+        tab.session.settings.viewportMode =
+            if (tab.desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
+        if (tab.url != null) tab.session.reload()
+    }
+
+    /** The page alone on the screen, for a video: the toolbars and the system bars go. */
+    private fun setFullScreen(on: Boolean) {
+        if (on == fullScreen) return
+        fullScreen = on
+        for (view in listOf(bar, progress)) view.visibility = if (on) View.GONE else View.VISIBLE
+        if (on) closeFind()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.apply {
+                if (on) {
+                    hide(WindowInsets.Type.systemBars())
+                    systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                } else {
+                    show(WindowInsets.Type.systemBars())
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (on) {
+                View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            } else {
+                0
+            }
+        }
+        // A video turns with the phone; the browser otherwise does as the phone says.
+        requestedOrientation = if (on) ActivityInfo.SCREEN_ORIENTATION_FULL_USER else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
     private fun prefs() = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE)
 
-    private fun screenshotsAllowed() = prefs().getBoolean(KEY_SCREENSHOTS, false)
+    private fun screenshotsAllowed() = prefs().getBoolean(Settings.SCREENSHOTS, false)
 
     /** Off by default: screenshots and the recent-apps thumbnail would keep what was on screen. */
     private fun applyScreenshotSetting() {

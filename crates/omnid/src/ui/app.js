@@ -10,6 +10,9 @@ const $ = (id) => document.getElementById(id);
 // browser opens onion and .i2p addresses over Tor and I2P.
 const EMBEDDED = new URLSearchParams(location.search).has("embedded");
 if (EMBEDDED) document.documentElement.classList.add("embedded");
+// Languages to rank first, from the app's Settings ("de,en"); the browser's
+// Accept-Language otherwise.
+const LANG = new URLSearchParams(location.search).get("lang");
 const ALL_NETWORKS = 5;
 const PAGE = 20;
 const NETWORK_NAMES = { onion: "Onion", clearnet: "Web", magnet: "Torrent", i2p: "I2P", hyphanet: "Hyphanet" };
@@ -334,6 +337,7 @@ async function search({ append = false } = {}) {
   const offset = append ? shown : 0;
   const params = new URLSearchParams({ q: text, limit: String(PAGE), offset: String(offset) });
   if (networks.length < ALL_NETWORKS) params.set("network", networks.join(","));
+  if (LANG) params.set("lang", LANG);
 
   inflight?.abort();
   inflight = new AbortController();
@@ -421,6 +425,7 @@ async function explore(networks) {
     const groups = await Promise.all(present.map(async (network) => {
       // Enough pages to find five sites among them.
       const params = new URLSearchParams({ q: "", limit: "20", network });
+      if (LANG) params.set("lang", LANG);
       const body = await (await fetch(`/api/search?${params}`, { signal: inflight.signal })).json();
       return exploreGroup(network, all.network_counts[network], body.hits);
     }));
@@ -531,12 +536,12 @@ function explain(network, router) {
       return "Torrent lookups are off.";
     case "i2p":
       if (state === "ready") return `I2P sites go through the I2P router ${whereIs(detail) || "on this device"}.`;
-      if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and OMNId uses it right away, or use a router on your own computer: ⋮ → I2P router.";
-      if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router: the free i2pd app on this phone, from F-Droid, which OMNId uses as soon as it runs, or one on your own computer, over Tailscale for instance: ⋮ → I2P router.";
+      if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and OMNId uses it right away, or use a router on your own computer: ⋮ → Settings → I2P router.";
+      if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router: the free i2pd app on this phone, from F-Droid, which OMNId uses as soon as it runs, or one on your own computer, over Tailscale for instance: ⋮ → Settings → I2P router.";
       return "Reaching .i2p sites needs an I2P router, such as the i2pd app, running on this device.";
     case "hyphanet":
       if (state === "ready") return `Hyphanet sites come through the Hyphanet node ${whereIs(detail) || "on this device"}.`;
-      if (EMBEDDED) return `No Hyphanet node answers ${whereIs(detail) || "on this device"}. Use one on your own computer, over Tailscale for instance: ⋮ → Hyphanet node.`;
+      if (EMBEDDED) return `No Hyphanet node answers ${whereIs(detail) || "on this device"}. Use one on your own computer, over Tailscale for instance: ⋮ → Settings → Hyphanet node.`;
       return "Hyphanet sites need a Hyphanet node running on this device.";
     case "clearnet":
       return EMBEDDED
@@ -672,7 +677,13 @@ $("submit").addEventListener("submit", async (event) => {
   if (url && (await submitAddress(url, $("submit-result")))) $("url").value = "";
 });
 
-// /?q=words opens with that search, so a search can be linked to.
+// /?q=words opens with that search, so a search can be linked to;
+// &networks=onion,i2p with those networks' chips on (the app's Settings).
 $("q").value = new URLSearchParams(location.search).get("q") ?? "";
+const startNetworks = new URLSearchParams(location.search).get("networks");
+if (startNetworks) {
+  const chosen = new Set(startNetworks.split(","));
+  for (const input of document.querySelectorAll("#networks input")) input.checked = chosen.has(input.value);
+}
 startStatus();
 search();

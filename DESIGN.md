@@ -449,6 +449,13 @@ The Android browser's chrome: native, on `ground`, speaking the page's type.
 - **Rows:** inset 8dp from the edges, at least 60dp tall, padding 6dp 2dp 6dp 12dp. The page title is in Space Mono Bold (-0.02, one line, ellipsised). Below it, 4dp down, the kind badge sits 8dp before the short address in `muted` mono. A 48dp × closes the tab. Rows are separated by the dashed rule. Bookmarks reuse the same rows and rule.
 - **Current tab:** the ink block. Its title, badge, address and × all take the `ground` colour.
 
+### Settings
+One native screen on `ground` under the action bar, whose title is 18sp Space Mono Bold (-0.02).
+- **Section head:** the name in 11sp Space Mono Bold capitals at 0.08 in `ink-2`, 28dp above and 8dp below, over a 2dp `ink` rule inset 16dp: the search page's list head in native form.
+- **Row:** at least 56dp, padding 16dp × 12dp, on the system's selectable ripple. The setting's name is 16sp sans `ink`; under it, 2dp down, its value is 12.5sp Space Mono Regular `ink-2`. Rows are separated by the dashed rule, inset 16dp.
+- **Switch row:** the same, with the explanation in 14sp sans `ink-2` (a sentence, so the body face) and the platform switch at the right, its thumb in `accent` when on and `muted` when off. The whole row toggles it and speaks for it.
+- **Choice dialog:** the platform dialog with radio buttons tinted `accent`, each choice's name in bold and what it means under it at 0.87 in `muted`. Picking one closes it.
+
 ### Brand Mark
 The icon's four interlocking rings, drawn flat. The web header draws them as an inline SVG stroked in `accent` (stroke 5.48 on a 49-unit box) in both schemes, with no tile and no glow. The Android action bar uses the same rings as a 30dp `accent` vector in both schemes. The launcher icon sets the rings on `ground`.
 
