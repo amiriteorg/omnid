@@ -226,7 +226,8 @@ fn collapse(s: &str, max_bytes: usize) -> String {
             break;
         }
     }
-    truncate(&out, max_bytes).to_owned()
+    // The cut can land just after a space.
+    truncate(&out, max_bytes).trim_end().to_owned()
 }
 
 fn truncate(s: &str, max_bytes: usize) -> &str {
@@ -333,5 +334,6 @@ mod tests {
     fn truncates_on_char_boundaries() {
         assert_eq!(truncate("héllo", 2), "h");
         assert_eq!(collapse("a  b  c", 3), "a b");
+        assert_eq!(collapse("ab cd", 3), "ab", "no trailing space where the cut falls after one");
     }
 }

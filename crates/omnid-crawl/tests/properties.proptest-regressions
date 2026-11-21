@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c175330354be6e964099453b57c00e22fae6557f0ad049e953598ae027b3c33f # shrinks to body = "<title><meta charset=windows-1251>--><title><meta charset=windows-1251><meta name=\"description\" content=\"d\"><title><plaintext><div><div><title>&amp;&lt;&#x1F600;&bogus;<!--&amp;&lt;&#x1F600;&bogus;<meta name=\"description\" content=\"d\"><meta charset=windows-1251><meta name=\"description\" content=\"d\"></script><svg/><!--<script><meta charset=windows-1251>", ct = Some("text/html")
