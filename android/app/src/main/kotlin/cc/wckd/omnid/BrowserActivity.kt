@@ -320,10 +320,10 @@ class BrowserActivity : Activity() {
     private fun showCount() {
         openTabs = tabs.size
         tabButton.count = tabs.size
-        if (tabList.visibility == View.VISIBLE) {
-            tabListTitle.text = resources.getQuantityString(R.plurals.browser_tab_count, tabs.size, tabs.size)
-            tabRows.notifyDataSetChanged()
-        }
+        tabListTitle.text = resources.getQuantityString(R.plurals.browser_tab_count, tabs.size, tabs.size)
+        // Hidden or not: a list that misses a change in its count throws when it next lays out,
+        // which a switch between keyboard and touch makes it do.
+        tabRows.notifyDataSetChanged()
     }
 
     /** The full address while editing, the short form otherwise. */
