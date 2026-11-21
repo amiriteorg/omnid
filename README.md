@@ -233,6 +233,11 @@ gives every site new circuits. GeckoView makes the APK much larger; see
 - **Denylist** (`--denylist`): hostnames (subdomains included), Hyphanet keys,
   magnets, or MD5 hex digests of hostnames, the form published blocklists use.
   Denied sites are never fetched and links to them are never queued.
+- **Ahmia's abuse blocklist**, the onion services reported to Ahmia for
+  abuse (about 60,000, as MD5 digests), is kept in the denylist: the last copy
+  from the data directory at start, then fetched over Tor from Ahmia's onion
+  site and refreshed daily; a list of fewer than 1,000 entries is taken for a
+  broken answer and the held one kept. `--no-blocklist` leaves it out.
 - **Blocked terms** (`--blocked-terms`): a matching page is not indexed, its
   links are not followed, it is never revisited, and it is removed from the
   index if it was there before the list changed.

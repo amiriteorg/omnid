@@ -11,6 +11,9 @@
 //!   published blocklists use so they do not have to print the addresses.
 //! * **Pages that match a blocked term are dropped**, and their links are not
 //!   followed, so a matching directory page does not lead the crawler deeper.
+//! * **A published blocklist** of MD5-hashed hostnames (Ahmia's list of
+//!   onion services reported for abuse) can be swapped in while the crawler
+//!   runs, as the daemon refreshes it ([`Safety::set_published`]).
 //!
 //! What it does not do yet: match media against known-abuse hash lists
 //! (PhotoDNA, NCMEC, IWF). Those lists are licensed to vetted operators and
@@ -20,6 +23,7 @@
 use std::collections::HashSet;
 use std::io;
 use std::path::Path;
+use std::sync::RwLock;
 
 use md5::{Digest, Md5};
 use omnid_core::Source;
@@ -31,10 +35,17 @@ pub enum Verdict {
     BlockedTerm,
 }
 
+/// The most digests taken from a published blocklist: Ahmia's had 60,401 in
+/// November 2026; this leaves it room to grow and bounds what a hostile list
+/// can cost.
+pub const MAX_PUBLISHED: usize = 1_000_000;
+
 #[derive(Debug, Default)]
 pub struct Safety {
     sites: HashSet<String>,
     site_md5s: HashSet<[u8; 16]>,
+    /// From a published blocklist, replaced whole as it is refreshed.
+    published: RwLock<HashSet<[u8; 16]>>,
     /// Lowercase.
     terms: Vec<String>,
 }
@@ -59,11 +70,7 @@ impl Safety {
     pub fn from_lists(denylist: &str, blocked_terms: &str) -> Self {
         let mut safety = Safety::default();
         for entry in entries(denylist) {
-            if entry.len() == 32 && entry.bytes().all(|b| b.is_ascii_hexdigit()) {
-                let mut digest = [0u8; 16];
-                for (i, byte) in digest.iter_mut().enumerate() {
-                    *byte = u8::from_str_radix(&entry[i * 2..i * 2 + 2], 16).expect("checked hex");
-                }
+            if let Some(digest) = md5_hex(entry) {
                 safety.site_md5s.insert(digest);
             } else {
                 let site = Source::parse(entry).map(|s| s.site_key()).unwrap_or_else(|_| entry.to_owned());
@@ -75,7 +82,22 @@ impl Safety {
     }
 
     pub fn denylist_len(&self) -> usize {
-        self.sites.len() + self.site_md5s.len()
+        self.sites.len() + self.site_md5s.len() + self.published().len()
+    }
+
+    /// Replaces the published blocklist with `list`: one MD5 hex digest of a
+    /// hostname per line, other lines skipped, at most [`MAX_PUBLISHED`].
+    /// Returns how many digests it holds now.
+    pub fn set_published(&self, list: &str) -> usize {
+        let digests: HashSet<[u8; 16]> =
+            list.lines().filter_map(|line| md5_hex(line.trim())).take(MAX_PUBLISHED).collect();
+        let held = digests.len();
+        *self.published.write().expect("blocklist lock poisoned") = digests;
+        held
+    }
+
+    fn published(&self) -> std::sync::RwLockReadGuard<'_, HashSet<[u8; 16]>> {
+        self.published.read().expect("blocklist lock poisoned")
     }
 
     pub fn blocked_terms_len(&self) -> usize {
@@ -84,13 +106,14 @@ impl Safety {
 
     /// Checks an address before it is queued or fetched.
     pub fn check_source(&self, source: &Source) -> Verdict {
-        if self.sites.is_empty() && self.site_md5s.is_empty() {
+        let published = self.published();
+        if self.sites.is_empty() && self.site_md5s.is_empty() && published.is_empty() {
             return Verdict::Allow;
         }
         let site = source.site_key().to_ascii_lowercase();
         let denied = parent_domains(&site).any(|candidate| {
-            self.sites.contains(candidate)
-                || self.site_md5s.contains(&<[u8; 16]>::from(Md5::digest(candidate.as_bytes())))
+            let digest = <[u8; 16]>::from(Md5::digest(candidate.as_bytes()));
+            self.sites.contains(candidate) || self.site_md5s.contains(&digest) || published.contains(&digest)
         });
         if denied { Verdict::DeniedSite } else { Verdict::Allow }
     }
@@ -106,6 +129,18 @@ impl Safety {
         });
         if hit { Verdict::BlockedTerm } else { Verdict::Allow }
     }
+}
+
+/// A 32-hex-digit MD5 digest.
+fn md5_hex(entry: &str) -> Option<[u8; 16]> {
+    if entry.len() != 32 || !entry.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut digest = [0u8; 16];
+    for (i, byte) in digest.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&entry[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(digest)
 }
 
 fn entries(list: &str) -> impl Iterator<Item = &str> {
@@ -154,6 +189,28 @@ mod tests {
         let safety = Safety::from_lists(&hex, "");
         assert_eq!(safety.check_source(&source(&format!("http://{ONION}/"))), Verdict::DeniedSite);
         assert_eq!(safety.check_source(&source("http://example.com/")), Verdict::Allow);
+    }
+
+    #[test]
+    fn takes_a_published_blocklist_while_running() {
+        let digest: [u8; 16] = Md5::digest(ONION.as_bytes()).into();
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        let safety = Safety::default();
+        assert_eq!(safety.check_source(&source(&format!("http://{ONION}/"))), Verdict::Allow);
+        // Ahmia's form: one digest per line; anything else is skipped.
+        let list = format!("{hex}\nnot a digest\n{}\n", "0".repeat(32));
+        assert_eq!(safety.set_published(&list), 2);
+        assert_eq!(safety.check_source(&source(&format!("http://{ONION}/x"))), Verdict::DeniedSite);
+        assert_eq!(safety.denylist_len(), 2);
+        // A newer list replaces it.
+        assert_eq!(safety.set_published(""), 0);
+        assert_eq!(safety.check_source(&source(&format!("http://{ONION}/"))), Verdict::Allow);
+    }
+
+    #[test]
+    fn caps_a_published_blocklist() {
+        let list: String = (0..MAX_PUBLISHED + 10).map(|i| format!("{i:032x}\n")).collect();
+        assert_eq!(Safety::default().set_published(&list), MAX_PUBLISHED);
     }
 
     #[test]

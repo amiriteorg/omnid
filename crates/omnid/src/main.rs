@@ -139,6 +139,10 @@ struct CrawlOptions {
     /// nobody linked to, whatever they are. Use a blocked-terms list.
     #[arg(long)]
     dht_harvest: bool,
+    /// Leave out Ahmia's list of onion services reported for abuse, which is
+    /// otherwise kept in the safety gate and refreshed daily over Tor
+    #[arg(long)]
+    no_blocklist: bool,
 }
 
 #[tokio::main]
@@ -173,6 +177,7 @@ async fn serve(common: &Common, data_dir: &Path, args: ServeArgs) -> Result<()> 
         browser_proxy: None,
         dht: (!common.no_dht).then(DhtConfig::default),
         dht_harvest: args.crawl.dht_harvest,
+        abuse_blocklist: !args.crawl.no_blocklist,
     })
     .await?;
     let stop = daemon.shutdown_token();
@@ -196,7 +201,15 @@ async fn crawl(common: &Common, data_dir: &Path, args: CrawlArgs) -> Result<()> 
         seeds.push(Job { source, depth: 0, site_depth: 0, trust: SEED_TRUST });
     }
     let seeds = seeds_or_defaults(seeds, data_dir)?;
-    let mut crawler = Crawler::new(gateway, index, Arc::new(safety(&args.crawl)?), store, crawl_config(&args.crawl));
+    let safety = Arc::new(safety(&args.crawl)?);
+    if !args.crawl.no_blocklist {
+        omnid::load_blocklist(&safety, data_dir);
+        match omnid::refresh_blocklist(&gateway, &safety, data_dir).await {
+            Ok(sites) => tracing::info!(sites, "abuse blocklist refreshed from Ahmia"),
+            Err(e) => tracing::warn!("abuse blocklist: {e:#}; using the last copy, if any"),
+        }
+    }
+    let mut crawler = Crawler::new(gateway, index, safety, store, crawl_config(&args.crawl));
     if !common.no_dht {
         crawler = crawler.with_dht(Dht::start(DhtConfig::default()).await.context("joining the DHT")?);
     }

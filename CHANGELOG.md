@@ -9,6 +9,8 @@
   `site` and `site_depth`, added to older stores on open.
 - Default seeds on Tor, I2P and Hyphanet, used for a new store; the app adds any it is missing at
   every start.
+- Ahmia's list of onion services reported for abuse is kept in the safety gate, refreshed daily
+  over Tor (`--no-blocklist` to leave it out).
 - Directory pages give up to 20,000 links instead of 500.
 
 ## 0.1.1 (2026-11-21)

@@ -79,6 +79,7 @@ fn start_with(data_dir: &Path, token: &str, hyphanet_node: &str, networks: bool)
         // server's job, not a phone's.
         dht: networks.then(|| omnid_dht::DhtConfig { max_peer_connections: 4, ..omnid_dht::DhtConfig::default() }),
         dht_harvest: false,
+        abuse_blocklist: networks,
     }))?;
     let port = daemon.addr().port();
     *running = Some(Running { runtime, daemon });

@@ -17,7 +17,7 @@ use omnid_crawl::{
 };
 use omnid_dht::{Dht, DhtConfig};
 use omnid_index::{SCHEMA_VERSION, SearchIndex};
-use omnid_net::{Gateway, GatewayConfig, RouterState};
+use omnid_net::{FetchOptions, Gateway, GatewayConfig, RouterState};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -48,6 +48,10 @@ pub struct DaemonConfig {
     /// in torrents nobody linked to, whatever they are; the safety gate's
     /// blocked terms are checked against their names and files.
     pub dht_harvest: bool,
+    /// Keeps Ahmia's list of onion services reported for abuse in the safety
+    /// gate: the last copy from the data directory at once, then fetched
+    /// over Tor and refreshed daily.
+    pub abuse_blocklist: bool,
 }
 
 /// Starter addresses on each overlay network, for a new index: services'
@@ -100,6 +104,64 @@ pub fn default_seeds() -> Vec<Job> {
         .collect()
 }
 
+/// Ahmia's list of onion services reported for abuse, as MD5 digests of
+/// their hostnames, from its own onion site.
+const AHMIA_BLOCKLIST: &str = "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/blacklist/banned/";
+const BLOCKLIST_FILE: &str = "ahmia-banned.txt";
+/// A list shorter than this is a broken answer, not a list: keep the one held.
+const MIN_BLOCKLIST: usize = 1_000;
+const BLOCKLIST_REFRESH: Duration = Duration::from_secs(24 * 60 * 60);
+const BLOCKLIST_RETRY: Duration = Duration::from_secs(30 * 60);
+
+/// Puts the last copy of Ahmia's blocklist from `data_dir` into the safety
+/// gate. Returns how many sites it holds.
+pub fn load_blocklist(safety: &Safety, data_dir: &Path) -> usize {
+    match std::fs::read_to_string(data_dir.join(BLOCKLIST_FILE)) {
+        Ok(list) => safety.set_published(&list),
+        Err(_) => 0,
+    }
+}
+
+/// Fetches Ahmia's blocklist over Tor, puts it into the safety gate and
+/// keeps a copy in `data_dir`. Returns how many sites it holds.
+pub async fn refresh_blocklist(gateway: &Gateway, safety: &Safety, data_dir: &Path) -> Result<usize> {
+    let source = Source::parse(AHMIA_BLOCKLIST)?;
+    let opts = FetchOptions {
+        max_bytes: 16 << 20,
+        accept: |content_type| content_type.is_some_and(|t| t.starts_with("text/plain")),
+        ..FetchOptions::default()
+    };
+    let page = gateway.fetch(&source, &opts).await.map_err(|e| anyhow!("{e}"))?;
+    anyhow::ensure!(page.status == 200 && !page.truncated, "Ahmia answered {} for its blocklist", page.status);
+    let list = String::from_utf8_lossy(page.body.as_deref().unwrap_or_default()).into_owned();
+    let digests = list.lines().filter(|l| l.trim().len() == 32).count();
+    anyhow::ensure!(digests >= MIN_BLOCKLIST, "Ahmia's blocklist had {digests} entries; keeping the one held");
+    let held = safety.set_published(&list);
+    std::fs::write(data_dir.join(BLOCKLIST_FILE), &list).context("saving the blocklist")?;
+    Ok(held)
+}
+
+/// Keeps the blocklist current: refreshed daily, retried half-hourly when
+/// Ahmia cannot be reached.
+async fn keep_blocklist(gateway: Arc<Gateway>, safety: Arc<Safety>, data_dir: PathBuf, shutdown: CancellationToken) {
+    loop {
+        let wait = match refresh_blocklist(&gateway, &safety, &data_dir).await {
+            Ok(sites) => {
+                tracing::info!(sites, "abuse blocklist refreshed from Ahmia");
+                BLOCKLIST_REFRESH
+            }
+            Err(e) => {
+                tracing::warn!("abuse blocklist: {e:#}; trying again in 30 minutes");
+                BLOCKLIST_RETRY
+            }
+        };
+        tokio::select! {
+            _ = shutdown.cancelled() => return,
+            _ = tokio::time::sleep(wait) => {}
+        }
+    }
+}
+
 /// A running daemon: routers, crawler and the local API.
 pub struct Daemon {
     addr: SocketAddr,
@@ -120,6 +182,10 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
     let index = Arc::new(open_index(&cfg.data_dir)?);
     let store = Arc::new(open_store(&cfg.data_dir)?);
     let safety = Arc::new(cfg.safety);
+    if cfg.abuse_blocklist {
+        let held = load_blocklist(&safety, &cfg.data_dir);
+        tracing::info!(sites = held, "abuse blocklist loaded from the last copy");
+    }
     tracing::info!(denylist = safety.denylist_len(), blocked_terms = safety.blocked_terms_len(), "safety gate loaded");
 
     let dht = match cfg.dht {
@@ -145,6 +211,9 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
         tokio::spawn(harvest(dht.clone(), store.clone(), shutdown.clone()));
     }
     tokio::spawn(watch_routers(gateway.clone(), store, shutdown.clone()));
+    if cfg.abuse_blocklist {
+        tokio::spawn(keep_blocklist(gateway.clone(), safety.clone(), cfg.data_dir.clone(), shutdown.clone()));
+    }
     let seeder = jobs.clone();
     tokio::spawn(async move {
         for job in cfg.seeds {
@@ -362,6 +431,18 @@ mod tests {
         let store = CrawlStore::in_memory().unwrap();
         assert_eq!(store.discover(&seeds, 0).unwrap(), seeds.len());
         assert_eq!(store.discover(&default_seeds(), 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn loads_the_last_copy_of_the_blocklist() {
+        let dir = std::env::temp_dir().join(format!("omnid-blocklist-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let safety = Safety::default();
+        assert_eq!(load_blocklist(&safety, &dir), 0, "no copy yet");
+        let list: String = (0..MIN_BLOCKLIST).map(|i| format!("{i:032x}\n")).collect();
+        std::fs::write(dir.join(BLOCKLIST_FILE), &list).unwrap();
+        assert_eq!(load_blocklist(&safety, &dir), MIN_BLOCKLIST);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     fn page(url: &str) -> omnid_core::IndexedDoc {
