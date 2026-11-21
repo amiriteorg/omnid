@@ -3,8 +3,8 @@
 //! - [`Dht::metadata`] resolves a magnet's info hash to the torrent's name,
 //!   files and sizes, and estimates the swarm, without downloading content.
 //!   A `get_peers` lookup (BEP 5) finds peers; each is asked for the info
-//!   dict over `ut_metadata` (BEP 9), and the result is checked against the
-//!   info hash.
+//!   dict over `ut_metadata` (BEP 9) as soon as it is found, while the lookup
+//!   goes on, and the result is checked against the info hash.
 //! - [`Dht::harvest`] yields info hashes sampled from DHT nodes with
 //!   `sample_infohashes` (BEP 51), asking each node no more often than it
 //!   says it wants to be asked.
@@ -32,11 +32,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use omnid_core::FileMeta;
-use rand::seq::SliceRandom;
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinSet};
 
+use crate::krpc::NodeInfo;
 use crate::lookup::Kind;
 use crate::peer::PeerError;
 use crate::routing::K;
@@ -44,6 +44,9 @@ use crate::rpc::Core;
 
 /// The longest a get_peers lookup runs.
 const LOOKUP_TIME: Duration = Duration::from_secs(30);
+/// How long a metadata lookup goes on counting peers once the metadata is
+/// in, unless it finishes sooner. See [`TorrentMeta::peers`].
+const COUNT_TIME: Duration = Duration::from_secs(2);
 /// How long a lookup waits for the DHT to become ready.
 const READY_WAIT: Duration = Duration::from_secs(15);
 /// The longest one peer gets to deliver the metadata.
@@ -108,7 +111,9 @@ pub struct TorrentMeta {
     pub total_size: u64,
     pub piece_length: u64,
     pub private: bool,
-    /// Peers found by the lookup: a lower bound on the swarm's size.
+    /// Peers found by the lookup: a lower bound on the swarm's size. The
+    /// lookup counts until it finishes, or for two seconds after the
+    /// metadata arrived if it has not finished by then.
     pub peers: usize,
 }
 
@@ -180,11 +185,15 @@ impl Dht {
         Ok(peers.into_iter().map(SocketAddr::V4).collect())
     }
 
-    /// get_peers, then BEP 9 ut_metadata from peers; SHA-1 verified against
-    /// info_hash.
+    /// get_peers and BEP 9 ut_metadata at once: each peer the lookup finds is
+    /// asked right away, and the first info dict whose SHA-1 is info_hash
+    /// wins.
     pub async fn metadata(&self, info_hash: [u8; 20]) -> Result<TorrentMeta, DhtError> {
         let limit = self.inner.core.cfg.metadata_timeout;
-        tokio::time::timeout(limit, self.fetch_metadata(info_hash)).await.map_err(|_| DhtError::Timeout(limit))?
+        let deadline = Instant::now() + limit;
+        let seeds =
+            tokio::time::timeout(limit, self.seeds(&info_hash)).await.map_err(|_| DhtError::Timeout(limit))??;
+        self.fetch_metadata(info_hash, seeds, deadline).await
     }
 
     /// BEP 51: info hashes sampled from the DHT, honoring each node's
@@ -202,43 +211,61 @@ impl Dht {
         self.inner.core.status()
     }
 
-    async fn lookup_peers(&self, info_hash: [u8; 20], budget: Duration) -> Result<Vec<SocketAddrV4>, DhtError> {
+    /// Where a lookup for `target` starts, once the DHT is ready.
+    async fn seeds(&self, target: &[u8; 20]) -> Result<Vec<NodeInfo>, DhtError> {
         let core = &self.inner.core;
         if !core.wait_ready(READY_WAIT).await {
             return Err(DhtError::NotReady);
         }
-        let seeds = core.closest(&info_hash, 2 * K);
+        let seeds = core.closest(target, 2 * K);
         if seeds.is_empty() {
             return Err(DhtError::NotReady);
         }
-        let outcome = lookup::lookup(core, info_hash, Kind::GetPeers, seeds, Instant::now() + budget).await;
-        tracing::debug!(
-            info_hash = %hex(&info_hash),
-            peers = outcome.peers.len(),
-            queried = outcome.queried,
-            answered = outcome.answered,
-            "dht: get_peers lookup done"
-        );
+        Ok(seeds)
+    }
+
+    async fn lookup_peers(&self, info_hash: [u8; 20], budget: Duration) -> Result<Vec<SocketAddrV4>, DhtError> {
+        let seeds = self.seeds(&info_hash).await?;
+        let deadline = Instant::now() + budget;
+        let outcome = lookup::lookup(&self.inner.core, info_hash, Kind::GetPeers, seeds, deadline, None).await;
+        log_lookup(&info_hash, &outcome);
         Ok(outcome.peers)
     }
 
-    async fn fetch_metadata(&self, info_hash: [u8; 20]) -> Result<TorrentMeta, DhtError> {
+    /// Runs the lookup as a task of its own and asks each peer it finds for
+    /// the metadata as soon as it is found, up to `max_peer_connections` at
+    /// once. The first verified info dict closes the other connections; the
+    /// lookup then counts peers for up to [`COUNT_TIME`] more and is stopped.
+    async fn fetch_metadata(
+        &self,
+        info_hash: [u8; 20],
+        seeds: Vec<NodeInfo>,
+        deadline: Instant,
+    ) -> Result<TorrentMeta, DhtError> {
         let core = &self.inner.core;
-        // Leave at least half the time for the peers.
-        let mut peers = self.lookup_peers(info_hash, (core.cfg.metadata_timeout / 2).min(LOOKUP_TIME)).await?;
-        if peers.is_empty() {
-            return Err(DhtError::NoPeers);
-        }
-        let found = peers.len();
-        peers.shuffle(&mut rand::rng());
-        let mut queue = peers.into_iter();
+        // The lookup gets at most half the time, as when it ran alone, so the
+        // peers it finds last still have the other half.
+        let lookup_end = (Instant::now() + (core.cfg.metadata_timeout / 2).min(LOOKUP_TIME)).min(deadline);
+        // Unbounded, but a lookup sends at most MAX_PEERS. Dropping `search`
+        // stops the lookup.
+        let (found_tx, mut found) = mpsc::unbounded_channel();
+        let mut search = JoinSet::new();
+        let search_core = core.clone();
+        search.spawn(async move {
+            let outcome =
+                lookup::lookup(&search_core, info_hash, Kind::GetPeers, seeds, lookup_end, Some(&found_tx)).await;
+            log_lookup(&info_hash, &outcome);
+        });
+
+        let (mut peers, mut searching) = (0, true);
+        let mut untried: Vec<SocketAddrV4> = Vec::new();
         let mut tasks = JoinSet::new();
         let (mut tried, mut too_large, mut last) = (0, None, String::from("no peer answered"));
-        loop {
-            while tasks.len() < core.cfg.max_peer_connections.max(1) {
-                let Some(peer) = queue.next() else {
-                    break;
-                };
+        let (peer, info) = loop {
+            while tasks.len() < core.cfg.max_peer_connections.max(1) && !untried.is_empty() {
+                // At random, not in the order found, so a node that sends a
+                // flood of peers does not get them all tried first.
+                let peer = untried.swap_remove(rand::random_range(0..untried.len()));
                 tried += 1;
                 let (peer_id, max) = (core.peer_id, core.cfg.max_metadata_bytes);
                 tasks.spawn(async move {
@@ -246,40 +273,76 @@ impl Dht {
                     (peer, tokio::time::timeout(PEER_TIME, fetch).await.unwrap_or(Err(PeerError::Timeout)))
                 });
             }
-            let Some(joined) = tasks.join_next().await else {
-                break;
-            };
-            match joined {
-                Ok((peer, Ok(info))) => {
-                    // These bytes hash to the info hash, so they are the
-                    // torrent's info dict: no other peer can do better.
-                    let mut meta = meta::parse_info(&info).map_err(DhtError::BadMetadata)?;
-                    meta.peers = found;
-                    tracing::debug!(
-                        info_hash = %hex(&info_hash),
-                        %peer,
-                        name = %meta.name,
-                        files = meta.files.len(),
-                        "dht: got metadata"
-                    );
-                    // Dropping `tasks` closes the other connections.
-                    return Ok(meta);
-                }
-                Ok((peer, Err(e))) => {
-                    tracing::trace!(%peer, "dht: no metadata from peer: {e}");
-                    if let PeerError::TooLarge(size) = e {
-                        too_large = Some(size);
+            // Until the lookup is over, a failure of every peer so far is not
+            // the end: it may find more.
+            if !searching && tasks.is_empty() {
+                return Err(match too_large {
+                    _ if peers == 0 => DhtError::NoPeers,
+                    Some(size) => DhtError::TooLarge(size),
+                    None => DhtError::PeersFailed { tried, last },
+                });
+            }
+            tokio::select! {
+                peer = found.recv(), if searching => match peer {
+                    Some(peer) => {
+                        peers += 1;
+                        untried.push(peer);
                     }
-                    last = e.to_string();
+                    None => searching = false,
+                },
+                Some(joined) = tasks.join_next(), if !tasks.is_empty() => match joined {
+                    Ok((peer, Ok(info))) => break (peer, info),
+                    Ok((peer, Err(e))) => {
+                        tracing::trace!(%peer, "dht: no metadata from peer: {e}");
+                        if let PeerError::TooLarge(size) = e {
+                            too_large = Some(size);
+                        }
+                        last = e.to_string();
+                    }
+                    Err(e) => last = format!("peer task failed: {e}"),
+                },
+                _ = tokio::time::sleep_until(deadline.into()) => {
+                    return Err(DhtError::Timeout(core.cfg.metadata_timeout));
                 }
-                Err(e) => last = format!("peer task failed: {e}"),
+            }
+        };
+        // Dropping `tasks` closes the other connections.
+        drop(tasks);
+        // These bytes hash to the info hash, so they are the torrent's info
+        // dict: no other peer can do better.
+        let mut meta = meta::parse_info(&info).map_err(DhtError::BadMetadata)?;
+        tracing::debug!(
+            info_hash = %hex(&info_hash),
+            %peer,
+            name = %meta.name,
+            files = meta.files.len(),
+            tried,
+            peers,
+            "dht: got metadata"
+        );
+        let counted_by = (Instant::now() + COUNT_TIME).min(deadline);
+        while searching {
+            tokio::select! {
+                peer = found.recv() => match peer {
+                    Some(_) => peers += 1,
+                    None => searching = false,
+                },
+                _ = tokio::time::sleep_until(counted_by.into()) => break,
             }
         }
-        match too_large {
-            Some(size) => Err(DhtError::TooLarge(size)),
-            None => Err(DhtError::PeersFailed { tried, last }),
-        }
+        meta.peers = peers;
+        Ok(meta)
     }
+}
+
+fn log_lookup(info_hash: &[u8; 20], outcome: &lookup::Outcome) {
+    tracing::debug!(
+        info_hash = %hex(info_hash),
+        peers = outcome.peers.len(),
+        queried = outcome.queried,
+        answered = outcome.answered,
+        "dht: get_peers lookup done"
+    );
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -304,19 +367,26 @@ mod tests {
     struct Seen {
         not_read_only: AtomicBool,
         samples_asked: AtomicUsize,
+        get_peers_asked: AtomicUsize,
     }
 
-    /// Answers like a DHT node: `nodes` to everything, `peers` to get_peers
-    /// for `info_hash`, `samples` to sample_infohashes.
-    async fn fake_node(
-        socket: UdpSocket,
+    /// How a fake DHT node answers.
+    #[derive(Clone, Default)]
+    struct Node {
         id: [u8; 20],
+        /// `nodes` in answers to everything but get_peers for `info_hash`.
         nodes: Vec<NodeInfo>,
-        peers: Vec<SocketAddrV4>,
-        samples: Vec<[u8; 20]>,
         info_hash: [u8; 20],
-        seen: Arc<Seen>,
-    ) {
+        /// The answer to get_peers for `info_hash`, sent after `delay`.
+        closer: Vec<NodeInfo>,
+        peers: Vec<SocketAddrV4>,
+        delay: Duration,
+        /// The answer to sample_infohashes.
+        samples: Vec<[u8; 20]>,
+    }
+
+    async fn fake_node(socket: UdpSocket, node: Node, seen: Arc<Seen>) {
+        let socket = Arc::new(socket);
         let mut buf = [0; 2048];
         while let Ok((len, from)) = socket.recv_from(&mut buf).await {
             let Some(query) = decode_query(&buf[..len]) else {
@@ -325,40 +395,75 @@ mod tests {
             if !query.read_only {
                 seen.not_read_only.store(true, Ordering::SeqCst);
             }
-            let mut response = Response { id, nodes: nodes.clone(), ..Default::default() };
+            let mut response = Response { id: node.id, nodes: node.nodes.clone(), ..Default::default() };
+            let mut delay = Duration::ZERO;
             match query.query {
-                Query::GetPeers { info_hash: wanted } if wanted == info_hash => response.values = peers.clone(),
+                Query::GetPeers { info_hash } if info_hash == node.info_hash => {
+                    seen.get_peers_asked.fetch_add(1, Ordering::SeqCst);
+                    (response.nodes, response.values, delay) = (node.closer.clone(), node.peers.clone(), node.delay);
+                }
                 Query::SampleInfohashes { .. } => {
                     seen.samples_asked.fetch_add(1, Ordering::SeqCst);
-                    response.samples = samples.clone();
+                    response.samples = node.samples.clone();
                     response.interval = Some(3600);
-                    response.num = Some(samples.len() as u64);
+                    response.num = Some(node.samples.len() as u64);
                 }
                 _ => {}
             }
-            socket.send_to(&encode_response(&query.tid, &response), from).await.unwrap();
+            let (socket, packet) = (socket.clone(), encode_response(&query.tid, &response));
+            tokio::spawn(async move {
+                tokio::time::sleep(delay).await;
+                let _ = socket.send_to(&packet, from).await;
+            });
         }
     }
 
-    async fn fake_peer(
-        info: &[u8],
-        info_hash: [u8; 20],
-        behavior: Behavior,
-        forbidden: Arc<Mutex<Vec<u8>>>,
-    ) -> SocketAddrV4 {
+    /// What the fake peers saw.
+    #[derive(Default)]
+    struct PeerLog {
+        /// IDs of the non-extension messages the client sent: must stay empty.
+        forbidden: Mutex<Vec<u8>>,
+        /// Connections open now, and the most ever open at once.
+        open: AtomicUsize,
+        most_open: AtomicUsize,
+    }
+
+    impl PeerLog {
+        /// Waits a little for the client to close every connection.
+        async fn all_closed(&self) -> bool {
+            for _ in 0..40 {
+                if self.open.load(Ordering::SeqCst) == 0 {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            false
+        }
+    }
+
+    async fn fake_peer(info: &[u8], info_hash: [u8; 20], behavior: Behavior, log: Arc<PeerLog>) -> SocketAddrV4 {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let SocketAddr::V4(addr) = listener.local_addr().unwrap() else { unreachable!() };
         let info = info.to_vec();
         tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
-                let (info, forbidden) = (info.clone(), forbidden.clone());
+                let (info, log) = (info.clone(), log.clone());
+                log.most_open.fetch_max(log.open.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
                 tokio::spawn(async move {
                     if let Ok(ids) = serve(stream, info_hash, info, behavior).await {
-                        forbidden.lock().unwrap().extend(ids);
+                        log.forbidden.lock().unwrap().extend(ids);
                     }
+                    log.open.fetch_sub(1, Ordering::SeqCst);
                 });
             }
         });
+        addr
+    }
+
+    /// An address nothing listens on, so connections are refused at once.
+    async fn refusing() -> SocketAddrV4 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let SocketAddr::V4(addr) = listener.local_addr().unwrap() else { unreachable!() };
         addr
     }
 
@@ -366,6 +471,49 @@ mod tests {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let SocketAddr::V4(addr) = socket.local_addr().unwrap() else { unreachable!() };
         (socket, addr)
+    }
+
+    /// Runs the fake nodes, and a client whose bootstrap router introduces
+    /// the first of them.
+    async fn client(nodes: Vec<(UdpSocket, Node)>, seen: &Arc<Seen>, cfg: DhtConfig) -> Dht {
+        let SocketAddr::V4(addr) = nodes[0].0.local_addr().unwrap() else { unreachable!() };
+        let first = NodeInfo { id: nodes[0].1.id, addr };
+        for (socket, node) in nodes {
+            tokio::spawn(fake_node(socket, node, seen.clone()));
+        }
+        let (router, router_addr) = udp().await;
+        tokio::spawn(fake_node(router, Node { id: [0x24; 20], nodes: vec![first], ..Node::default() }, seen.clone()));
+        let cfg = DhtConfig { bind: "127.0.0.1:0".parse().unwrap(), bootstrap: vec![router_addr.to_string()], ..cfg };
+        Dht::start_with(cfg, true).await.unwrap()
+    }
+
+    /// Nodes in a chain, each closer to the info hash than the last, each
+    /// answering get_peers after `delay` with the next node and its `peers`.
+    /// A lookup walks it one node at a time, so it takes `delay` per node.
+    async fn chain(info_hash: [u8; 20], peers: Vec<Vec<SocketAddrV4>>, delay: Duration) -> Vec<(UdpSocket, Node)> {
+        let mut sockets = Vec::new();
+        for i in 0..peers.len() {
+            let mut id = info_hash;
+            id[1 + i / 8] ^= 0x80 >> (i % 8);
+            let (socket, addr) = udp().await;
+            sockets.push((socket, NodeInfo { id, addr }));
+        }
+        let infos: Vec<NodeInfo> = sockets.iter().map(|(_, info)| *info).collect();
+        sockets
+            .into_iter()
+            .zip(peers)
+            .enumerate()
+            .map(|(i, ((socket, me), peers))| {
+                let closer = infos.get(i + 1).copied().into_iter().collect();
+                (socket, Node { id: me.id, info_hash, closer, peers, delay, ..Node::default() })
+            })
+            .collect()
+    }
+
+    /// A client of a DHT with one node, which knows `peers`.
+    async fn one_node(info_hash: [u8; 20], peers: Vec<SocketAddrV4>, cfg: DhtConfig) -> Dht {
+        let node = Node { id: [0x42; 20], info_hash, peers, ..Node::default() };
+        client(vec![(udp().await.0, node)], &Arc::new(Seen::default()), cfg).await
     }
 
     /// A two-file torrent whose info dict spans two metadata pieces.
@@ -388,32 +536,15 @@ mod tests {
     async fn resolves_metadata_and_harvests_over_loopback() {
         let (info, info_hash) = fixture();
         assert!(info.len() > peer::PIECE);
-        let forbidden = Arc::new(Mutex::new(Vec::new()));
-        let good = fake_peer(&info, info_hash, Behavior::Good, forbidden.clone()).await;
-        let corrupt = fake_peer(&info, info_hash, Behavior::Corrupt, forbidden.clone()).await;
+        let log = Arc::new(PeerLog::default());
+        let good = fake_peer(&info, info_hash, Behavior::Good, log.clone()).await;
+        let corrupt = fake_peer(&info, info_hash, Behavior::Corrupt, log.clone()).await;
 
         let seen = Arc::new(Seen::default());
         let samples = vec![[1; 20], [2; 20], [3; 20]];
-        let (node, node_addr) = udp().await;
-        let (router, router_addr) = udp().await;
-        tokio::spawn(fake_node(
-            node,
-            [0x42; 20],
-            vec![],
-            vec![good, corrupt],
-            samples.clone(),
-            info_hash,
-            seen.clone(),
-        ));
-        let introduced = vec![NodeInfo { id: [0x42; 20], addr: node_addr }];
-        tokio::spawn(fake_node(router, [0x24; 20], introduced, vec![], vec![], info_hash, seen.clone()));
-
-        let cfg = DhtConfig {
-            bind: "127.0.0.1:0".parse().unwrap(),
-            bootstrap: vec![router_addr.to_string()],
-            ..DhtConfig::default()
-        };
-        let dht = Dht::start_with(cfg, true).await.unwrap();
+        let node =
+            Node { id: [0x42; 20], info_hash, peers: vec![good, corrupt], samples: samples.clone(), ..Node::default() };
+        let dht = client(vec![(udp().await.0, node)], &seen, DhtConfig::default()).await;
 
         let meta = dht.metadata(info_hash).await.unwrap();
         assert_eq!(meta.name, "Fixture Film");
@@ -451,7 +582,126 @@ mod tests {
         drop(harvest);
 
         assert!(!seen.not_read_only.load(Ordering::SeqCst), "every query must carry ro=1");
-        assert!(forbidden.lock().unwrap().is_empty(), "sent non-extension messages: {forbidden:?}");
+        let forbidden = log.forbidden.lock().unwrap();
+        assert!(forbidden.is_empty(), "sent non-extension messages: {forbidden:?}");
+    }
+
+    const HOUR: Duration = Duration::from_secs(3600);
+
+    #[tokio::test]
+    async fn does_not_wait_for_slow_or_broken_peers() {
+        let (info, info_hash) = fixture();
+        let log = Arc::new(PeerLog::default());
+        let mut peers = Vec::new();
+        use Behavior::*;
+        for behavior in [Stall(HOUR), Stall(HOUR), Stall(HOUR), Garbage, Corrupt, Reject, Good] {
+            peers.push(fake_peer(&info, info_hash, behavior, log.clone()).await);
+        }
+        peers.push(SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 80)); // a low port: neither tried nor counted
+        let dht = one_node(info_hash, peers, DhtConfig::default()).await;
+
+        let start = Instant::now();
+        let meta = dht.metadata(info_hash).await.unwrap();
+        // A stalled peer holds its connection for the 10 s read timeout.
+        assert!(start.elapsed() < Duration::from_secs(3), "{:?}", start.elapsed());
+        assert_eq!((meta.name.as_str(), meta.peers), ("Fixture Film", 7));
+        assert!(log.all_closed().await, "{} connections left open", log.open.load(Ordering::SeqCst));
+        assert!(log.forbidden.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn tries_peers_while_the_lookup_goes_on() {
+        // Each node of the chain names one peer, and the walk takes 15 s. The
+        // first two peers fail at once, which must not end the search while
+        // the lookup is still finding more; the third stalls; the fourth has
+        // the metadata.
+        const CHAIN: usize = 30;
+        let (info, info_hash) = fixture();
+        let log = Arc::new(PeerLog::default());
+        let mut peers = vec![
+            fake_peer(&info, info_hash, Behavior::Garbage, log.clone()).await,
+            refusing().await,
+            fake_peer(&info, info_hash, Behavior::Stall(HOUR), log.clone()).await,
+            fake_peer(&info, info_hash, Behavior::Good, log.clone()).await,
+        ];
+        while peers.len() < CHAIN {
+            peers.push(refusing().await);
+        }
+        let nodes = chain(info_hash, peers.into_iter().map(|p| vec![p]).collect(), Duration::from_millis(500)).await;
+        let seen = Arc::new(Seen::default());
+        let dht = client(nodes, &seen, DhtConfig::default()).await;
+
+        let start = Instant::now();
+        let meta = dht.metadata(info_hash).await.unwrap();
+        let elapsed = start.elapsed();
+        assert!(elapsed < Duration::from_secs(8), "waited for the lookup: {elapsed:?}");
+        assert_eq!(meta.name, "Fixture Film");
+        // Counted on for a while after the metadata came, but not to the end.
+        assert!((5..CHAIN).contains(&meta.peers), "{} peers", meta.peers);
+        assert!(log.all_closed().await, "{} connections left open", log.open.load(Ordering::SeqCst));
+        let asked = seen.get_peers_asked.load(Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(seen.get_peers_asked.load(Ordering::SeqCst), asked, "the lookup went on after metadata()");
+        assert!(asked < CHAIN, "{asked}");
+    }
+
+    #[tokio::test]
+    async fn a_lookup_that_never_ends_gets_half_the_time() {
+        // A 15 s walk that finds no peers, under a 4 s limit: after 2 s the
+        // answer is that there are none, not a timeout.
+        let info_hash = [0x33; 20];
+        let nodes = chain(info_hash, vec![Vec::new(); 30], Duration::from_millis(500)).await;
+        let cfg = DhtConfig { metadata_timeout: Duration::from_secs(4), ..DhtConfig::default() };
+        let dht = client(nodes, &Arc::new(Seen::default()), cfg).await;
+        let start = Instant::now();
+        let result = dht.metadata(info_hash).await;
+        let elapsed = start.elapsed();
+        assert!(matches!(result, Err(DhtError::NoPeers)), "{result:?} after {elapsed:?}");
+        assert!(elapsed >= Duration::from_millis(1900) && elapsed < Duration::from_secs(3), "{elapsed:?}");
+    }
+
+    #[tokio::test]
+    async fn never_opens_more_than_max_peer_connections() {
+        let (info, info_hash) = fixture();
+        let log = Arc::new(PeerLog::default());
+        let mut peers = Vec::new();
+        for _ in 0..6 {
+            peers.push(fake_peer(&info, info_hash, Behavior::Stall(Duration::from_millis(300)), log.clone()).await);
+        }
+        peers.push(fake_peer(&info, info_hash, Behavior::Good, log.clone()).await);
+        let dht = one_node(info_hash, peers, DhtConfig { max_peer_connections: 2, ..DhtConfig::default() }).await;
+        let meta = dht.metadata(info_hash).await.unwrap();
+        assert_eq!(meta.peers, 7);
+        assert!(log.most_open.load(Ordering::SeqCst) <= 2, "{} at once", log.most_open.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn says_why_no_peer_delivered() {
+        let (info, info_hash) = fixture();
+        let log = Arc::new(PeerLog::default());
+        let broken = vec![
+            fake_peer(&info, info_hash, Behavior::Garbage, log.clone()).await,
+            fake_peer(&info, info_hash, Behavior::Corrupt, log.clone()).await,
+            refusing().await,
+        ];
+        let result = one_node(info_hash, broken, DhtConfig::default()).await.metadata(info_hash).await;
+        assert!(matches!(result, Err(DhtError::PeersFailed { tried: 3, .. })), "{result:?}");
+
+        let oversize = vec![
+            fake_peer(&info, info_hash, Behavior::Oversize(1 << 40), log.clone()).await,
+            fake_peer(&info, info_hash, Behavior::Garbage, log.clone()).await,
+        ];
+        let result = one_node(info_hash, oversize, DhtConfig::default()).await.metadata(info_hash).await;
+        assert!(matches!(result, Err(DhtError::TooLarge(size)) if size == 1 << 40), "{result:?}");
+
+        let stalled = vec![fake_peer(&info, info_hash, Behavior::Stall(HOUR), log.clone()).await];
+        let cfg = DhtConfig { metadata_timeout: Duration::from_secs(1), ..DhtConfig::default() };
+        let dht = one_node(info_hash, stalled, cfg).await;
+        let start = Instant::now();
+        let result = dht.metadata(info_hash).await;
+        assert!(matches!(result, Err(DhtError::Timeout(t)) if t == Duration::from_secs(1)), "{result:?}");
+        assert!(start.elapsed() < Duration::from_secs(3), "{:?}", start.elapsed());
+        assert!(log.all_closed().await, "{} connections left open", log.open.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

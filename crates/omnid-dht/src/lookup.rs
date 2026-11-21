@@ -6,6 +6,7 @@ use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::krpc::{NodeId, NodeInfo, Query};
@@ -109,13 +110,16 @@ impl Candidates {
 
 /// Walks toward `target`, starting from `seeds`, until the `K` closest
 /// nodes found have answered, the query budget is spent or `deadline`
-/// passes. Every node that answers goes into the routing table.
+/// passes. Every node that answers goes into the routing table. A get_peers
+/// lookup also sends each new peer to `found` as soon as it is known, so the
+/// caller can use it while the walk goes on: at most `MAX_PEERS` of them.
 pub(crate) async fn lookup(
     core: &Arc<Core>,
     target: NodeId,
     kind: Kind,
     seeds: Vec<NodeInfo>,
     deadline: Instant,
+    found: Option<&mpsc::UnboundedSender<SocketAddrV4>>,
 ) -> Outcome {
     let query = match kind {
         Kind::FindNode => Query::FindNode { target },
@@ -168,8 +172,13 @@ pub(crate) async fn lookup(
                 }
                 if kind == Kind::GetPeers {
                     for peer in response.values {
-                        if peers.len() < MAX_PEERS && core.usable_peer(peer) {
-                            peers.insert(peer);
+                        if peers.len() < MAX_PEERS
+                            && core.usable_peer(peer)
+                            && peers.insert(peer)
+                            && let Some(found) = found
+                        {
+                            // The receiver may be gone: it had what it needed.
+                            let _ = found.send(peer);
                         }
                     }
                 }
@@ -216,7 +225,7 @@ pub(crate) async fn bootstrap(core: &Arc<Core>) -> usize {
             seeds.extend(response.nodes);
         }
     }
-    lookup(core, core.id, Kind::FindNode, seeds, Instant::now() + BOOTSTRAP_TIME).await;
+    lookup(core, core.id, Kind::FindNode, seeds, Instant::now() + BOOTSTRAP_TIME, None).await;
     core.table_len()
 }
 
@@ -258,7 +267,7 @@ pub(crate) async fn upkeep(core: Arc<Core>) {
         if last_refresh.elapsed() >= REFRESH_INTERVAL {
             let target: NodeId = rand::random();
             let seeds = core.closest(&target, 2 * K);
-            lookup(&core, target, Kind::FindNode, seeds, Instant::now() + BOOTSTRAP_TIME).await;
+            lookup(&core, target, Kind::FindNode, seeds, Instant::now() + BOOTSTRAP_TIME, None).await;
             last_refresh = Instant::now();
         }
     }
@@ -266,7 +275,14 @@ pub(crate) async fn upkeep(core: Arc<Core>) {
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
+
+    use tokio::net::UdpSocket;
+
     use super::*;
+    use crate::DhtConfig;
+    use crate::krpc::Response;
+    use crate::krpc::testing::{decode_query, encode_response};
 
     fn node(id: u8, port: u16) -> NodeInfo {
         let mut node_id = [0; 20];
@@ -334,5 +350,67 @@ mod tests {
         }
         assert_eq!(c.by_distance.len(), MAX_CANDIDATES);
         assert_eq!(c.next(Instant::now()).unwrap().1.port(), 1, "the farthest are dropped, not the closest");
+    }
+
+    /// A node that answers every query with `nodes` and `values`.
+    async fn answering(id: NodeId, nodes: Vec<NodeInfo>, values: Vec<SocketAddrV4>) -> NodeInfo {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let SocketAddr::V4(addr) = socket.local_addr().unwrap() else { unreachable!() };
+        tokio::spawn(async move {
+            let mut buf = [0; 1500];
+            while let Ok((len, from)) = socket.recv_from(&mut buf).await {
+                let Some(query) = decode_query(&buf[..len]) else {
+                    continue;
+                };
+                let response = Response { id, nodes: nodes.clone(), values: values.clone(), ..Default::default() };
+                let _ = socket.send_to(&encode_response(&query.tid, &response), from).await;
+            }
+        });
+        NodeInfo { id, addr }
+    }
+
+    async fn core(allow_private: bool) -> Arc<Core> {
+        let cfg = DhtConfig { bind: "127.0.0.1:0".parse().unwrap(), ..DhtConfig::default() };
+        Arc::new(Core::bind(cfg, allow_private).await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn sends_each_usable_peer_once_as_it_is_found() {
+        let core = core(true).await;
+        let receiver = tokio::spawn(core.clone().receive());
+        let peer = |port| SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+        let target = [0x77; 20];
+        let far = answering([0x76; 20], vec![], vec![peer(5000), peer(6000)]).await;
+        let near = answering([0x70; 20], vec![far], vec![peer(4000), peer(5000), peer(1023)]).await;
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let outcome = lookup(&core, target, Kind::GetPeers, vec![near], deadline, Some(&tx)).await;
+        drop(tx);
+        let mut sent = Vec::new();
+        while let Some(peer) = rx.recv().await {
+            sent.push(peer);
+        }
+        sent.sort();
+        assert_eq!(sent, vec![peer(4000), peer(5000), peer(6000)], "each once; a low port never");
+        let mut peers = outcome.peers;
+        peers.sort();
+        assert_eq!(peers, sent);
+        assert_eq!((outcome.queried, outcome.answered), (2, 2));
+        receiver.abort();
+    }
+
+    #[tokio::test]
+    async fn never_asks_private_seeds() {
+        let core = core(false).await;
+        let node = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let SocketAddr::V4(addr) = node.local_addr().unwrap() else { unreachable!() };
+        let seeds = vec![NodeInfo { id: [1; 20], addr }];
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let outcome = lookup(&core, [0x77; 20], Kind::GetPeers, seeds, deadline, None).await;
+        assert_eq!((outcome.queried, core.status().queries_sent), (0, 0));
+        let mut buf = [0; 64];
+        let heard = tokio::time::timeout(Duration::from_millis(100), node.recv_from(&mut buf)).await;
+        assert!(heard.is_err(), "a loopback node was asked");
     }
 }

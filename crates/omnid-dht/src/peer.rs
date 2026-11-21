@@ -346,6 +346,11 @@ pub(crate) mod testing {
         WrongTorrent,
         NoExtensions,
         Oversize(u64),
+        /// Says nothing after the client's handshake, and hangs up after
+        /// this long or when the client does.
+        Stall(Duration),
+        /// Answers the handshake with bytes that are not one.
+        Garbage,
     }
 
     /// The ID the fake peer asks for on ut_metadata messages.
@@ -361,6 +366,18 @@ pub(crate) mod testing {
         stream.read_exact(&mut theirs).await?;
         let theirs = parse_handshake(&theirs).expect("client sent a handshake");
         assert!(theirs.extensions && theirs.info_hash == info_hash, "client handshake: {theirs:?}");
+        match behavior {
+            Behavior::Stall(limit) => {
+                let _ = tokio::time::timeout(limit, stream.read_to_end(&mut Vec::new())).await;
+                return Ok(Vec::new());
+            }
+            Behavior::Garbage => {
+                stream.write_all(&[0xab; 68]).await?;
+                let _ = stream.read_to_end(&mut Vec::new()).await;
+                return Ok(Vec::new());
+            }
+            _ => {}
+        }
 
         let served_hash = if behavior == Behavior::WrongTorrent { [0xee; 20] } else { info_hash };
         let mut reply = handshake(&served_hash, b"-XX0000-fakepeer0001");
@@ -579,6 +596,10 @@ mod tests {
         let (result, forbidden) = run(Behavior::Oversize(1 << 40)).await;
         assert!(matches!(result, Err(PeerError::TooLarge(_))), "{result:?}");
         assert!(forbidden.is_empty());
+        let (result, _) = run(Behavior::Garbage).await;
+        assert!(matches!(result, Err(PeerError::Protocol(_))), "{result:?}");
+        let (result, _) = run(Behavior::Stall(Duration::from_millis(50))).await;
+        assert!(matches!(result, Err(PeerError::Io(_))), "{result:?}");
     }
 
     #[tokio::test]
