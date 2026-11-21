@@ -251,6 +251,8 @@ Network marks. Each hue identifies where a page lives and appears only as a dot,
 - **Mono** (400, 0.78125rem / 12.5px, 1.4): addresses in routes and Explore rows, ellipsised on one line, with onion and `.b32.i2p` hosts shortened to their first eight and last five characters and Hyphanet keys to their type, the key's first eight characters and the site's own name and path (`USK@62H8KFSZ…/freenet-first-steps/24`).
 
 ### Named Rules
+**The Name Rule.** The product is written OMNId wherever people read it, OMN in capitals and the d lower case, in the brand, the launcher label, notifications and running copy ("OMNId crawls it next"). `omnid` in lower case is only the command, the package and code.
+
 **The Four Sizes Rule.** Every piece of text sits on one of four sizes 1.2 apart: 12.5, 15, 18 and 21.6px, the same values in sp natively. A fifth size is a bug.
 
 **The Mono-Means-Address Rule.** Monospace sets addresses and hashes only, never labels, counts or headings; numbers in the sans use tabular figures instead.
@@ -317,8 +319,8 @@ Quiet and solid: a single accent fill for the one thing to do, everything else o
 - **Error / Disabled:** errors appear as a label-size line under the field in `bad`, confirmations in `ok`; the field itself does not change colour. A disabled native toolbar button drops its icon to 80/255 alpha.
 
 ### Navigation
-- **Web header:** the brand (28px rounded launcher icon and "omnid" in headline) at the left, the trust strip filling the rest; the brand hides inside the app.
-- **Android action bar:** `ground` background at 0dp elevation, carrying a custom brand view (the 30dp mark, 12dp gap, "omnid" at 21sp medium in `ink`) and an overflow menu.
+- **Web header:** the brand (28px rounded launcher icon and "OMNId" in headline) at the left, the trust strip filling the rest; the brand hides inside the app.
+- **Android action bar:** `ground` background at 0dp elevation, carrying a custom brand view (the 30dp mark, 12dp gap, "OMNId" at 21sp medium in `ink`) and an overflow menu.
 - **Mobile treatment:** there is no tab bar or drawer. The search page is home; results open the private browser, and system Back returns.
 
 ### Trust Strip

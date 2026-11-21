@@ -381,7 +381,7 @@ async function search({ append = false } = {}) {
       $("summary").textContent = "";
       $("results").replaceChildren(el("li", { class: "empty" },
         el("h2", {}, "Search did not go through"),
-        el("p", {}, `omnid did not answer (${error.message}). It may be restarting; try again in a moment.`)));
+        el("p", {}, `OMNId did not answer (${error.message}). It may be restarting; try again in a moment.`)));
     }
   } finally {
     loading = false;
@@ -428,7 +428,7 @@ async function explore(networks) {
     $("explore-lists").replaceChildren(...(groups.length ? groups : [indexed ? filteredOut() : emptyIndex()]));
     $("explore").hidden = false;
   } catch (error) {
-    if (error.name !== "AbortError") $("summary").textContent = `omnid did not answer (${error.message}).`;
+    if (error.name !== "AbortError") $("summary").textContent = `OMNId did not answer (${error.message}).`;
   }
 }
 
@@ -481,7 +481,7 @@ function filteredOut() {
 function emptyIndex() {
   return el("div", { class: "empty" },
     el("h2", {}, "Your index is empty so far"),
-    el("p", {}, "omnid fills it by crawling: it starts from a few well-known onion and I2P sites and follows their links. Add an address below to start somewhere else."));
+    el("p", {}, "OMNId fills it by crawling: it starts from a few well-known onion and I2P sites and follows their links. Add an address below to start somewhere else."));
 }
 
 // The trust strip: each network's state in plain words.
@@ -519,7 +519,7 @@ function explain(network, router) {
   const detail = router?.detail ?? "";
   switch (network) {
     case "onion":
-      if (state === "ready") return "Onion sites, and every page you open in omnid's browser, go through Tor, built into omnid.";
+      if (state === "ready") return "Onion sites, and every page you open in OMNId's browser, go through Tor, built into OMNId.";
       if (state === "starting") return `Connecting to Tor (${detail}). Onion sites open once it is ready.`;
       return "Tor is off, so onion sites cannot be reached.";
     case "magnet":
@@ -528,8 +528,8 @@ function explain(network, router) {
       return "Torrent lookups are off.";
     case "i2p":
       if (state === "ready") return `I2P sites go through the I2P router ${whereIs(detail) || "on this device"}.`;
-      if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and omnid uses it right away.";
-      if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router on this phone: the free i2pd app, from F-Droid. omnid uses it as soon as it runs, with nothing to set up.";
+      if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and OMNId uses it right away.";
+      if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router on this phone: the free i2pd app, from F-Droid. OMNId uses it as soon as it runs, with nothing to set up.";
       return "Reaching .i2p sites needs an I2P router, such as the i2pd app, running on this device.";
     case "hyphanet":
       if (state === "ready") return `Hyphanet sites come through the Hyphanet node ${whereIs(detail) || "on this device"}.`;
@@ -537,8 +537,8 @@ function explain(network, router) {
       return "Hyphanet sites need a Hyphanet node running on this device.";
     case "clearnet":
       return EMBEDDED
-        ? "omnid's crawler reads web pages directly from this device. Pages you open in its browser go through Tor."
-        : "omnid's crawler reads web pages directly from this device.";
+        ? "OMNId's crawler reads web pages directly from this device. Pages you open in its browser go through Tor."
+        : "OMNId's crawler reads web pages directly from this device.";
   }
   return detail;
 }
@@ -583,7 +583,7 @@ async function refreshStatus() {
     pause.replaceChildren(icon(c.paused ? "play" : "pause"), c.paused ? "Resume" : "Pause");
     pause.dataset.paused = String(c.paused);
   } catch {
-    $("trust-routers").replaceChildren(el("span", { class: "trust-router unreachable" }, el("span", { class: "state-dot" }), "omnid is not answering"));
+    $("trust-routers").replaceChildren(el("span", { class: "trust-router unreachable" }, el("span", { class: "state-dot" }), "OMNId is not answering"));
     $("trust-crawl").textContent = "";
   }
 }
@@ -653,12 +653,12 @@ async function submitAddress(url, result) {
     const body = await response.json();
     result.className = `submit-result ${response.ok ? "ok" : "error"}`;
     result.textContent = response.ok
-      ? `Added. omnid will crawl ${body.accepted} (${NETWORK_NAMES[body.network] ?? body.network}) next.`
+      ? `Added. OMNId will crawl ${body.accepted} (${NETWORK_NAMES[body.network] ?? body.network}) next.`
       : body.error;
     return response.ok;
   } catch (error) {
     result.className = "submit-result error";
-    result.textContent = `omnid did not answer (${error.message}).`;
+    result.textContent = `OMNId did not answer (${error.message}).`;
     return false;
   }
 }

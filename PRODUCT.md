@@ -55,7 +55,8 @@ nothing sent to a search provider.
 
 ## Brand Commitments
 
-- Name: omnid, lower case.
+- Name: OMNId (OMN in capitals, the d lower case) wherever people read it: the app, its launcher
+  label, notifications and the search page. The command, package, crates and code stay `omnid`.
 - Icon: `assets/logo.png`, four interlocking glowing rings in periwinkle, lavender and cyan on
   deep navy (`#0B0D1F` is the launcher background). The user asked for the app's colors and feel
   to come from it.
