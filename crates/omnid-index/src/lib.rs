@@ -28,6 +28,10 @@ pub type Result<T> = tantivy::Result<T>;
 /// so a schema change opens a fresh index instead of misreading an old one.
 pub const SCHEMA_VERSION: u32 = 3;
 
+/// The deepest a search pages: past this many results nothing more is
+/// returned. The offset comes from whoever asks, and the work grows with it.
+pub const MAX_OFFSET: usize = 10_000;
+
 /// Upper bound on the addresses listed for one piece of content.
 const MAX_ROUTES: usize = 16;
 const WRITER_HEAP_BYTES: usize = 50_000_000;
@@ -348,7 +352,10 @@ impl SearchIndex {
         let f = self.fields;
         let limit = q.limit.clamp(1, 100);
         // Over-fetch so that folding mirrors together still fills the page.
-        let window = (q.offset + limit) * 4;
+        // The offset comes from the request: unbounded, it made Tantivy try to
+        // allocate terabytes and abort the process, which no task can catch.
+        let offset = q.offset.min(MAX_OFFSET);
+        let window = (offset + limit) * 4;
         let languages: Arc<[String]> = q.languages.iter().cloned().collect();
         let top_docs =
             TopDocs::with_limit(window).tweak_score(move |segment: &SegmentReader| rank(segment, &languages));
@@ -386,7 +393,7 @@ impl SearchIndex {
         for (score, address) in top {
             let doc: TantivyDocument = searcher.doc(address)?;
             let content_hash = text(&doc, f.content_hash);
-            if !grouped.insert(content_hash.clone()) || grouped.len() <= q.offset {
+            if !grouped.insert(content_hash.clone()) || grouped.len() <= offset {
                 continue;
             }
             let title = text(&doc, f.title);
@@ -1132,6 +1139,10 @@ mod tests {
         let all: Vec<_> = [page(0), page(2), page(4)].concat();
         assert_eq!(all.len(), 5);
         assert_eq!(all.iter().collect::<HashSet<_>>().len(), 5, "no repeats across pages");
+        // An offset from a hostile request: an empty page, not an allocation
+        // of terabytes that aborts the process.
+        assert!(page(1 << 40).is_empty());
+        assert!(page(usize::MAX).is_empty(), "no overflow either");
     }
 
     #[test]
