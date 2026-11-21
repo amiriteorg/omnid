@@ -87,6 +87,37 @@ internal object Settings {
         if (!query.isNullOrBlank()) append("&q=").append(java.net.URLEncoder.encode(query.trim(), "UTF-8").replace("+", "%20"))
     }
 
+    /**
+     * The proxy for other apps on this phone: SOCKS5 and HTTP on one loopback port, never direct,
+     * each username on Tor circuits of its own. On or off, and whether it wants its password
+     * (locked, the default: any app can reach loopback).
+     */
+    const val APP_PROXY = "app_proxy"
+    const val APP_PROXY_LOCKED = "app_proxy_locked"
+    private const val APP_PROXY_PASSWORD = "app_proxy_password"
+    const val APP_PROXY_PORT = 7172
+
+    /** The proxy's password, made the first time it is asked for. */
+    fun appProxyPassword(prefs: android.content.SharedPreferences): String =
+        prefs.getString(APP_PROXY_PASSWORD, null) ?: newAppProxyPassword(prefs)
+
+    /** A new password for the proxy, replacing the old one. */
+    fun newAppProxyPassword(prefs: android.content.SharedPreferences): String {
+        val password = password(ByteArray(15).also(java.security.SecureRandom()::nextBytes))
+        prefs.edit().putString(APP_PROXY_PASSWORD, password).apply()
+        return password
+    }
+
+    /**
+     * [random] as a password people can type when they must: lowercase base32 without padding,
+     * in groups of four ("abcd-efgh-…"); 15 bytes make 24 letters and digits, 120 bits.
+     */
+    fun password(random: ByteArray): String {
+        val alphabet = "abcdefghijklmnopqrstuvwxyz234567"
+        val bits = random.joinToString("") { (it.toInt() and 0xff).toString(2).padStart(8, '0') }
+        return bits.chunked(5).filter { it.length == 5 }.map { alphabet[it.toInt(2)] }.chunked(4).joinToString("-") { it.joinToString("") }
+    }
+
     /** The Gecko prefs the settings ask for: the security level's, and whether images load. */
     fun geckoPrefs(level: SecurityLevel, images: Boolean): Map<String, Any> =
         level.prefs + ("permissions.default.image" to if (images) 1 else 2)

@@ -2,12 +2,16 @@ package cc.wckd.omnid
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -88,6 +92,19 @@ class SettingsActivity : Activity() {
         render()
     }
 
+    /** The daemon restarting changes what the proxy for other apps shows. */
+    private val onServiceChange: () -> Unit = { runOnUiThread(::render) }
+
+    override fun onStart() {
+        super.onStart()
+        OmnidService.observe(onServiceChange)
+    }
+
+    override fun onStop() {
+        OmnidService.unobserve(onServiceChange)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         if (Appearance.chosen(this) != drawnWith) recreate()
@@ -146,6 +163,26 @@ class SettingsActivity : Activity() {
         divider()
         choice(R.string.hyphanet_node, prefs.getString(HyphanetNode.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_phone) }) {
             askRouter(R.string.hyphanet_node, R.string.hyphanet_node_detail, R.string.hyphanet_node_hint, R.string.hyphanet_node_invalid, HyphanetNode.KEY, HyphanetNode::parse)
+        }
+
+        section(R.string.settings_app_proxy)
+        toggle(R.string.settings_app_proxy_on, R.string.settings_app_proxy_about, Settings.APP_PROXY, default = false) { restartDaemon() }
+        if (prefs.getBoolean(Settings.APP_PROXY, false)) {
+            val address = "127.0.0.1:${Settings.APP_PROXY_PORT}"
+            val endpoint = OmnidService.endpoint
+            val state = when {
+                endpoint == null -> getString(R.string.settings_app_proxy_starting)
+                endpoint.appProxyPort == 0 -> getString(R.string.settings_app_proxy_taken, Settings.APP_PROXY_PORT)
+                else -> getString(R.string.settings_app_proxy_running, address)
+            }
+            divider()
+            choice(R.string.settings_app_proxy_address, state) { copy(address, sensitive = false) }
+            divider()
+            toggle(R.string.settings_app_proxy_locked, R.string.settings_app_proxy_locked_about, Settings.APP_PROXY_LOCKED, default = true) { restartDaemon() }
+            if (prefs.getBoolean(Settings.APP_PROXY_LOCKED, true)) {
+                divider()
+                choice(R.string.settings_app_proxy_password, Settings.appProxyPassword(prefs)) { askProxyPassword() }
+            }
         }
 
         section(R.string.settings_about)
@@ -218,15 +255,18 @@ class SettingsActivity : Activity() {
         }, matchWidth(LinearLayout.LayoutParams.WRAP_CONTENT))
     }
 
-    /** A setting that is on or off, saved under [key] as it is switched. */
-    private fun toggle(title: Int, about: Int, key: String, default: Boolean) {
+    /** A setting that is on or off, saved under [key] as it is switched; then [changed] runs. */
+    private fun toggle(title: Int, about: Int, key: String, default: Boolean, changed: (() -> Unit)? = null) {
         val switch = Switch(this).apply {
             isChecked = prefs().getBoolean(key, default)
             thumbTintList = ColorStateList(
                 arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                 intArrayOf(getColor(R.color.accent), getColor(R.color.muted)),
             )
-            setOnCheckedChangeListener { _, on -> prefs().edit().putBoolean(key, on).apply() }
+            setOnCheckedChangeListener { _, on ->
+                prefs().edit().putBoolean(key, on).apply()
+                changed?.invoke()
+            }
             // The row speaks for it and takes the taps; one control, one name.
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isClickable = false
@@ -441,6 +481,31 @@ class SettingsActivity : Activity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    /** The proxy's password: copy it for another app's settings, or make a new one. */
+    private fun askProxyPassword() {
+        val password = Settings.appProxyPassword(prefs())
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_app_proxy_password)
+            .setMessage(getString(R.string.settings_app_proxy_password_detail, password))
+            .setPositiveButton(R.string.settings_copy) { _, _ -> copy(password, sensitive = true) }
+            .setNeutralButton(R.string.settings_app_proxy_new_password) { _, _ ->
+                Settings.newAppProxyPassword(prefs())
+                restartDaemon()
+                render()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    /** Onto the clipboard; a password is marked sensitive, so the keyboard's clipboard hides it. */
+    private fun copy(text: String, sensitive: Boolean) {
+        val clip = ClipData.newPlainText(null, text)
+        if (sensitive) clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
+        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(clip)
+        // From Android 13 the system says so itself.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) Toast.makeText(this, R.string.browser_copied, Toast.LENGTH_SHORT).show()
     }
 
     private fun showLicenses() {

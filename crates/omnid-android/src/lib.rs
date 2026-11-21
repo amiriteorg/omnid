@@ -20,6 +20,7 @@ use omnid::{Daemon, DaemonConfig};
 use omnid_core::{Network, now_secs};
 use omnid_crawl::{CrawlConfig, Politeness, Safety};
 use omnid_net::GatewayConfig;
+use serde::Deserialize;
 
 static RUNNING: Mutex<Option<Running>> = Mutex::new(None);
 static LOGGING: Once = Once::new();
@@ -31,11 +32,34 @@ struct Running {
 
 /// Starts the daemon if it is not running and returns its port. Crawling
 /// starts paused; the caller applies its battery and network policy with
-/// [`set_paused`]. `hyphanet_node` is a Hyphanet node's FProxy and
-/// `i2p_router` an i2pd HTTP proxy elsewhere (the owner's computer over
-/// Tailscale, say), each empty for none. `speed` is how hard to crawl.
-pub fn start(data_dir: &Path, token: &str, hyphanet_node: &str, i2p_router: &str, speed: CrawlSpeed) -> Result<u16> {
-    start_with(data_dir, token, Routers { hyphanet_node, i2p_router }, speed, true)
+/// [`set_paused`].
+pub fn start(data_dir: &Path, token: &str, options: &Options) -> Result<u16> {
+    start_with(data_dir, token, options, true)
+}
+
+/// The app's settings the daemon takes at start, as `Native.start` passes
+/// them: a JSON object with these fields, each optional.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Options {
+    /// A Hyphanet node's FProxy elsewhere (the owner's computer over
+    /// Tailscale, say), or empty for only one on this phone.
+    pub hyphanet_node: String,
+    /// An i2pd HTTP proxy elsewhere, or empty for only the i2pd app's.
+    pub i2p_router: String,
+    /// The ordinal of the app's `Settings.CrawlSpeed`.
+    pub crawl_speed: i32,
+    /// The proxy for other apps on the phone, when it is on.
+    pub app_proxy: Option<AppProxy>,
+}
+
+/// Settings → Proxy for other apps: SOCKS5 and HTTP on this loopback port,
+/// never direct, behind the password if there is one.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppProxy {
+    pub port: u16,
+    pub password: Option<String>,
 }
 
 /// How hard the phone crawls when its policy lets it: the app's Settings →
@@ -69,21 +93,15 @@ impl CrawlSpeed {
     }
 }
 
-/// What the app was told about routers elsewhere: addresses, or empty.
-#[derive(Clone, Copy, Default)]
-struct Routers<'a> {
-    hyphanet_node: &'a str,
-    i2p_router: &'a str,
-}
-
 /// `networks: false` leaves out Tor and the DHT, for tests.
-fn start_with(data_dir: &Path, token: &str, routers: Routers, speed: CrawlSpeed, networks: bool) -> Result<u16> {
+fn start_with(data_dir: &Path, token: &str, options: &Options, networks: bool) -> Result<u16> {
     let mut running = RUNNING.lock().expect("daemon lock poisoned");
     if let Some(running) = running.as_ref() {
         return Ok(running.daemon.addr().port());
     }
     LOGGING.call_once(init_logging);
-    tracing::info!(?speed, "starting the daemon");
+    let speed = CrawlSpeed::from_ordinal(options.crawl_speed);
+    tracing::info!(?speed, app_proxy = options.app_proxy.is_some(), "starting the daemon");
 
     std::fs::create_dir_all(data_dir).with_context(|| format!("creating {}", data_dir.display()))?;
     // The starter seeds a new install needs and an older one is missing:
@@ -95,7 +113,17 @@ fn start_with(data_dir: &Path, token: &str, routers: Routers, speed: CrawlSpeed,
     // Operators can drop lists into the app's data directory.
     let list = |name: &str| Some(data_dir.join(name)).filter(|p| p.exists());
     let safety = Safety::load(list("denylist.txt").as_deref(), list("blocked-terms.txt").as_deref())?;
-    let gateway = gateway(data_dir, routers, networks)?;
+    let gateway = gateway(data_dir, options, networks)?;
+    let app_proxy = options.app_proxy.as_ref().and_then(|proxy| {
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, proxy.port));
+        // Another app may hold the port: the daemon starts without the proxy
+        // rather than not at all, and the app shows it is not running.
+        if let Err(e) = std::net::TcpListener::bind(addr) {
+            tracing::warn!("the proxy for other apps cannot have {addr}: {e}");
+            return None;
+        }
+        Some((addr, omnid::ProxyAccess::Apps { password: proxy.password.clone().filter(|p| !p.is_empty()) }))
+    });
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -112,7 +140,7 @@ fn start_with(data_dir: &Path, token: &str, routers: Routers, speed: CrawlSpeed,
         seeds: vec![],
         api_token: Some(token.to_owned()),
         start_paused: true,
-        socks: None,
+        socks: app_proxy,
         // The app's browser, behind the same secret as the API.
         browser_proxy: Some(token.to_owned()),
         // Magnets get their file lists; harvesting the whole DHT is a
@@ -129,14 +157,14 @@ fn start_with(data_dir: &Path, token: &str, routers: Routers, speed: CrawlSpeed,
 /// The phone's gateway: Tor in the app's data directory, and the routers it
 /// was given ahead of the phone's own: the i2pd app's proxy and a node's
 /// FProxy on this phone, where they listen by default, stay as the fallback.
-fn gateway(data_dir: &Path, routers: Routers, networks: bool) -> Result<GatewayConfig> {
+fn gateway(data_dir: &Path, options: &Options, networks: bool) -> Result<GatewayConfig> {
     let mut gateway = GatewayConfig { tor_dir: networks.then(|| data_dir.join("tor")), ..GatewayConfig::default() };
-    if let Some(node) = elsewhere(routers.hyphanet_node, "Hyphanet node", &["http", "https"])? {
+    if let Some(node) = elsewhere(&options.hyphanet_node, "Hyphanet node", &["http", "https"])? {
         gateway.fproxies.retain(|n| *n != node);
         gateway.fproxies.insert(0, node);
     }
     // i2pd's proxy speaks plain HTTP only.
-    if let Some(router) = elsewhere(routers.i2p_router, "I2P router", &["http"])? {
+    if let Some(router) = elsewhere(&options.i2p_router, "I2P router", &["http"])? {
         gateway.i2p_proxies.retain(|r| *r != router);
         gateway.i2p_proxies.insert(0, router);
     }
@@ -178,6 +206,13 @@ pub fn stop() {
 pub fn browser_proxy_port() -> u16 {
     let running = RUNNING.lock().expect("daemon lock poisoned");
     running.as_ref().and_then(|r| r.daemon.browser_proxy_addr()).map_or(0, |a| a.port())
+}
+
+/// The port of the proxy for other apps, 0 when it is off or could not
+/// have its port.
+pub fn app_proxy_port() -> u16 {
+    let running = RUNNING.lock().expect("daemon lock poisoned");
+    running.as_ref().and_then(|r| r.daemon.socks_addr()).map_or(0, |a| a.port())
 }
 
 /// New Tor circuits for every site the browser visits from now on.
@@ -237,14 +272,12 @@ pub extern "system" fn Java_cc_wckd_omnid_Native_start<'local>(
     _class: JClass<'local>,
     data_dir: JString<'local>,
     token: JString<'local>,
-    hyphanet_node: JString<'local>,
-    i2p_router: JString<'local>,
-    crawl_speed: jint,
+    options: JString<'local>,
 ) -> jint {
     env.with_env(|_| -> Result<jint, NativeError> {
-        let (node, router) = (hyphanet_node.to_string(), i2p_router.to_string());
-        let speed = CrawlSpeed::from_ordinal(crawl_speed);
-        let port = start(Path::new(&data_dir.to_string()), &token.to_string(), &node, &router, speed)
+        let options: Options = serde_json::from_str(&options.to_string())
+            .map_err(|e| NativeError::Daemon(format!("the app's options: {e}")))?;
+        let port = start(Path::new(&data_dir.to_string()), &token.to_string(), &options)
             .map_err(|e| NativeError::Daemon(format!("{e:#}")))?;
         Ok(jint::from(port))
     })
@@ -280,6 +313,15 @@ pub extern "system" fn Java_cc_wckd_omnid_Native_browserProxyPort<'local>(
     _class: JClass<'local>,
 ) -> jint {
     env.with_env(|_| -> Result<jint, NativeError> { Ok(jint::from(browser_proxy_port())) })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cc_wckd_omnid_Native_appProxyPort<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jint {
+    env.with_env(|_| -> Result<jint, NativeError> { Ok(jint::from(app_proxy_port())) })
         .resolve::<ThrowRuntimeExAndDefault>()
 }
 
@@ -362,6 +404,10 @@ mod tests {
         assert_eq!(CrawlSpeed::from_ordinal(7), CrawlSpeed::Normal, "unknown: normal");
     }
 
+    fn routers(hyphanet_node: &str, i2p_router: &str) -> Options {
+        Options { hyphanet_node: hyphanet_node.into(), i2p_router: i2p_router.into(), ..Options::default() }
+    }
+
     fn urls(urls: &[url::Url]) -> Vec<&str> {
         urls.iter().map(url::Url::as_str).collect()
     }
@@ -369,27 +415,23 @@ mod tests {
     #[test]
     fn takes_routers_elsewhere_ahead_of_the_phones_own() {
         let dir = Path::new("unused");
-        let local = gateway(dir, Routers { hyphanet_node: " ", i2p_router: "" }, false).unwrap();
+        let local = gateway(dir, &routers(" ", ""), false).unwrap();
         assert_eq!(urls(&local.fproxies), ["http://127.0.0.1:8888/"], "none given: a node on this phone");
         assert_eq!(urls(&local.i2p_proxies), ["http://127.0.0.1:4444/"], "and the i2pd app");
 
-        let remote = gateway(
-            dir,
-            Routers { hyphanet_node: "http://100.101.102.103:8888/", i2p_router: "http://100.101.102.103:4444/" },
-            false,
-        )
-        .unwrap();
+        let remote =
+            gateway(dir, &routers("http://100.101.102.103:8888/", "http://100.101.102.103:4444/"), false).unwrap();
         assert_eq!(urls(&remote.fproxies), ["http://100.101.102.103:8888/", "http://127.0.0.1:8888/"]);
         assert_eq!(urls(&remote.i2p_proxies), ["http://100.101.102.103:4444/", "http://127.0.0.1:4444/"]);
 
-        let same = gateway(dir, Routers { i2p_router: "http://127.0.0.1:4444/", ..Routers::default() }, false).unwrap();
+        let same = gateway(dir, &routers("", "http://127.0.0.1:4444/"), false).unwrap();
         assert_eq!(urls(&same.i2p_proxies), ["http://127.0.0.1:4444/"], "the phone's own, once");
 
         for node in ["ftp://100.101.102.103/", "100.101.102.103:8888", "not a url"] {
-            assert!(gateway(dir, Routers { hyphanet_node: node, ..Routers::default() }, false).is_err(), "{node}");
+            assert!(gateway(dir, &routers(node, ""), false).is_err(), "{node}");
         }
         for router in ["https://100.101.102.103:4444/", "100.101.102.103:4444"] {
-            assert!(gateway(dir, Routers { i2p_router: router, ..Routers::default() }, false).is_err(), "{router}");
+            assert!(gateway(dir, &routers("", router), false).is_err(), "{router}");
         }
     }
 
@@ -399,10 +441,10 @@ mod tests {
     #[ignore = "live: reaches Tor and the DHT"]
     fn live_stops_with_tor_and_the_dht_running() {
         let dir = std::env::temp_dir().join(format!("omnid-android-live-{}", std::process::id()));
-        start_with(&dir, "token", Routers::default(), CrawlSpeed::Normal, true).unwrap();
+        start_with(&dir, "token", &Options::default(), true).unwrap();
         std::thread::sleep(Duration::from_secs(20));
         stop();
-        let again = start_with(&dir, "token", Routers::default(), CrawlSpeed::Normal, true).unwrap();
+        let again = start_with(&dir, "token", &Options::default(), true).unwrap();
         assert_ne!(again, 0, "and starts again after");
         stop();
         let _ = std::fs::remove_dir_all(dir);
@@ -415,12 +457,22 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("omnid-android-test-{}", std::process::id()));
         // Without Tor or the DHT, so the test stays off the network. A node
         // elsewhere that does not answer: the status says where omnid looked.
-        let elsewhere = Routers { hyphanet_node: "http://127.0.0.1:9", i2p_router: "http://127.0.0.1:10" };
-        let started = start_with(&dir, "token", elsewhere, CrawlSpeed::Fast, false).unwrap();
+        let options: Options = serde_json::from_str(
+            r#"{"hyphanetNode": "http://127.0.0.1:9", "i2pRouter": "http://127.0.0.1:10", "crawlSpeed": 2,
+                "appProxy": {"port": 0, "password": "pw"}}"#,
+        )
+        .unwrap();
+        let started = start_with(&dir, "token", &options, false).unwrap();
         assert_ne!(started, 0);
-        let again = start_with(&dir, "token", Routers::default(), CrawlSpeed::Normal, false).unwrap();
+        let again = start_with(&dir, "token", &Options::default(), false).unwrap();
         assert_eq!(again, started, "a second start reuses the daemon");
         assert_ne!(browser_proxy_port(), 0, "the browser's proxy is up");
+        // The proxy for other apps is up, and wants its password.
+        let mut proxy = std::net::TcpStream::connect(("127.0.0.1", app_proxy_port())).unwrap();
+        proxy.write_all(b"\x05\x01\x00").unwrap();
+        let mut refused = [0u8; 2];
+        proxy.read_exact(&mut refused).unwrap();
+        assert_eq!(refused, [5, 0xff], "no authentication is not offered");
         new_identity();
         set_paused(true, "waiting for a charger");
         let mut stream = std::net::TcpStream::connect(("127.0.0.1", started)).unwrap();
@@ -430,6 +482,7 @@ mod tests {
         stream.read_to_string(&mut body).unwrap();
         stop();
         assert_eq!(browser_proxy_port(), 0, "and down again");
+        assert_eq!(app_proxy_port(), 0);
         assert!(body.starts_with("HTTP/1.1 200"), "{body}");
         assert!(body.contains("waiting for a charger"), "{body}");
         assert!(body.contains("no FProxy at http://127.0.0.1:9/"), "{body}");

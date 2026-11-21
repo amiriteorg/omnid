@@ -62,4 +62,13 @@ class SettingsTest {
         assertEquals(true, prefs["svg.disabled"])
         assertEquals(1, Settings.geckoPrefs(SecurityLevel.STANDARD, images = true)["permissions.default.image"])
     }
+
+    @Test
+    fun makesTypeablePasswords() {
+        assertEquals("aaaa-aaaa-aaaa-aaaa-aaaa-aaaa", Settings.password(ByteArray(15)))
+        assertEquals("7777-7777-7777-7777-7777-7777", Settings.password(ByteArray(15) { -1 }))
+        val password = Settings.password(ByteArray(15) { it.toByte() })
+        assertEquals(29, password.length)
+        assertEquals(true, password.all { it in 'a'..'z' || it in '2'..'7' || it == '-' })
+    }
 }

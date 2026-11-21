@@ -4,6 +4,8 @@
 pub mod api;
 mod socks;
 
+pub use socks::Access as ProxyAccess;
+
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -33,9 +35,10 @@ pub struct DaemonConfig {
     /// Required on every API request when set; see [`api::router`].
     pub api_token: Option<String>,
     pub start_paused: bool,
-    /// Where to serve the SOCKS5 proxy, if at all. It has no authentication:
-    /// anything that can reach it can use it, so keep it on loopback.
-    pub socks: Option<SocketAddr>,
+    /// Where to serve the proxy (SOCKS5 and HTTP on one port), if at all, and
+    /// to whom. An open one has no authentication: anything that can reach it
+    /// can use it, so keep it on loopback.
+    pub socks: Option<(SocketAddr, ProxyAccess)>,
     /// Serves the app's built-in browser, on a free loopback port
     /// ([`Daemon::browser_proxy_addr`]), to clients that send this password:
     /// everything through Tor or i2pd, never direct, each site on circuits of
@@ -242,13 +245,13 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
         tracing::warn!("the API is reachable beyond this machine and has no token; set one");
     }
     let socks = match cfg.socks {
-        Some(addr) => {
-            let listener = tokio::net::TcpListener::bind(addr)
-                .await
-                .with_context(|| format!("binding the SOCKS proxy to {addr}"))?;
+        Some((addr, access)) => {
+            let listener =
+                tokio::net::TcpListener::bind(addr).await.with_context(|| format!("binding the proxy to {addr}"))?;
             let bound = listener.local_addr()?;
-            tokio::spawn(socks::serve(listener, gateway.clone(), Arc::new(socks::Access::Open), shutdown.clone()));
-            tracing::info!("SOCKS5 proxy on {bound}");
+            let private = !matches!(access, ProxyAccess::Open);
+            tokio::spawn(socks::serve(listener, gateway.clone(), Arc::new(access), shutdown.clone()));
+            tracing::info!(private, "SOCKS5 and HTTP proxy on {bound}");
             Some(bound)
         }
         None => None,

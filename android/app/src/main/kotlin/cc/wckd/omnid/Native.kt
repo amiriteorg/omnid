@@ -8,13 +8,14 @@ internal object Native {
 
     /**
      * Starts the daemon if it is not running and returns its loopback port. Crawling starts
-     * paused. [hyphanetNode] is a Hyphanet node's FProxy URL ([HyphanetNode]) and [i2pRouter] an
-     * I2P router's HTTP proxy ([I2pRouter]) elsewhere, each empty for only the one on this phone.
-     * [crawlSpeed] is the ordinal of [Settings.CrawlSpeed]. Throws [RuntimeException] with the
-     * reason when it cannot start.
+     * paused. [options] is a JSON object of the settings it takes at start (`omnid-android`'s
+     * `Options`): `hyphanetNode` ([HyphanetNode]) and `i2pRouter` ([I2pRouter]), each empty for
+     * only the one on this phone; `crawlSpeed`, the ordinal of [Settings.CrawlSpeed]; and
+     * `appProxy`, `{port, password}`, when the proxy for other apps is on. Throws
+     * [RuntimeException] with the reason when it cannot start.
      */
     @JvmStatic
-    external fun start(dataDir: String, token: String, hyphanetNode: String, i2pRouter: String, crawlSpeed: Int): Int
+    external fun start(dataDir: String, token: String, options: String): Int
 
     /** Stops crawling, commits the index and shuts the daemon down. */
     @JvmStatic
@@ -30,6 +31,10 @@ internal object Native {
      */
     @JvmStatic
     external fun browserProxyPort(): Int
+
+    /** The port of the proxy for other apps, 0 when it is off or another app holds the port. */
+    @JvmStatic
+    external fun appProxyPort(): Int
 
     /** New Tor circuits for every site the browser visits from now on. */
     @JvmStatic

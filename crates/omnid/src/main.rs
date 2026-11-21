@@ -94,10 +94,17 @@ struct ServeArgs {
     /// Start with crawling paused; resume with POST /api/crawl
     #[arg(long)]
     paused: bool,
-    /// Serve a SOCKS5 proxy here (e.g. 127.0.0.1:7172) so browsers can open
-    /// .onion and .i2p addresses through omnid; use remote DNS (socks5h)
+    /// Serve a proxy here (e.g. 127.0.0.1:7172), SOCKS5 and HTTP on one port,
+    /// so browsers and other apps open .onion and .i2p addresses through
+    /// omnid; with SOCKS use remote DNS (socks5h)
     #[arg(long, env = "OMNID_SOCKS")]
     socks: Option<SocketAddr>,
+    /// Make the proxy private: only clients that send this password get in
+    /// (as SOCKS5 or HTTP Basic credentials, any username), nothing goes
+    /// direct (the clearnet through Tor exits), and each username gets Tor
+    /// circuits of its own
+    #[arg(long, env = "OMNID_SOCKS_PASSWORD", hide_env_values = true, requires = "socks")]
+    socks_password: Option<String>,
     #[command(flatten)]
     crawl: CrawlOptions,
 }
@@ -175,7 +182,13 @@ async fn serve(common: &Common, data_dir: &Path, args: ServeArgs) -> Result<()> 
         seeds: seeds_or_defaults(seeds(&args.crawl)?, data_dir)?,
         api_token: args.api_token,
         start_paused: args.paused,
-        socks: args.socks,
+        socks: args.socks.map(|addr| {
+            let access = match args.socks_password {
+                Some(password) => omnid::ProxyAccess::Apps { password: Some(password) },
+                None => omnid::ProxyAccess::Open,
+            };
+            (addr, access)
+        }),
         browser_proxy: None,
         dht: (!common.no_dht).then(DhtConfig::default),
         dht_harvest: args.crawl.dht_harvest,

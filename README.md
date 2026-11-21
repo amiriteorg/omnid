@@ -34,7 +34,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Charset detection (BOM, header, `<meta>`) | done, unit tested |
 | Safety gate | done for text; see [Safety](#safety) |
 | Local API and search page, optional token | done, live tested |
-| SOCKS5 proxy (`.onion`/`.i2p` for any browser) | done, live tested with curl over Tor |
+| Proxy, SOCKS5 and HTTP (`.onion`/`.i2p` for any browser or app), open or private | done, live tested with curl over Tor; the app's proxy for other apps run on the emulator (Tor exits per username, an onion, reg.i2p) |
 | Android app (arm64) | done, run on an Android 16 emulator: crawled 225 onion pages over embedded Tor, magnets via the DHT |
 | Browser in the Android app: GeckoView, private, every request through the daemon | done, run on the emulator: onion and clearnet pages over Tor, check.torproject.org reports Tor, New identity changes the exit, reg.i2p through the i2pd app |
 
@@ -54,10 +54,23 @@ $B crawl --max-pages 50 https://example.com/   # crawl until nothing is due, the
 $B crawl                                   # resume whatever the store has due (a new store: the default seeds)
 $B search "tor browser" -n onion
 $B serve --seeds seeds.txt                 # daemon + http://127.0.0.1:7171
-$B serve --socks 127.0.0.1:7172            # ...plus a SOCKS5 proxy
+$B serve --socks 127.0.0.1:7172            # ...plus a proxy, SOCKS5 and HTTP on one port
 curl --socks5-hostname 127.0.0.1:7172 http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/
 curl --socks5-hostname 127.0.0.1:7172 http://hyphanet/USK@…/   # a freesite, through the Hyphanet node
+curl -x http://127.0.0.1:7172 http://reg.i2p/                  # the same port as an HTTP proxy
+OMNID_SOCKS_PASSWORD=… $B serve --socks 127.0.0.1:7172         # a private proxy (below)
+curl -x http://myapp:…@127.0.0.1:7172 https://check.torproject.org/api/ip
 ```
+
+The proxy speaks SOCKS5 and HTTP on the same port: HTTP CONNECT tunnels, and
+an absolute-form request (`GET http://site/`) is passed on in origin form, one
+per connection. With `--socks-password` (or `OMNID_SOCKS_PASSWORD`) it is
+private: only clients that send the password, with any username, as SOCKS5
+credentials or HTTP Basic, get in; nothing goes direct (the clearnet through
+Tor exits, `.i2p` through i2pd, `hyphanet` to the node); and each username gets
+Tor circuits of its own, so apps given different usernames cannot be linked
+by circuit. Either way a client that says nothing for 15 seconds is dropped,
+and one listener serves at most 512 clients at once.
 
 Tor starts with the daemon and needs nothing installed. For I2P run i2pd
 (HTTP proxy on 4444); for Hyphanet run a node (FProxy on 8888). Pages on a
@@ -181,6 +194,13 @@ phone at 127.0.0.1:8888, which is also the fallback.
   doubles them; each site still gets one request at a time with its usual
   pause) and "Crawl on battery and mobile data".
 - **Networks**: the I2P router and Hyphanet node elsewhere.
+- **Proxy for other apps**: other apps on the phone reach Tor, I2P and Hyphanet
+  through OMNId at 127.0.0.1:7172, as SOCKS5 or HTTP, the private proxy above:
+  never direct, each username on Tor circuits of its own, apart from the
+  browser's. It wants its password (made on the phone, shown there to copy,
+  and replaceable) unless "Require the password" is off, which lets any app on
+  the phone use it. If another app holds the port, the row says so and the
+  rest of OMNId runs without it.
 - **About**: the version, the source code and the licenses.
 
 Settings the crawler reads at start (crawl speed, the lists, the routers)
@@ -339,8 +359,9 @@ The daemon itself:
   links only clearnet and magnet routes. Onion and `.i2p` addresses are shown
   for copying, because opening them in an ordinary browser leaks a DNS lookup;
   inside the Android app they open in its own browser.
-- The SOCKS proxy has no authentication; it is off unless `--socks` is given
-  and should stay on loopback.
+- The proxy is off unless `--socks` is given. Without `--socks-password` it has
+  no authentication and should stay on loopback; with one it refuses clients
+  without it and never connects directly.
 
 The Android app's browser:
 
@@ -375,8 +396,9 @@ The Android app's browser:
 - HTTPS onions need a certificate that validates; expired or self-signed ones
   are refused. Facebook's onion rejects the TLS handshake (HTTPS onions such
   as BBC's work).
-- The `--socks` proxy does not isolate streams per client the way Tor Browser
-  does; everything shares circuits. (The Android browser's proxy does.)
+- The open `--socks` proxy does not isolate streams per client the way Tor
+  Browser does; everything shares circuits. A private one (`--socks-password`)
+  isolates by username, and the Android browser's proxy by site.
 - The Android browser is not Tor Browser. It runs release GeckoView with
   Firefox's own fingerprinting protection, not Tor Browser's patched ESR, so a
   site can tell it apart from Tor Browser and from other omnid users only
