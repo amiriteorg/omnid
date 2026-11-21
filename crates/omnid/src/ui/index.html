@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0B0D1F" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#F5F7FC" media="(prefers-color-scheme: light)">
+  <title>OMNId</title>
+  <link rel="icon" href="/icon.png">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/"><img src="/icon.png" alt="" width="28" height="28">OMNId</a>
+    <button id="trust" class="trust" type="button" aria-expanded="false" aria-controls="trust-panel">
+      <span id="trust-routers" class="trust-routers"></span>
+      <span id="trust-crawl" class="trust-crawl"></span>
+      <span class="trust-chevron" data-icon="chevron"></span>
+    </button>
+  </header>
+
+  <section id="trust-panel" class="trust-panel" aria-label="Networks and crawling" hidden>
+    <ul id="router-list" class="router-list"></ul>
+    <div class="crawl-row">
+      <p id="crawl-detail"></p>
+      <button id="pause" class="button" type="button" hidden></button>
+    </div>
+  </section>
+
+  <main>
+    <form id="search" role="search">
+      <div class="field">
+        <span class="field-icon" data-icon="search"></span>
+        <input id="q" type="search" placeholder="Search every network" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search">
+        <button id="clear" class="field-clear" type="button" aria-label="Clear search" hidden><span data-icon="x"></span></button>
+      </div>
+      <fieldset id="networks" class="chips">
+        <legend class="visually-hidden">Networks to search</legend>
+        <label class="chip net-onion"><input type="checkbox" value="onion" checked><span class="check" data-icon="check"></span><span class="dot"></span>Onion<span class="count" data-network="onion"></span></label>
+        <label class="chip net-clearnet"><input type="checkbox" value="clearnet" checked><span class="check" data-icon="check"></span><span class="dot"></span>Web<span class="count" data-network="clearnet"></span></label>
+        <label class="chip net-magnet"><input type="checkbox" value="magnet" checked><span class="check" data-icon="check"></span><span class="dot"></span>Torrents<span class="count" data-network="magnet"></span></label>
+        <label class="chip net-i2p"><input type="checkbox" value="i2p" checked><span class="check" data-icon="check"></span><span class="dot"></span>I2P<span class="count" data-network="i2p"></span></label>
+        <label class="chip net-hyphanet"><input type="checkbox" value="hyphanet" checked><span class="check" data-icon="check"></span><span class="dot"></span>Hyphanet<span class="count" data-network="hyphanet"></span></label>
+      </fieldset>
+    </form>
+
+    <div id="address" class="address"></div>
+    <p id="summary" class="summary" aria-live="polite"></p>
+    <ol id="results" class="results"></ol>
+    <div id="sentinel" aria-hidden="true"></div>
+    <button id="more" class="button more" type="button" hidden>Show more</button>
+
+    <section id="explore" class="explore" hidden>
+      <div id="explore-lists"></div>
+    </section>
+
+    <section class="add" aria-labelledby="add-title">
+      <h2 id="add-title">Add an address</h2>
+      <p>OMNId crawls it next and adds what it finds to your index.</p>
+      <form id="submit" class="add-form">
+        <input id="url" placeholder="Onion, .i2p, magnet or web address" autocomplete="off" autocapitalize="off" spellcheck="false" required aria-label="Address to crawl">
+        <button class="button primary" type="submit"><span data-icon="plus"></span>Add</button>
+      </form>
+      <p id="submit-result" class="submit-result" aria-live="polite"></p>
+    </section>
+  </main>
+</body>
+</html>

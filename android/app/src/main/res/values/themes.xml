@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window, bars and toolbar share the page's ground, so the app reads as one surface. -->
+    <style name="Theme.Omnid" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:colorPrimary">@color/ground</item>
+        <item name="android:colorPrimaryDark">@color/ground</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorBackground">@color/ground</item>
+        <item name="android:windowBackground">@color/ground</item>
+        <item name="android:statusBarColor">@color/ground</item>
+        <item name="android:navigationBarColor">@color/ground</item>
+        <item name="android:windowLightStatusBar">@bool/light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/light_bars</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/ink_2</item>
+        <item name="android:actionBarStyle">@style/Omnid.ActionBar</item>
+    </style>
+
+    <style name="Omnid.ActionBar" parent="android:Widget.DeviceDefault.ActionBar.Solid">
+        <item name="android:background">@color/ground</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:titleTextStyle">@style/Omnid.ActionBar.Title</item>
+    </style>
+
+    <style name="Omnid.ActionBar.Title" parent="android:TextAppearance.DeviceDefault.Widget.ActionBar.Title">
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- The browser draws its own toolbar. -->
+    <style name="Theme.Omnid.Browser" parent="Theme.Omnid">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

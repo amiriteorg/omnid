@@ -1,0 +1,31 @@
+[package]
+name = "omnid-net"
+description = "Multi-network fetch: routes each Source to clearnet, Tor, I2P or Hyphanet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+omnid-core.workspace = true
+arti-client.workspace = true
+bytes.workspace = true
+flate2.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+tor-rtcompat.workspace = true
+tracing.workspace = true
+url.workspace = true
+webpki-roots.workspace = true
+
+[dev-dependencies]
+axum.workspace = true

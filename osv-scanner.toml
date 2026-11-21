@@ -1,0 +1,46 @@
+# Reviewed exceptions for osv-scanner (`./.agents/bin/eng security`).
+#
+# Owner: wckdboy, approved 2026-11-21. Every entry expires on 2027-02-21; the
+# gate then fails again until the advisory is fixed (most by upgrading arti
+# past 0.48) or reviewed anew. Add nothing here without the same review. The
+# assessment is also in README.md, "Known limitations".
+
+# Compiled in, not exploitable as used.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0459"
+ignoreUntil = 2027-02-21T00:00:00Z
+reason = "SQLite < 3.54 bundled by libsqlite3-sys 0.38; fixed in 0.39, which waits on arti (0.48 pins rusqlite 0.40, one SQLite per build). Local only: needs a crafted db and -wal pair in omnid's own data directory."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2023-0071"
+ignoreUntil = 2027-02-21T00:00:00Z
+reason = "rsa 0.9 (Marvin) via arti's tor-llcrypto and tor-key-forge. The timing leak concerns private-key operations; a Tor client only verifies relays' public-key signatures. Fixed in rsa 0.10, which waits on arti."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0542"
+ignoreUntil = 2027-02-21T00:00:00Z
+reason = "humantime unmaintained (no vulnerability); used by arti-client to parse durations."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0436"
+ignoreUntil = 2027-02-21T00:00:00Z
+reason = "paste unmaintained (no vulnerability); a build-time proc macro of arti's fs-mistrust and slotmap-careful."
+
+# In Cargo.lock as optional dependencies but compiled into no omnid build
+# (checked with cargo tree --target all -e all and the build artifacts).
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0387"
+ignoreUntil = 2027-02-21T00:00:00Z
+reason = "crypto-bigint 0.5 timing issues; only an optional dependency of elliptic-curve, not compiled into omnid."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0141"
+ignoreUntil = 2027-02-21T00:00:00Z
+reason = "bincode unmaintained (no vulnerability); only an optional dependency of typed-index-collections, not compiled into omnid."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-21T00:00:00Z
+reason = "chrono unmaintained (no vulnerability); only an optional dependency of serde_with, not compiled into omnid."

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The icon's four rings, cropped to their extent, in the accent colour: the toolbar mark on
+     the light ground, where the icon's pale glow would not read. Dark uses the glow itself
+     (drawable-night-nodpi). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="30dp"
+    android:height="30dp"
+    android:viewportWidth="49"
+    android:viewportHeight="49">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/accent"
+        android:strokeWidth="5.48"
+        android:pathData="M2.89,15.68a12.79,12.79 0 1,0 25.58,0a12.79,12.79 0 1,0 -25.58,0M20.53,15.68a12.79,12.79 0 1,0 25.58,0a12.79,12.79 0 1,0 -25.58,0M2.89,33.32a12.79,12.79 0 1,0 25.58,0a12.79,12.79 0 1,0 -25.58,0M20.53,33.32a12.79,12.79 0 1,0 25.58,0a12.79,12.79 0 1,0 -25.58,0" />
+</vector>

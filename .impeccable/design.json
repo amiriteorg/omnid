@@ -1,0 +1,935 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-21T06:55:45Z",
+  "title": "Design System: omnid",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Deep Ring Navy (dark)",
+        "canonical": "#0B0D1F",
+        "tonalRamp": [
+          "#0a0b0f",
+          "#21232e",
+          "#3b3e52",
+          "#585c73",
+          "#777c94",
+          "#989db6",
+          "#c0c3d3",
+          "#edeef3"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Raised Navy (dark)",
+        "canonical": "#131736",
+        "tonalRamp": [
+          "#090b11",
+          "#1f2334",
+          "#373d5d",
+          "#535b80",
+          "#727ba1",
+          "#939cc4",
+          "#bdc3dc",
+          "#eceef5"
+        ]
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Lifted Navy (dark)",
+        "canonical": "#1A1F45",
+        "tonalRamp": [
+          "#090b12",
+          "#1e2237",
+          "#363d62",
+          "#525a86",
+          "#707aa8",
+          "#919ccb",
+          "#bbc3e0",
+          "#eceef7"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline Indigo (dark)",
+        "canonical": "#262C57",
+        "tonalRamp": [
+          "#090b12",
+          "#1e2239",
+          "#353c64",
+          "#515a89",
+          "#707aab",
+          "#909bcf",
+          "#bbc2e3",
+          "#eceef7"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Moonlit White (dark)",
+        "canonical": "#EEF2FF",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#222429",
+          "#3d3f49",
+          "#5a5d68",
+          "#797d88",
+          "#9a9eaa",
+          "#c1c4cb",
+          "#eeeef0"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Mist Periwinkle (dark)",
+        "canonical": "#B2BBDF",
+        "tonalRamp": [
+          "#0a0b10",
+          "#202332",
+          "#383e59",
+          "#545c7b",
+          "#737b9d",
+          "#949dbf",
+          "#bdc3d9",
+          "#eceef4"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Dusk Slate (dark)",
+        "canonical": "#8690BD",
+        "tonalRamp": [
+          "#090b11",
+          "#1e2237",
+          "#363d60",
+          "#525b84",
+          "#717aa6",
+          "#919cc9",
+          "#bcc3df",
+          "#eceef6"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Ring Periwinkle (dark)",
+        "canonical": "#95AEFB",
+        "tonalRamp": [
+          "#070b16",
+          "#182143",
+          "#2b3a76",
+          "#44589e",
+          "#6379c1",
+          "#829ae6",
+          "#b2c3f2",
+          "#e9eefc"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "On-Accent Ink (dark)",
+        "canonical": "#0B0D1F",
+        "tonalRamp": [
+          "#0a0b0f",
+          "#21232e",
+          "#3b3e52",
+          "#585c73",
+          "#777c94",
+          "#989db6",
+          "#c0c3d3",
+          "#edeef3"
+        ]
+      },
+      "glow": {
+        "role": "primary",
+        "displayName": "Glow Blue (dark)",
+        "canonical": "#4A87FB",
+        "tonalRamp": [
+          "#030a1c",
+          "#041f55",
+          "#013496",
+          "#1a54c3",
+          "#3b76e9",
+          "#699cfb",
+          "#a6c5fc",
+          "#e6effe"
+        ]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus Ring (dark)",
+        "canonical": "rgb(74 135 251 / 0.55)",
+        "tonalRamp": [
+          "#030a1c",
+          "#041f55",
+          "#013496",
+          "#1a54c3",
+          "#3b76e9",
+          "#699cfb",
+          "#a6c5fc",
+          "#e6effe"
+        ]
+      },
+      "mark": {
+        "role": "primary",
+        "displayName": "Periwinkle Wash (dark)",
+        "canonical": "rgb(149 174 251 / 0.22)",
+        "tonalRamp": [
+          "#070b16",
+          "#182143",
+          "#2b3a76",
+          "#44589e",
+          "#6379c1",
+          "#829ae6",
+          "#b2c3f2",
+          "#e9eefc"
+        ]
+      },
+      "mark-ink": {
+        "role": "primary",
+        "displayName": "Ice (dark)",
+        "canonical": "#CFECFB",
+        "tonalRamp": [
+          "#080c0e",
+          "#1a262c",
+          "#2d434e",
+          "#48626f",
+          "#67828f",
+          "#88a3b1",
+          "#b6c7d0",
+          "#ebeff2"
+        ]
+      },
+      "ok": {
+        "role": "secondary",
+        "displayName": "Signal Green (dark)",
+        "canonical": "#4FD18B",
+        "tonalRamp": [
+          "#010f06",
+          "#022c17",
+          "#044d2c",
+          "#0a7042",
+          "#129559",
+          "#31ba75",
+          "#92d6ac",
+          "#e2f4e7"
+        ]
+      },
+      "warn": {
+        "role": "secondary",
+        "displayName": "Amber Caution (dark)",
+        "canonical": "#F5B65B",
+        "tonalRamp": [
+          "#120901",
+          "#331f01",
+          "#583800",
+          "#7f5403",
+          "#a87006",
+          "#ce9131",
+          "#e3bd8c",
+          "#f7eddf"
+        ]
+      },
+      "bad": {
+        "role": "secondary",
+        "displayName": "Coral Alarm (dark)",
+        "canonical": "#FF7A86",
+        "tonalRamp": [
+          "#170506",
+          "#460814",
+          "#7b0223",
+          "#a5263c",
+          "#cb4b5b",
+          "#f26e7b",
+          "#fdaaae",
+          "#ffe8e9"
+        ]
+      },
+      "off": {
+        "role": "secondary",
+        "displayName": "Unlit Slate (dark)",
+        "canonical": "#59628F",
+        "tonalRamp": [
+          "#090b12",
+          "#1e2238",
+          "#363c62",
+          "#515a87",
+          "#707aa9",
+          "#919bcc",
+          "#bbc3e1",
+          "#eceef7"
+        ]
+      },
+      "onion": {
+        "role": "tertiary",
+        "displayName": "Onion Violet (dark)",
+        "canonical": "#A98BFF",
+        "tonalRamp": [
+          "#0c0819",
+          "#28174c",
+          "#472685",
+          "#6543b0",
+          "#8465d5",
+          "#a587fa",
+          "#c7b8ff",
+          "#efecfe"
+        ]
+      },
+      "clearnet": {
+        "role": "tertiary",
+        "displayName": "Clearnet Ice (dark)",
+        "canonical": "#C9D6F5",
+        "tonalRamp": [
+          "#090b0f",
+          "#1f2431",
+          "#363f56",
+          "#525d78",
+          "#717d99",
+          "#929ebb",
+          "#bcc4d6",
+          "#eceef4"
+        ]
+      },
+      "magnet": {
+        "role": "tertiary",
+        "displayName": "Magnet Amber (dark)",
+        "canonical": "#F5B65B",
+        "tonalRamp": [
+          "#120901",
+          "#331f01",
+          "#583800",
+          "#7f5403",
+          "#a87006",
+          "#ce9131",
+          "#e3bd8c",
+          "#f7eddf"
+        ]
+      },
+      "i2p": {
+        "role": "tertiary",
+        "displayName": "I2P Teal (dark)",
+        "canonical": "#45D3D9",
+        "tonalRamp": [
+          "#000e0f",
+          "#002a2c",
+          "#05494c",
+          "#0d6b6e",
+          "#158e93",
+          "#07b4ba",
+          "#8cd3d6",
+          "#e0f3f3"
+        ]
+      },
+      "hyphanet": {
+        "role": "tertiary",
+        "displayName": "Hyphanet Blue (dark)",
+        "canonical": "#6FA2FF",
+        "tonalRamp": [
+          "#050b19",
+          "#0b214b",
+          "#133a85",
+          "#2b59af",
+          "#4a7ad4",
+          "#6a9df9",
+          "#a5c5fe",
+          "#e6efff"
+        ]
+      },
+      "ground-light": {
+        "role": "neutral",
+        "displayName": "Cool Paper (light)",
+        "canonical": "#F5F7FC",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#232426",
+          "#3e4043",
+          "#5c5d62",
+          "#7b7d82",
+          "#9c9ea3",
+          "#c3c4c7",
+          "#eeeeef"
+        ]
+      },
+      "surface-light": {
+        "role": "neutral",
+        "displayName": "Paper White (light)",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "surface-2-light": {
+        "role": "neutral",
+        "displayName": "Lifted Navy (light)",
+        "canonical": "#EDF1FB",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#222428",
+          "#3d4047",
+          "#5a5d66",
+          "#7a7d86",
+          "#9b9ea7",
+          "#c2c4ca",
+          "#eeeef0"
+        ]
+      },
+      "line-light": {
+        "role": "neutral",
+        "displayName": "Hairline Indigo (light)",
+        "canonical": "#DDE3F3",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#21242a",
+          "#3b3f4b",
+          "#585d6b",
+          "#787d8b",
+          "#999ead",
+          "#c0c4cd",
+          "#edeef1"
+        ]
+      },
+      "ink-light": {
+        "role": "neutral",
+        "displayName": "Navy Ink (light)",
+        "canonical": "#0B0D1F",
+        "tonalRamp": [
+          "#0a0b0f",
+          "#21232e",
+          "#3b3e52",
+          "#585c73",
+          "#777c94",
+          "#989db6",
+          "#c0c3d3",
+          "#edeef3"
+        ]
+      },
+      "ink-2-light": {
+        "role": "neutral",
+        "displayName": "Mist Periwinkle (light)",
+        "canonical": "#3D4670",
+        "tonalRamp": [
+          "#090b12",
+          "#1e2238",
+          "#353d62",
+          "#515b86",
+          "#6f7aa8",
+          "#909ccc",
+          "#bbc3e1",
+          "#eceef7"
+        ]
+      },
+      "muted-light": {
+        "role": "neutral",
+        "displayName": "Dusk Slate (light)",
+        "canonical": "#5D668F",
+        "tonalRamp": [
+          "#090b11",
+          "#1e2336",
+          "#363d5f",
+          "#525b83",
+          "#717ba5",
+          "#929cc8",
+          "#bcc3de",
+          "#eceef6"
+        ]
+      },
+      "accent-light": {
+        "role": "primary",
+        "displayName": "Ring Periwinkle (light)",
+        "canonical": "#2F5BE6",
+        "tonalRamp": [
+          "#03091f",
+          "#081a5d",
+          "#0f2aa4",
+          "#234ad5",
+          "#3f6ffb",
+          "#719afc",
+          "#aac4fd",
+          "#e7effe"
+        ]
+      },
+      "accent-ink-light": {
+        "role": "primary",
+        "displayName": "On-Accent Ink (light)",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "glow-light": {
+        "role": "primary",
+        "displayName": "Glow Blue (light)",
+        "canonical": "#2F5BE6",
+        "tonalRamp": [
+          "#03091f",
+          "#081a5d",
+          "#0f2aa4",
+          "#234ad5",
+          "#3f6ffb",
+          "#719afc",
+          "#aac4fd",
+          "#e7effe"
+        ]
+      },
+      "focus-light": {
+        "role": "primary",
+        "displayName": "Focus Ring (light)",
+        "canonical": "rgb(47 91 230 / 0.45)",
+        "tonalRamp": [
+          "#03091f",
+          "#081a5d",
+          "#0f2aa4",
+          "#234ad5",
+          "#3f6ffb",
+          "#719afc",
+          "#aac4fd",
+          "#e7effe"
+        ]
+      },
+      "mark-light": {
+        "role": "primary",
+        "displayName": "Periwinkle Wash (light)",
+        "canonical": "rgb(47 91 230 / 0.14)",
+        "tonalRamp": [
+          "#03091f",
+          "#081a5d",
+          "#0f2aa4",
+          "#234ad5",
+          "#3f6ffb",
+          "#719afc",
+          "#aac4fd",
+          "#e7effe"
+        ]
+      },
+      "mark-ink-light": {
+        "role": "primary",
+        "displayName": "Ice (light)",
+        "canonical": "#0B0D1F",
+        "tonalRamp": [
+          "#0a0b0f",
+          "#21232e",
+          "#3b3e52",
+          "#585c73",
+          "#777c94",
+          "#989db6",
+          "#c0c3d3",
+          "#edeef3"
+        ]
+      },
+      "ok-light": {
+        "role": "secondary",
+        "displayName": "Signal Green (light)",
+        "canonical": "#128A52",
+        "tonalRamp": [
+          "#020f06",
+          "#002d16",
+          "#054d2b",
+          "#0d7041",
+          "#23945b",
+          "#4eb67b",
+          "#9bd4af",
+          "#e4f3e8"
+        ]
+      },
+      "warn-light": {
+        "role": "secondary",
+        "displayName": "Amber Caution (light)",
+        "canonical": "#9C5D00",
+        "tonalRamp": [
+          "#130902",
+          "#371d00",
+          "#5c3604",
+          "#84500a",
+          "#ad6d1e",
+          "#d18e46",
+          "#e5bb93",
+          "#f8ece1"
+        ]
+      },
+      "bad-light": {
+        "role": "secondary",
+        "displayName": "Coral Alarm (light)",
+        "canonical": "#C8283A",
+        "tonalRamp": [
+          "#1a0404",
+          "#4a010b",
+          "#7a071b",
+          "#ae122b",
+          "#d83a47",
+          "#fc656a",
+          "#feaaa8",
+          "#fee9e7"
+        ]
+      },
+      "off-light": {
+        "role": "secondary",
+        "displayName": "Unlit Slate (light)",
+        "canonical": "#9AA2C2",
+        "tonalRamp": [
+          "#0a0b10",
+          "#202331",
+          "#393e57",
+          "#555c79",
+          "#747c9a",
+          "#959dbd",
+          "#bec3d7",
+          "#edeef4"
+        ]
+      },
+      "onion-light": {
+        "role": "tertiary",
+        "displayName": "Onion Violet (light)",
+        "canonical": "#6A49DF",
+        "tonalRamp": [
+          "#0a071e",
+          "#24105a",
+          "#41159e",
+          "#5d37cd",
+          "#7a5df4",
+          "#998cfb",
+          "#bfbcfc",
+          "#edecfe"
+        ]
+      },
+      "clearnet-light": {
+        "role": "tertiary",
+        "displayName": "Clearnet Ice (light)",
+        "canonical": "#4A5480",
+        "tonalRamp": [
+          "#090b12",
+          "#1e2238",
+          "#343d63",
+          "#505a87",
+          "#6f7aa9",
+          "#8f9ccc",
+          "#bbc3e1",
+          "#eceef7"
+        ]
+      },
+      "magnet-light": {
+        "role": "tertiary",
+        "displayName": "Magnet Amber (light)",
+        "canonical": "#9C5D00",
+        "tonalRamp": [
+          "#130902",
+          "#371d00",
+          "#5c3604",
+          "#84500a",
+          "#ad6d1e",
+          "#d18e46",
+          "#e5bb93",
+          "#f8ece1"
+        ]
+      },
+      "i2p-light": {
+        "role": "tertiary",
+        "displayName": "I2P Teal (light)",
+        "canonical": "#0B7F86",
+        "tonalRamp": [
+          "#020e0f",
+          "#012a2d",
+          "#07494d",
+          "#006b71",
+          "#268d94",
+          "#4fafb6",
+          "#9bcfd3",
+          "#e4f2f3"
+        ]
+      },
+      "hyphanet-light": {
+        "role": "tertiary",
+        "displayName": "Hyphanet Blue (light)",
+        "canonical": "#2A63D6",
+        "tonalRamp": [
+          "#030a1c",
+          "#051e56",
+          "#023397",
+          "#1b53c5",
+          "#3b76ea",
+          "#699cfc",
+          "#a6c5fd",
+          "#e6effe"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section heads (Onion sites, Add an address) and the brand name; 21.6sp medium natively."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Result titles and empty-state heads; the search field's text at this size, weight 400."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Snippets (max 70ch, three lines), explanations, inputs, the browser address."
+      },
+      "body-strong": {
+        "displayName": "Body Strong",
+        "purpose": "Buttons, router names, Explore site names."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Trust strip, summary, meta lines, file lists; tabular figures for numbers."
+      },
+      "label-strong": {
+        "displayName": "Label Strong",
+        "purpose": "Route badges; the browser's kind label natively (12sp medium)."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Addresses and hashes only, one ellipsised line."
+      }
+    },
+    "shadows": [
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 4px var(--focus)",
+        "purpose": "Around a focused search or address field, with the border turning glow. Spread without blur; the only coloured shadow."
+      },
+      {
+        "name": "hollow-dot",
+        "value": "inset 0 0 0 1.5px var(--net)",
+        "purpose": "Draws an unselected chip's 8px network dot as a ring; removed when the chip is selected."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Every web transition and keyframe entrance (--ease)."
+      },
+      {
+        "name": "duration-state",
+        "value": "160ms",
+        "purpose": "Border, background and colour changes on chips, buttons, the trust strip and fields."
+      },
+      {
+        "name": "duration-reveal",
+        "value": "200ms",
+        "purpose": "Trust panel opening (fade and 6px drop), chevron turns, the focus ring appearing."
+      },
+      {
+        "name": "duration-enter",
+        "value": "220ms",
+        "purpose": "A result new to the list fades in from 0.4 opacity and rises 4px; rows already showing stay still."
+      },
+      {
+        "name": "search-debounce",
+        "value": "120ms",
+        "purpose": "Typing pause before a search runs."
+      },
+      {
+        "name": "skeleton-delay",
+        "value": "150ms",
+        "purpose": "Skeleton rows appear only when a search takes longer than this; there is no spinner."
+      },
+      {
+        "name": "skeleton-shimmer",
+        "value": "1.2s linear infinite",
+        "purpose": "Surface to surface-2 highlight travelling across skeleton bars."
+      },
+      {
+        "name": "connecting-breathe",
+        "value": "1.6s ease-in-out infinite",
+        "purpose": "A connecting router's dot dims to 0.35 opacity and back."
+      },
+      {
+        "name": "copied-confirm",
+        "value": "1400ms",
+        "purpose": "How long the copy button shows its green check."
+      },
+      {
+        "name": "browser-open-enter",
+        "value": "240ms decelerate_cubic",
+        "purpose": "Android: the browser scales from 0.94 (pivot 50% / 60%) and fades in over the search page."
+      },
+      {
+        "name": "browser-open-exit",
+        "value": "240ms accelerate_cubic",
+        "purpose": "Android: the search page fades to 0.6 behind the opening browser."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "none",
+        "purpose": "Under prefers-reduced-motion every animation and transition is removed."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "wide",
+        "value": "720px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one thing to do on a view, such as adding an address to crawl.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\"><svg class=\"ds-btn-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5v14\"/><path d=\"M5 12h14\"/></svg>Add</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:0.4rem; min-height:48px; padding:0 1.1rem; border:1px solid transparent; border-radius:14px; background:var(--accent, #95aefb); color:var(--accent-ink, #0b0d1f); font:600 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; transition:background 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background:color-mix(in srgb, var(--accent, #95aefb) 88%, var(--ink, #eef2ff)); } .ds-btn-primary:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-btn-primary .ds-btn-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:18px; height:18px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Every other button: Show more, Pause, and in-context actions that widen a search.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Show more</button>",
+      "css": ".ds-btn-secondary { display:inline-flex; align-items:center; justify-content:center; gap:0.4rem; min-height:48px; padding:0 1.1rem; border:1px solid var(--line, #262c57); border-radius:14px; background:var(--surface, #131736); color:var(--ink, #eef2ff); font:600 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; transition:border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), background 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-secondary:hover { border-color:var(--accent, #95aefb); } .ds-btn-secondary:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; }"
+    },
+    {
+      "name": "Text Button",
+      "kind": "button",
+      "refersTo": "button-text",
+      "description": "Bare accent word at the end of a heading row: See all, Back to Explore.",
+      "html": "<button class=\"ds-btn-text\" type=\"button\">See all</button>",
+      "css": ".ds-btn-text { min-height:48px; padding:0 0.75rem; border:0; border-radius:14px; background:none; color:var(--accent, #95aefb); font:600 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; } .ds-btn-text:hover { text-decoration:underline; text-underline-offset:3px; } .ds-btn-text:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "search-field",
+      "description": "The 52px search field with its icon and clear button; results update as you type.",
+      "html": "<div class=\"ds-field\"><svg class=\"ds-field-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z\"/><path d=\"M20 20l-4-4\"/></svg><input class=\"ds-input-search\" type=\"search\" placeholder=\"Search every network\" aria-label=\"Search\"><button class=\"ds-field-clear\" type=\"button\" aria-label=\"Clear search\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 6l12 12\"/><path d=\"M18 6L6 18\"/></svg></button></div>",
+      "css": ".ds-field { position:relative; display:flex; align-items:center; width:100%; max-width:46rem; } .ds-field-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; position:absolute; left:1rem; color:var(--muted, #8690bd); pointer-events:none; } .ds-input-search { width:100%; height:52px; padding:0 3rem 0 2.9rem; border:1px solid var(--line, #262c57); border-radius:16px; background:var(--surface, #131736); color:var(--ink, #eef2ff); font:400 1.125rem/1.3 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; outline:none; caret-color:var(--glow, #4a87fb); transition:border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-input-search::placeholder { color:var(--muted, #8690bd); } .ds-input-search::-webkit-search-cancel-button { display:none; } .ds-input-search:focus { border-color:var(--glow, #4a87fb); box-shadow:0 0 0 4px var(--focus, rgb(74 135 251 / 0.55)); } .ds-field-clear { position:absolute; right:0.15rem; display:grid; place-items:center; width:48px; height:48px; border:0; border-radius:50%; background:none; color:var(--muted, #8690bd); cursor:pointer; } .ds-field-clear:hover { color:var(--ink, #eef2ff); } .ds-field-clear:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-field-clear .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; }"
+    },
+    {
+      "name": "Network Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Multi-select network filter with a count; selection is one shared accent treatment, the network hue stays in the dot.",
+      "html": "<div class=\"ds-chips\"><label class=\"ds-chip\" style=\"--net: var(--onion, #a98bff)\"><input type=\"checkbox\" checked><span class=\"ds-chip-check\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></span><span class=\"ds-chip-dot\"></span>Onion<span class=\"ds-chip-count\">942</span></label><label class=\"ds-chip\" style=\"--net: var(--magnet, #f5b65b)\"><input type=\"checkbox\"><span class=\"ds-chip-check\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></span><span class=\"ds-chip-dot\"></span>Torrents<span class=\"ds-chip-count\">37</span></label></div>",
+      "css": ".ds-chips { display:flex; gap:0.5rem; flex-wrap:wrap; } .ds-chip { position:relative; display:inline-flex; align-items:center; gap:0.45rem; min-height:40px; margin:4px 0; padding:0 0.85rem 0 0.7rem; border:1px solid var(--line, #262c57); border-radius:999px; background:transparent; color:var(--muted, #8690bd); font:500 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; user-select:none; transition:background 160ms cubic-bezier(0.16, 1, 0.3, 1), border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-chip input { position:absolute; inset:-4px 0; opacity:0; margin:0; cursor:pointer; } .ds-chip-dot { width:8px; height:8px; border-radius:50%; background:transparent; box-shadow:inset 0 0 0 1.5px var(--net); } .ds-chip-check { display:none; margin-right:-0.2rem; color:var(--accent, #95aefb); } .ds-chip-check .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:16px; height:16px; stroke-width:2.25; } .ds-chip-count { color:var(--muted, #8690bd); font-variant-numeric:tabular-nums; } .ds-chip:has(input:checked) { border-color:color-mix(in srgb, var(--accent, #95aefb) 45%, var(--line, #262c57)); background:color-mix(in srgb, var(--accent, #95aefb) 13%, var(--surface, #131736)); color:var(--ink, #eef2ff); } .ds-chip:has(input:checked) .ds-chip-dot { background:var(--net); box-shadow:none; } .ds-chip:has(input:checked) .ds-chip-check { display:inline-flex; } .ds-chip:has(input:focus-visible) { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; }"
+    },
+    {
+      "name": "Trust Strip",
+      "kind": "nav",
+      "refersTo": "trust-strip",
+      "description": "Router and crawler state in plain words, first on the page; tap for the explanation panel.",
+      "html": "<button class=\"ds-trust\" type=\"button\" aria-expanded=\"false\"><span class=\"ds-trust-routers\"><span class=\"ds-router is-ready\"><span class=\"ds-dot\"></span>Tor</span><span class=\"ds-router is-starting\"><span class=\"ds-dot\"></span>Torrents</span><span class=\"ds-router is-unreachable\"><span class=\"ds-dot\"></span>I2P</span><span class=\"ds-router is-unreachable\"><span class=\"ds-dot\"></span>Hyphanet</span></span><span class=\"ds-trust-crawl\">Idle</span><span class=\"ds-trust-chevron\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\"/></svg></span></button>",
+      "css": ".ds-trust { display:flex; align-items:center; gap:0.75rem; width:100%; max-width:46rem; min-height:48px; padding:0.45rem 0.75rem; border:1px solid var(--line, #262c57); border-radius:999px; background:var(--surface, #131736); color:var(--ink-2, #b2bbdf); font:400 0.78125rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; transition:border-color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-trust:hover, .ds-trust[aria-expanded=\"true\"] { border-color:var(--accent, #95aefb); } .ds-trust:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-trust-routers { display:flex; gap:0.75rem; min-width:0; overflow:hidden; } .ds-router { display:inline-flex; align-items:center; gap:0.35rem; white-space:nowrap; } .ds-dot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--off, #59628f); } .is-ready .ds-dot { background:var(--ok, #4fd18b); } .is-starting .ds-dot { background:var(--warn, #f5b65b); animation:ds-breathe 1.6s ease-in-out infinite; } .is-unreachable .ds-dot { background:transparent; border:1.5px solid var(--off, #59628f); } @keyframes ds-breathe { 50% { opacity:0.35; } } .ds-trust-crawl { margin-left:auto; color:var(--muted, #8690bd); white-space:nowrap; } .ds-trust-chevron { display:inline-flex; color:var(--muted, #8690bd); transition:transform 200ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-trust-chevron .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:16px; height:16px; } .ds-trust[aria-expanded=\"true\"] .ds-trust-chevron { transform:rotate(180deg); } @media (prefers-reduced-motion: reduce) { .is-starting .ds-dot { animation:none; } }"
+    },
+    {
+      "name": "Result Row",
+      "kind": "custom",
+      "refersTo": "result-row",
+      "description": "One result: title into the private browser, snippet with matched terms, one route line per network with badge, mono address and copy, then meta.",
+      "html": "<article class=\"ds-hit\"><h2 class=\"ds-hit-title\"><a href=\"#\"><mark class=\"ds-mark\">Tor</mark> Project | Anonymity Online</a></h2><p class=\"ds-snippet\">Your traffic is relayed and encrypted three times as it passes over the <mark class=\"ds-mark\">Tor</mark> network.</p><div class=\"ds-route\"><span class=\"ds-badge\" style=\"--net: var(--onion, #a98bff)\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Onion</span><span class=\"ds-addr\">2gzyxa5i…53wid.onion</span><button class=\"ds-icon-btn\" type=\"button\" aria-label=\"Copy address\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 9h10v11H9z\"/><path d=\"M5 15V4h10\"/></svg></button></div><p class=\"ds-meta\">English · 2 routes · seen today</p></article>",
+      "css": ".ds-hit { max-width:46rem; padding:1rem 0 1.05rem; border-top:1px solid var(--line, #262c57); font:400 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; color:var(--ink, #eef2ff); } .ds-hit-title { margin:0; font-size:1.125rem; font-weight:600; line-height:1.3; } .ds-hit-title a { color:var(--ink, #eef2ff); text-decoration:none; } .ds-hit-title a:hover { text-decoration:underline; text-decoration-color:var(--accent, #95aefb); text-underline-offset:3px; } .ds-hit-title a:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; border-radius:8px; } .ds-mark { background:var(--mark, rgb(149 174 251 / 0.22)); color:var(--mark-ink, #cfecfb); border-radius:4px; padding:0 2px; } .ds-snippet { max-width:70ch; margin:0.3rem 0 0; color:var(--ink-2, #b2bbdf); } .ds-route { display:flex; align-items:center; gap:0.5rem; min-height:48px; margin-top:0.4rem; font-size:0.78125rem; } .ds-badge { display:inline-flex; align-items:center; gap:0.3rem; flex:none; padding:0.15rem 0.5rem 0.15rem 0.4rem; border-radius:999px; background:color-mix(in srgb, var(--net) 14%, transparent); color:var(--net); font-size:0.78125rem; font-weight:600; } .ds-badge .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:14px; height:14px; stroke-width:2; } .ds-addr { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-2, #b2bbdf); font:400 0.78125rem/1.4 ui-monospace, \"Roboto Mono\", SFMono-Regular, Menlo, monospace; } .ds-icon-btn { display:grid; place-items:center; flex:none; width:48px; height:48px; margin-right:-12px; border:0; border-radius:50%; background:none; color:var(--muted, #8690bd); cursor:pointer; } .ds-icon-btn:hover { background:var(--surface-2, #1a1f45); color:var(--ink, #eef2ff); } .ds-icon-btn:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-icon-btn .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; } .ds-meta { margin:0.1rem 0 0; font-size:0.78125rem; color:var(--muted, #8690bd); font-variant-numeric:tabular-nums; }"
+    },
+    {
+      "name": "Explore Site Row",
+      "kind": "custom",
+      "refersTo": "result-row",
+      "description": "The compact row in Explore: network dot, site name, mono address, hairline above.",
+      "html": "<a class=\"ds-site\" href=\"#\" style=\"--net: var(--onion, #a98bff)\"><span class=\"ds-site-dot\"></span><b>Tor Project | Anonymity Online</b><small>2gzyxa5i…53wid.onion</small></a>",
+      "css": ".ds-site { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:0 0.75rem; align-items:center; max-width:46rem; padding:0.7rem 0; border-top:1px solid var(--line, #262c57); color:var(--ink, #eef2ff); text-decoration:none; font-family:system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; } .ds-site:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; border-radius:8px; } .ds-site-dot { grid-row:span 2; width:8px; height:8px; border-radius:50%; background:var(--net); } .ds-site b { font-size:0.9375rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ds-site small { font:400 0.78125rem/1.4 ui-monospace, \"Roboto Mono\", SFMono-Regular, Menlo, monospace; color:var(--muted, #8690bd); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }"
+    },
+    {
+      "name": "Browser Toolbar",
+      "kind": "nav",
+      "refersTo": "browser-toolbar",
+      "description": "The Android browser's native toolbar (approximated in HTML): back, address pill with network kind and lock, reload, more.",
+      "html": "<div class=\"ds-toolbar\"><button class=\"ds-tool\" type=\"button\" aria-label=\"Back\" disabled><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M15 5L8 12L15 19\"/></svg></button><div class=\"ds-pill\" tabindex=\"0\"><span class=\"ds-kind\" style=\"--net: var(--onion, #a98bff)\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Onion</span><span class=\"ds-pill-addr\">2gzyxa5i…53wid.onion</span></div><button class=\"ds-tool\" type=\"button\" aria-label=\"Reload\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M19 12A7 7 0 1 1 16.9 7\"/><path d=\"M19 4V8H15\"/></svg></button><button class=\"ds-tool ds-more\" type=\"button\" aria-label=\"More\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5.5v.1\"/><path d=\"M12 12v.1\"/><path d=\"M12 18.5v.1\"/></svg></button></div>",
+      "css": ".ds-toolbar { display:flex; align-items:center; gap:2px; padding:6px 2px; background:var(--ground, #0b0d1f); font-family:system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; } .ds-tool { display:grid; place-items:center; flex:none; width:48px; height:48px; border:0; border-radius:50%; background:none; color:var(--ink, #eef2ff); cursor:pointer; } .ds-tool:hover { background:var(--surface-2, #1a1f45); } .ds-tool:disabled { opacity:0.31; cursor:default; background:none; } .ds-tool:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-tool .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:24px; height:24px; } .ds-more .ds-icon { stroke-width:2.75; } .ds-pill { display:flex; align-items:center; flex:1; min-width:0; height:48px; padding:0 12px 0 14px; border:1px solid var(--line, #262c57); border-radius:24px; background:var(--surface, #131736); } .ds-pill:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-kind { display:inline-flex; align-items:center; gap:4px; padding-right:6px; color:var(--net); font-size:12px; font-weight:500; } .ds-kind .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:16px; height:16px; } .ds-pill-addr { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink, #eef2ff); font-size:15px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Night Switchboard",
+    "overview": "omnid is one board that every network plugs into: onion sites, I2P, Hyphanet, torrents and the open web, each line labelled with where it leads and lit to show whether it is live and whether the way there is sealed. The board sits on the icon's deep navy and is lit only by the icon's own blues. The metaphor shapes structure, never imagery: there are no cables, sockets or retro hardware anywhere, and the system rejects both a themed \"dark web\" costume and the generic grey search app.\n\nThe feel is calm and quick, built to the bar of Arc Search, Signal and Proton. Density is phone-first and moderate: one column, hairline-separated rows, a single large search field, and a trust strip that states router health in plain words before anything else. Colour is spent on meaning. One accent carries action and selection, glow blue carries focus, and each network owns a hue that appears only as a small dot or a route badge. Depth comes from tone, not shadow.\n\nLight and dark are one token set expressed twice, shared by the web page (`crates/omnid/src/ui/app.css`) and the Android chrome (`res/values*/colors.xml`). Dark is the brand's home: navy ground, moonlit ink. Light is cool paper with navy ink and a stronger blue, so every accent role keeps its contrast. Where the icon's pale glow would vanish on the light ground, the brand mark changes rendition instead of the palette changing hue.",
+    "keyCharacteristics": [
+      "One navy ground shared by the window, system bars, toolbars and page.",
+      "One accent for action and selection; glow blue only for focus, the caret and progress.",
+      "Network hues confined to 8px dots, route badges and the browser's kind label.",
+      "The platform sans on four sizes 1.2 apart; mono only for addresses; tabular figures for data.",
+      "Flat tonal surfaces with 1px hairlines; the focus ring is the only coloured shadow.",
+      "Pills for state and filters, 14px rounded rectangles for actions, 16px corners for surfaces.",
+      "Every touch target at least 48px (48dp).",
+      "Short, decelerating motion; results update in place."
+    ],
+    "rules": [
+      {
+        "name": "The Dots-and-Badges Rule",
+        "body": "A network's hue appears only as an 8px dot, a route badge (the hue at 14% behind text in the hue) or the browser's kind label. It is never a chip fill, a row tint, a button or a border.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Accent Rule",
+        "body": "Selection looks the same on every network: accent at 13% over surface, an accent-tinted border and an accent check. The `glow` token marks focus, the caret and progress, and nothing else.",
+        "section": "colors"
+      },
+      {
+        "name": "The Shared Ground Rule",
+        "body": "The window, status bar, navigation bar, action bar, browser toolbar and page all paint `ground`, so the app reads as one surface. app.css and colors.xml carry the same value for the same name in each scheme; a token added on one side takes the other side's value.",
+        "section": "colors"
+      },
+      {
+        "name": "The Four Sizes Rule",
+        "body": "Every piece of text sits on one of four sizes 1.2 apart: 12.5, 15, 18 and 21.6px, the same values in sp natively. A fifth size is a bug.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mono-Means-Address Rule",
+        "body": "Monospace sets addresses and hashes only, never labels, counts or headings; numbers in the sans use tabular figures instead.",
+        "section": "typography"
+      },
+      {
+        "name": "The 48 Floor Rule",
+        "body": "Every touch target is at least 48px (48dp). When the visual is smaller, the hit area grows and the shape does not: a 40px chip's input reaches 4px above and below it, and 48px icon buttons sit 12px into the margin so their glyphs align with the text edge.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Night Rule",
+        "body": "Surfaces are flat at rest and separated by tone and 1px hairlines. The focus ring is the only coloured shadow, status dots carry no halos, and the glow belongs to the icon art alone.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pill Carries State Rule",
+        "body": "Fully rounded shapes are kept for things that show or set state: chips, the trust strip, route badges and the address pill. Actions are 14px rounded rectangles and surfaces 16px; a pill-shaped button breaks the language.",
+        "section": "shapes"
+      },
+      {
+        "name": "The In-Place Rule",
+        "body": "Results replace each other where they stand: rows already showing stay still, only new rows fade in (from 0.4 opacity, 4px lower, over 220ms), there is no spinner, and skeleton rows appear only when the index takes more than 150ms.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do keep a network's hue to its 8px dot, its route badge (the hue at 14% behind 12.5px/600 hue text) and the browser's kind label.",
+      "Do show selection with the one accent treatment on every network: accent at 13% over surface, a border of accent 45% into line, ink text and a 16px accent check.",
+      "Do make every touch target at least 48px (48dp); when the visual is smaller, as with the 40px chips, extend the hit area instead of the shape.",
+      "Do paint the window, system bars, action bar, browser toolbar and page with the same `ground`, and give a new colour the same value in app.css and colors.xml for each scheme.",
+      "Do set addresses in mono at 12.5px on one ellipsised line, with onion hosts shortened to both ends, and set counts, timings and dates in tabular figures.",
+      "Do divide list items with 1px `line` hairlines and let tone (ground, surface, surface-2) carry depth.",
+      "Do draw icons on a 24-unit grid with a 1.75 stroke, round caps and joins and no fill, stepping the stroke up only below 20px.",
+      "Do keep motion short and decelerating (cubic-bezier(0.16, 1, 0.3, 1), 160 to 240ms), update results in place, and turn all motion off under reduced motion.",
+      "Do use the accent vector rings for the brand mark on the light ground and the glowing raster on the dark ground."
+    ],
+    "donts": [
+      "Don't fill a chip, tint a row, or colour a button or border with a network hue.",
+      "Don't add coloured glow shadows or halos to UI elements or status dots; the 4px focus ring is the only coloured shadow, and the glow belongs to the icon art.",
+      "Don't put results or Explore sites in cards.",
+      "Don't add a text size off the four-step ramp, or a web font: the page's content policy loads nothing from outside its own origin.",
+      "Don't use mono for anything but addresses and hashes.",
+      "Don't use the `glow` token as a fill; it marks focus, the caret and progress only.",
+      "Don't show a spinner while searching.",
+      "Don't give the action bar or browser toolbar a colour band or elevation of its own."
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- From the icon: luminous rings on deep navy. Light scheme here, dark in values-night;
+     the search page (crates/omnid/src/ui/app.css) uses the same values. -->
+<resources>
+    <color name="launcher_background">#0B0D1F</color>
+    <color name="ground">#F5F7FC</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="line">#DDE3F3</color>
+    <color name="ink">#0B0D1F</color>
+    <color name="ink_2">#3D4670</color>
+    <color name="muted">#5D668F</color>
+    <color name="accent">#2F5BE6</color>
+    <color name="accent_ink">#FFFFFF</color>
+    <color name="glow">#2F5BE6</color>
+    <color name="onion">#6A49DF</color>
+    <color name="i2p">#0B7F86</color>
+    <color name="hyphanet">#2A63D6</color>
+    <color name="ok">#128A52</color>
+    <color name="warn">#9C5D00</color>
+</resources>

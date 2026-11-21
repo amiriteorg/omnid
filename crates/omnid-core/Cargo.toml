@@ -1,0 +1,18 @@
+[package]
+name = "omnid-core"
+description = "Source addressing and the document model shared by every omnid layer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+data-encoding.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+url.workspace = true
+whatlang.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
