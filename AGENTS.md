@@ -32,6 +32,8 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
   bench_crawl`, `-p omnid-index --example bench_search`, `-p omnid-net --example bench_tor`,
   `-p omnid-dht --example soak -- <minutes>`
 - Android unit tests: `(cd android && ./gradlew testDebugUnitTest)`
+- Android smoke test on a headless emulator: `scripts/android-smoke.sh [--fresh] [APK]` (creates and
+  boots `omnid-smoke`; `stop` shuts it down)
 - Android: `android/build-rust.sh && (cd android && ./gradlew assembleRelease)`; needs the SDK,
   an NDK and the `aarch64-linux-android` target. Not part of the eng profiles.
 - Security: `./.agents/bin/eng security`
