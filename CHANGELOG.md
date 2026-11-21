@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (2026-11-21)
+
+- The app and the search page write the name OMNId; the command and package stay `omnid`.
+- The app's notification says what crawling is waiting for (a charger, Wi-Fi) instead of a fixed
+  line.
+
 ## 0.1.0 (2026-11-21)
 
 The first release: the daemon and CLI, and the Android app. Run on an Android 16 emulator and on
