@@ -23,6 +23,14 @@ internal class CrawlPolicy(
     companion object {
         const val PREFS = "omnid"
         const val KEY_ANYTIME = "crawl_anytime"
+
+        /** Why crawling should wait, as a string resource, or null to crawl. */
+        fun pauseReason(anytime: Boolean, charging: Boolean, unmetered: Boolean): Int? = when {
+            anytime || (charging && unmetered) -> null
+            !charging && !unmetered -> R.string.paused_charger_wifi
+            !charging -> R.string.paused_charger
+            else -> R.string.paused_unmetered
+        }
     }
 
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
@@ -75,12 +83,7 @@ internal class CrawlPolicy(
 
     @Synchronized
     private fun update() {
-        val reason = when {
-            prefs.getBoolean(KEY_ANYTIME, false) || (charging && unmetered) -> null
-            !charging && !unmetered -> context.getString(R.string.paused_charger_wifi)
-            !charging -> context.getString(R.string.paused_charger)
-            else -> context.getString(R.string.paused_unmetered)
-        }
+        val reason = pauseReason(prefs.getBoolean(KEY_ANYTIME, false), charging, unmetered)?.let(context::getString)
         val state = (reason != null) to reason.orEmpty()
         if (state != applied) {
             applied = state
