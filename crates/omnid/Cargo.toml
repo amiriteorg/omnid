@@ -26,6 +26,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+texting_robots.workspace = true
 http-body-util.workspace = true
 tower.workspace = true
 tempfile.workspace = true

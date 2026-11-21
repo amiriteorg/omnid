@@ -2,6 +2,10 @@
 //! many runs. The index is built once in a temporary directory.
 //!
 //!     cargo run --release -p omnid-index --example bench_search -- [docs] [runs]
+//!
+//! Pages declare their language, as most crawled pages do: one in four German,
+//! the rest English. `BENCH_LANGUAGES=en` sends a reader's language with every
+//! query.
 
 use std::time::{Duration, Instant};
 
@@ -118,7 +122,7 @@ fn build(docs: usize) -> (tempfile::TempDir, SearchIndex) {
                 last_seen: 1_000,
                 liveness: (rng.next() % 100) as f32 / 100.0,
                 trust: 0.5,
-                lang: None,
+                lang: Some(if i % 4 == 3 { "de" } else { "en" }.into()),
             })
             .unwrap();
     }
@@ -147,8 +151,11 @@ fn main() {
         ("any-word fallback", SearchQuery { text: "nonexistent rare".into(), limit: 20, ..Default::default() }),
         ("page 5", SearchQuery { text: "mirror".into(), offset: 80, limit: 20, ..Default::default() }),
     ];
+    let languages: Vec<String> =
+        std::env::var("BENCH_LANGUAGES").map(|l| l.split(',').map(str::to_owned).collect()).unwrap_or_default();
     println!("{:<18} {:>9} {:>9} {:>9}", "query", "p50 ms", "p95 ms", "max ms");
-    for (name, query) in &shapes {
+    for (name, query) in shapes {
+        let query = &SearchQuery { languages: languages.clone(), ..query };
         // Warm-up, then timed runs.
         for _ in 0..5 {
             index.search(query).unwrap();

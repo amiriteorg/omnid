@@ -18,6 +18,11 @@ One site, so pages go one at a time. Measures the crawler's own cost per page.
 |---|---|---|
 | 2026-11-21 | baseline | 348 / 362 / 364 |
 | 2026-11-21 | no 5 s nap when the working set runs dry | 3,408 / 4,105 / 4,403 |
+| 2026-11-21 | page languages (detected here: the pages declare none) | medians 3,171–4,411 vs 3,994–4,433 before, 5 alternating runs each |
+
+Detecting a page's language costs about 44 µs (50,000 undeclared pages took
+5.6 s to index instead of 3.4 s), which the crawl does not show: no
+measurable change. The one slow median (3,171) ran at a load average of 12.
 
 The baseline's 5.5 s per round was ~0.24 ms per page plus a fixed ~5 s nap at
 the end of every crawl (6,000 pages took 6.4 s), confirmed by the regression
@@ -47,6 +52,50 @@ network for the facet counts, once for the hits. Removing the counts alone
 took phrases to 32 ms. Now the text query runs once, collecting the top
 documents and a bitset of all matches together, and each network's count
 comes from walking its postings against that bitset.
+
+Ranking by language and depth (2026-11-21). The pages now declare a language,
+one in four German; `BENCH_LANGUAGES=en` sends a reader's language with every
+query. Two alternating runs each, p50 / p95 ms:
+
+| Query | before | four columns | one prior column | four columns, `en` | one prior column, `en` |
+|---|---|---|---|---|---|
+| common word | 1.86 / 1.95–1.96 | 2.05–2.13 / 2.17–2.26 | 1.69–1.73 / 1.85–1.95 | 2.11–2.14 / 2.22–2.31 | 1.84–1.91 / 2.77–3.34 |
+| rare word | 1.58 / 1.69–1.71 | 1.79 / 1.86–1.92 | 1.46–1.47 / 1.51–1.62 | 1.89–1.91 / 2.01–2.08 | 1.65–1.67 / 1.80–1.88 |
+| two words | 2.29–2.32 / 2.43–2.54 | 2.46–2.54 / 2.61–2.86 | 2.19–2.24 / 2.46–3.19 | 2.72–2.84 / 3.02–3.65 | 2.38–2.40 / 2.52–2.57 |
+| "phrase" | 16.02–16.32 / 16.89–17.87 | 15.88–16.31 / 16.76–17.43 | 15.81–16.08 / 16.81–16.83 | 16.22–16.66 / 17.23–18.31 | 16.07–16.16 / 16.86–16.91 |
+| any-word fallback | 1.67–1.73 / 1.75–1.84 | 1.82–1.85 / 1.93–2.00 | 1.57–1.66 / 1.62–1.95 | 1.99–2.00 / 2.12–2.16 | 1.72–1.74 / 1.84–1.85 |
+| page 5 | 1.94–1.97 / 2.04–2.13 | 2.11–2.15 / 2.26–2.27 | 1.78–1.82 / 1.94–2.41 | 2.19–2.24 / 2.31–2.43 | 1.88–1.91 / 2.01–2.04 |
+
+Reading trust, liveness, depth and language per matching document cost
+0.2–0.5 ms. Trust, liveness and depth change only when a document is
+written, so they are multiplied into one `prior` column then; ranking reads
+that and, when the reader names languages, the language. The machine was
+under other load during these runs (load average 10–12).
+
+## Ranking quality
+
+    cargo run --release -p omnid --example eval_ranking -- fetch target/eval/torproject 400
+    EVAL_LANGUAGES=en cargo run --release -p omnid --example eval_ranking -- run target/eval/torproject
+
+The Tor Project's onion fetched once over Tor on 2026-11-21 (193 pages,
+robots.txt honoured, two links deep): 18 English pages and about 6 pages in
+each of 29 translations, every one declaring its `<html lang>`. `run` serves
+the cache over loopback and indexes it with the real crawler, so every
+version ranks identical input. 19 English queries, judged from the English
+pages' titles and headings before any run (`JUDGMENTS` in the example).
+
+| Ranking | success@1 | MRR@10 | translations in the top 3 |
+|---|---|---|---|
+| before (3 runs; ties fall in crawl order) | 11–13 / 19 | 0.702–0.756 | 12–13 / 57 |
+| depth, no language preference | 17 / 19 | 0.904 | 11–13 / 57 |
+| depth and the reader's language (`en`) | 18 / 19 | 0.953 | 8 / 57 |
+
+Before, "tor browser" put `/press/page/5/` first and the home page sixth, and
+"history" put the Czech history page first. The remaining miss is "tor
+project": every page's title starts "Tor Project |", and the home page comes
+tenth behind pages that repeat the name in their text. Translations still
+fill places 2 and 3 when a query has one English answer; a language the
+reader did not ask for is a 0.7 factor, not a filter.
 
 ## Sequential onion fetches over Tor
 

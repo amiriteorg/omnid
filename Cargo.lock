@@ -3027,6 +3027,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "texting_robots",
  "tokio",
  "tokio-util",
  "tower",
