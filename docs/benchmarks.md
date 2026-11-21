@@ -72,6 +72,28 @@ written, so they are multiplied into one `prior` column then; ranking reads
 that and, when the reader names languages, the language. The machine was
 under other load during these runs (load average 10–12).
 
+The word being typed (2026-11-21, Apple M5 Pro, the Mac mini). The last
+plain word of three letters or more also matches the words it starts, as a
+prefix query over the five text fields alongside the query as typed, so
+results appear before a word is finished. 100,000 documents, 300 timed runs
+per shape, three runs each, p50 / p95 ms:
+
+    cargo run --release -p omnid-index --example bench_search -- 100000 300
+
+| Query | before | prefix on the last word |
+|---|---|---|
+| common word | 1.77–1.79 / 1.79–1.80 | 3.16–3.22 / 3.25 |
+| rare word | 1.38–1.40 / 1.41–1.43 | 2.17–2.18 / 2.21–2.22 |
+| two words | 2.46–2.51 / 2.52–2.57 | 4.36–4.38 / 4.40–4.44 |
+| "phrase" | 24.18–25.64 / 25.06–25.99 | 23.93–24.32 / 24.76–25.21 |
+| any-word fallback | 1.51–1.57 / 1.54–1.62 | 2.41–2.46 / 2.47–2.49 |
+
+About 0.8–1.9 ms more per query, from walking the prefix's terms; phrases
+are unchanged (a phrase's last word is not a plain word). Accepted: a search
+still answers in under 5 ms at this size, and before it a half-typed word
+found nothing. The close-spelling pass runs only when nothing matches, so it
+adds nothing to a search that finds something.
+
 ## Ranking quality
 
     cargo run --release -p omnid --example eval_ranking -- fetch target/eval/torproject 400

@@ -90,13 +90,16 @@ every client as 127.0.0.1 and give each one full access.
 
 Search syntax: words (all required, falling back to any word when nothing has
 all of them), `"a phrase"`, `-exclude`, `title:word`, `site:host`,
-`network:onion`.
+`network:onion`. The last word also matches the words it starts, from three
+letters, so results come while it is being typed. When nothing matches, plain
+words are matched with a letter wrong, missing, extra or swapped (two from
+eight letters), and the results say so (`fuzzy`).
 
 ### API
 
 | | |
 |---|---|
-| `GET /api/search?q=…&network=onion,i2p&offset=0&limit=20&lang=de,en` | hits with marked snippets, `lang`, `total`, `network_counts`, `relaxed` |
+| `GET /api/search?q=…&network=onion,i2p&offset=0&limit=20&lang=de,en` | hits with marked snippets, `lang`, `total`, `network_counts`, `relaxed`, `fuzzy` |
 | `POST /api/submit` with `{"url": "…"}` | crawl an address now, even if known |
 | `POST /api/crawl` with `{"paused": true}` | pause or resume crawling |
 | `GET /api/status` | router states, index size, crawl counters, pause reason |

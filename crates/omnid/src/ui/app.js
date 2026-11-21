@@ -313,7 +313,9 @@ async function search({ append = false } = {}) {
     }
     shown = offset + body.hits.length;
     showCounts(body.network_counts);
-    const relaxed = body.relaxed ? " · no page has every word, so these have some" : "";
+    const relaxed = body.fuzzy
+      ? body.relaxed ? " · nothing has every word, even spelt a little differently, so these have some" : " · nothing matches as typed; these are spelt a little differently"
+      : body.relaxed ? " · no page has every word, so these have some" : "";
     if (browsing && !text) {
       const back = el("button", { type: "button" }, "Back to Explore");
       back.addEventListener("click", () => {

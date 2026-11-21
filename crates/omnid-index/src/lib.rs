@@ -10,7 +10,7 @@ use omnid_core::{FileMeta, IndexedDoc, Network};
 use serde::Serialize;
 use tantivy::collector::{Collector, SegmentCollector, TopDocs};
 use tantivy::directory::MmapDirectory;
-use tantivy::query::{AllQuery, BooleanQuery, Occur, Query, QueryParser, TermQuery};
+use tantivy::query::{AllQuery, BooleanQuery, BoostQuery, FuzzyTermQuery, Occur, Query, QueryParser, TermQuery};
 use tantivy::schema::{FAST, Field, IndexRecordOption, STORED, STRING, Schema, TextFieldIndexing, TextOptions, Value};
 use tantivy::snippet::{Snippet, SnippetGenerator};
 use tantivy::tokenizer::{
@@ -35,6 +35,11 @@ const SNIPPET_CHARS: usize = 220;
 /// Lowercase, fold accents ("café" finds "cafe") and stem English
 /// ("bananas" finds "banana").
 const TOKENIZER: &str = "omnid";
+/// The word being typed matches the words it starts from this many letters.
+const MIN_PREFIX: usize = 3;
+/// A word is matched with one letter wrong, missing, extra or swapped from
+/// this many letters when nothing matches as typed, and two from twice it.
+const MIN_FUZZY: usize = 4;
 /// Factor for a page in a language the reader did not ask for: it needs
 /// about 1.4x the text relevance to outrank a page in theirs.
 const OTHER_LANGUAGE: Score = 0.7;
@@ -73,6 +78,9 @@ pub struct SearchResults {
     /// Every term was required and nothing matched, so the query was re-run
     /// with any term matching.
     pub relaxed: bool,
+    /// Nothing matched as typed, so words were matched with a letter or two
+    /// wrong.
+    pub fuzzy: bool,
 }
 
 /// One piece of content and every address it is known at.
@@ -315,19 +323,30 @@ impl SearchIndex {
 
     pub fn search(&self, q: &SearchQuery) -> Result<SearchResults> {
         let searcher = self.reader.searcher();
-        let mut results = self.search_with(&searcher, q, true)?;
-        // AND first for precision; if that finds nothing, any term will do.
-        if results.total == 0 && q.text.split_whitespace().nth(1).is_some() {
-            results = self.search_with(&searcher, q, false)?;
-            results.relaxed = true;
+        let several = q.text.split_whitespace().nth(1).is_some();
+        // Every word first, for precision; then every word with spelling
+        // slips; then, with several words, any of them, as typed and then
+        // with slips.
+        let mut results = self.search_with(&searcher, q, self.parse(&q.text, true))?;
+        if results.total == 0
+            && let Some(close) = self.close_spellings(&q.text, true)
+        {
+            results = SearchResults { fuzzy: true, ..self.search_with(&searcher, q, close)? };
+        }
+        if results.total == 0 && several {
+            results = SearchResults { relaxed: true, ..self.search_with(&searcher, q, self.parse(&q.text, false))? };
+            if results.total == 0
+                && let Some(close) = self.close_spellings(&q.text, false)
+            {
+                results = SearchResults { relaxed: true, fuzzy: true, ..self.search_with(&searcher, q, close)? };
+            }
         }
         Ok(results)
     }
 
-    fn search_with(&self, searcher: &Searcher, q: &SearchQuery, conjunction: bool) -> Result<SearchResults> {
+    fn search_with(&self, searcher: &Searcher, q: &SearchQuery, text_query: Box<dyn Query>) -> Result<SearchResults> {
         let f = self.fields;
         let limit = q.limit.clamp(1, 100);
-        let text_query = self.parse(&q.text, conjunction);
         // Over-fetch so that folding mirrors together still fills the page.
         let window = (q.offset + limit) * 4;
         let languages: Arc<[String]> = q.languages.iter().cloned().collect();
@@ -390,24 +409,98 @@ impl SearchIndex {
                 break;
             }
         }
-        Ok(SearchResults { hits, total, network_counts, relaxed: false })
+        Ok(SearchResults { hits, total, network_counts, relaxed: false, fuzzy: false })
+    }
+
+    /// The fields text is searched in, with their weights.
+    fn text_fields(&self) -> [(Field, Score); 5] {
+        let f = self.fields;
+        [(f.title, 3.0), (f.keywords, 2.0), (f.description, 1.5), (f.body, 1.0), (f.file_names, 1.5)]
     }
 
     fn parse(&self, text: &str, conjunction: bool) -> Box<dyn Query> {
         if text.trim().is_empty() {
             return Box::new(AllQuery);
         }
-        let f = self.fields;
-        let mut parser =
-            QueryParser::for_index(&self.index, vec![f.title, f.keywords, f.description, f.body, f.file_names]);
-        if conjunction {
-            parser.set_conjunction_by_default();
+        let parse = |text: &str| {
+            let fields = self.text_fields();
+            let mut parser = QueryParser::for_index(&self.index, fields.iter().map(|(field, _)| *field).collect());
+            if conjunction {
+                parser.set_conjunction_by_default();
+            }
+            for (field, boost) in fields {
+                parser.set_field_boost(field, boost);
+            }
+            parser.parse_query_lenient(text).0
+        };
+        let exact = parse(text);
+        // The last word may still be being typed: it also matches the words
+        // it starts, alongside the query as typed.
+        let Some((head, word)) = last_word(text).filter(|(_, word)| word.chars().count() >= MIN_PREFIX) else {
+            return exact;
+        };
+        let Some(prefix) = self.prefix_query(word) else {
+            return exact;
+        };
+        let typing = if conjunction && !head.trim().is_empty() {
+            Box::new(BooleanQuery::new(vec![(Occur::Must, parse(head)), (Occur::Must, prefix)]))
+        } else {
+            prefix
+        };
+        Box::new(BooleanQuery::new(vec![(Occur::Should, exact), (Occur::Should, typing)]))
+    }
+
+    /// Words starting with `word`, in every text field. Folded but not
+    /// stemmed: what has been typed so far is the start of a word, not one.
+    fn prefix_query(&self, word: &str) -> Option<Box<dyn Query>> {
+        let mut folding = TextAnalyzer::builder(SimpleTokenizer::default())
+            .filter(RemoveLongFilter::limit(40))
+            .filter(LowerCaser)
+            .filter(AsciiFoldingFilter)
+            .build();
+        let start = single_token(&mut folding, word)?;
+        let fields = self
+            .text_fields()
+            .into_iter()
+            .map(|(field, boost)| -> (Occur, Box<dyn Query>) {
+                let query = FuzzyTermQuery::new_prefix(Term::from_field_text(field, &start), 0, false);
+                (Occur::Should, Box::new(BoostQuery::new(Box::new(query), boost)))
+            })
+            .collect();
+        Some(Box::new(BooleanQuery::new(fields)))
+    }
+
+    /// The query with spelling slips allowed in each word, for when nothing
+    /// matches as typed. Plain words only: a query with phrases, fields or
+    /// exclusions is taken as typed.
+    fn close_spellings(&self, text: &str, conjunction: bool) -> Option<Box<dyn Query>> {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        if words.is_empty() || !words.iter().all(|w| is_plain(w)) {
+            return None;
         }
-        parser.set_field_boost(f.title, 3.0);
-        parser.set_field_boost(f.keywords, 2.0);
-        parser.set_field_boost(f.description, 1.5);
-        parser.set_field_boost(f.file_names, 1.5);
-        parser.parse_query_lenient(text).0
+        let mut analyzer = self.index.tokenizer_for_field(self.fields.body).ok()?;
+        let occur = if conjunction { Occur::Must } else { Occur::Should };
+        let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+        for word in words {
+            let term = single_token(&mut analyzer, word)?;
+            let letters = word.chars().count();
+            let distance = if letters >= 2 * MIN_FUZZY { 2 } else { u8::from(letters >= MIN_FUZZY) };
+            let fields = self
+                .text_fields()
+                .into_iter()
+                .map(|(field, boost)| -> (Occur, Box<dyn Query>) {
+                    let term = Term::from_field_text(field, &term);
+                    let query: Box<dyn Query> = if distance == 0 {
+                        Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
+                    } else {
+                        Box::new(FuzzyTermQuery::new(term, distance, true))
+                    };
+                    (Occur::Should, Box::new(BoostQuery::new(query, boost)))
+                })
+                .collect();
+            clauses.push((occur, Box::new(BooleanQuery::new(fields))));
+        }
+        Some(Box::new(BooleanQuery::new(clauses)))
     }
 
     /// Documents on each network, among `matched` (one bitset per segment)
@@ -673,6 +766,26 @@ fn files(doc: &TantivyDocument, field: Field) -> Vec<FileMeta> {
     doc.get_first(field).and_then(|v| v.as_str()).and_then(|json| serde_json::from_str(json).ok()).unwrap_or_default()
 }
 
+/// A plain word: letters and digits only, no phrase, field or exclusion.
+fn is_plain(word: &str) -> bool {
+    !word.is_empty() && word.chars().all(char::is_alphanumeric)
+}
+
+/// The query's last word, if a plain one, and the text before it.
+fn last_word(text: &str) -> Option<(&str, &str)> {
+    let text = text.trim_end();
+    let start = text.char_indices().rev().find(|(_, c)| c.is_whitespace()).map_or(0, |(i, c)| i + c.len_utf8());
+    let word = &text[start..];
+    is_plain(word).then_some((&text[..start], word))
+}
+
+/// The one token `analyzer` makes of `word`, if it makes exactly one.
+fn single_token(analyzer: &mut TextAnalyzer, word: &str) -> Option<String> {
+    let mut tokens = Vec::new();
+    analyzer.token_stream(word).process(&mut |token| tokens.push(token.text.clone()));
+    (tokens.len() == 1).then(|| tokens.remove(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -747,6 +860,38 @@ mod tests {
         assert!(relaxed.relaxed);
         assert_eq!(relaxed.hits.len(), 2);
         assert_eq!(hits(&index, "\"pears apples\"").len(), 0, "phrases keep word order");
+    }
+
+    #[test]
+    fn matches_the_word_being_typed() {
+        let index = index_of(&[
+            doc("http://reg.i2p/", Network::I2p, "Name registry", "h1"),
+            doc("http://forum.example/", Network::Clearnet, "Privacy forum", "h2"),
+        ]);
+        for typed in ["reg", "regis", "registr", "registry", "name regis", "Name REGIS"] {
+            assert_eq!(hits(&index, typed).len(), 1, "{typed}");
+        }
+        assert!(hits(&index, "re").is_empty(), "two letters are too few to go on");
+        assert!(hits(&index, "forum regis -privacy").is_empty(), "the rest of the query still holds");
+        assert_eq!(hits(&index, "\"name registry\"").len(), 1, "phrases as before");
+        assert!(!index.search(&query("regis", &[])).unwrap().fuzzy);
+    }
+
+    #[test]
+    fn finds_close_spellings_when_nothing_matches() {
+        let index = index_of(&[
+            doc("http://t.onion/", Network::Onion, "Tor Project", "h1"),
+            doc("http://n.example/", Network::Clearnet, "Network news", "h2"),
+        ]);
+        let exact = index.search(&query("tor project", &[])).unwrap();
+        assert_eq!((exact.hits.len(), exact.fuzzy, exact.relaxed), (1, false, false));
+        // A swapped pair and a missing letter: every word still required.
+        let close = index.search(&query("tor projetc", &[])).unwrap();
+        assert_eq!((close.hits.len(), close.fuzzy, close.relaxed), (1, true, false));
+        assert_eq!(hits(&index, "netwrk").len(), 1);
+        // Short words are not guessed at, and nothing like it finds nothing.
+        assert!(hits(&index, "tox").is_empty());
+        assert!(hits(&index, "zzzzzz").is_empty());
     }
 
     #[test]
