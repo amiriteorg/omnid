@@ -157,6 +157,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         tellPage()
+        // The browser's tabs may have opened or closed meanwhile.
+        invalidateOptionsMenu()
     }
 
     /** What the page cannot find out for itself: whether the i2pd app is installed. */
@@ -207,6 +209,13 @@ class MainActivity : Activity() {
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        // Back to the browser's open tabs, while there are any.
+        menu.add(Menu.NONE, R.string.browser_open_tabs, Menu.NONE, R.string.browser_open_tabs).apply {
+            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            actionView = TabButton(this@MainActivity).apply {
+                setOnClickListener { startActivity(Intent(this@MainActivity, BrowserActivity::class.java)) }
+            }
+        }
         menu.add(Menu.NONE, R.string.crawl_anytime, Menu.NONE, R.string.crawl_anytime).isCheckable = true
         menu.add(Menu.NONE, R.string.hyphanet_node, Menu.NONE, R.string.hyphanet_node)
         menu.add(Menu.NONE, R.string.stop_omnid, Menu.NONE, R.string.stop_omnid)
@@ -214,6 +223,10 @@ class MainActivity : Activity() {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        menu.findItem(R.string.browser_open_tabs).apply {
+            isVisible = BrowserActivity.openTabs > 0
+            (actionView as TabButton).count = BrowserActivity.openTabs
+        }
         menu.findItem(R.string.crawl_anytime).isChecked = prefs().getBoolean(CrawlPolicy.KEY_ANYTIME, false)
         return true
     }
@@ -228,6 +241,7 @@ class MainActivity : Activity() {
             true
         }
         R.string.stop_omnid -> {
+            BrowserActivity.closeAll()
             stopService(Intent(this, OmnidService::class.java))
             finishAndRemoveTask()
             true

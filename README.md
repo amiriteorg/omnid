@@ -150,9 +150,25 @@ mode: onion and `.i2p` results as well as clearnet ones, typed addresses too,
 and Hyphanet pages through your node, as `http://hyphanet/USK@…` (a key typed
 into the address bar opens there too). Every request goes through the daemon,
 over Tor (or i2pd for `.i2p`, the Hyphanet node for `hyphanet`), with
-each site on Tor circuits of its own; ⋮ → New identity drops the session and
+each site on Tor circuits of its own; ⋮ → New identity closes every tab and
 gives every site new circuits. GeckoView makes the APK much larger; see
 [Known limitations](#known-limitations).
+
+The browser has tabs, up to 16. A result opens in a tab of its own, and Back
+at its first page closes it and returns to the search page; other tabs stay
+open, and the framed count beside the address (or on the search page's
+toolbar) lists them. Long-press a link to open it in a new or background tab,
+or to copy it; a page that opens a window gets a tab next to it. ⋮ has find in
+page, bookmarks (the one thing the browser keeps, and only when asked), copy
+link (a Hyphanet page as its `freenet:` key) and the security level:
+
+- **Standard**: every site feature, with resist-fingerprinting.
+- **Safer**: no JIT, WebAssembly, MathML or SVG fonts; media plays only when
+  tapped; no JavaScript on a page that could be changed on the way (plain HTTP
+  from the clearnet, which HTTPS-only mode already refuses).
+- **Safest**: no JavaScript, SVG or site fonts.
+
+A new level reloads every open tab.
 
 ## Layout
 
@@ -292,8 +308,9 @@ The Android app's browser:
   the proxy username, and the daemon keeps a Tor isolation token per site. A
   stream that fails is tried once more on a new circuit for that site.
 - Private mode only: cookies and storage last until the browser closes.
-  Firefox's resist-fingerprinting is on, WebRTC, WebGL, geolocation and
-  prefetching are off, HTTPS only on the clearnet (onions are exempt, and a
+  Firefox's resist-fingerprinting is on, pages get en-US whatever the phone's
+  language, WebRTC, WebGL, WebGPU, geolocation, motion sensors, gamepads, DRM,
+  beacons and prefetching are off, lookalike names show as punycode, HTTPS only on the clearnet (onions are exempt, and a
   `.i2p` site without HTTPS is reloaded over HTTP: I2P, like Tor for onions,
   encrypts the whole way), strict tracking protection, no Safe Browsing lookups. Site permissions (camera,
   microphone, location, notifications) are refused, downloads are off, and

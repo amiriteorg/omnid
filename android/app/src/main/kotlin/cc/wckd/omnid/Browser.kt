@@ -56,7 +56,29 @@ internal object Browser {
         } catch (e: Throwable) {
             return GeckoResult.fromException(e)
         }
-        return verifyPrefs().then { installProxy(runtime) }.map { runtime }
+        val level = SecurityLevel.from(context.getSharedPreferences(CrawlPolicy.PREFS, Context.MODE_PRIVATE).getString(SecurityLevel.KEY, null))
+        return verifyPrefs().then { installProxy(runtime) }.then { apply(level) }.map { runtime }
+    }
+
+    /**
+     * Sets [level]'s prefs in the running Gecko and reads them back; pages loaded afterwards get
+     * them. Whether pages run JavaScript at all is each tab's session setting, not a pref.
+     */
+    fun apply(level: SecurityLevel): GeckoResult<Void> {
+        val wanted = level.prefs
+        val set = wanted.map { (name, value) ->
+            when (value) {
+                is Boolean -> GeckoPreferenceController.setGeckoPref(name, value, GeckoPreferenceController.PREF_BRANCH_USER)
+                is Int -> GeckoPreferenceController.setGeckoPref(name, value, GeckoPreferenceController.PREF_BRANCH_USER)
+                else -> GeckoResult.fromException(IllegalArgumentException("$name: ${value::class.simpleName} is not a pref type"))
+            }
+        }
+        return GeckoResult.allOf(set).then { GeckoPreferenceController.getGeckoPrefs(wanted.keys.toList()) }.map<Void> { reported ->
+            val actual = reported.orEmpty().associate { it.pref to it.value }
+            val wrong = wanted.keys.filter { actual[it] != wanted[it] }
+            check(wrong.isEmpty()) { "Gecko did not take ${wrong.joinToString()}" }
+            null
+        }
     }
 
     private fun verifyPrefs(): GeckoResult<Void> =

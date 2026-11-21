@@ -12,6 +12,15 @@
 - Ahmia's list of onion services reported for abuse is kept in the safety gate, refreshed daily
   over Tor (`--no-blocklist` to leave it out).
 - Directory pages give up to 20,000 links instead of 500.
+- The app's browser has tabs (up to 16) and a tab list, in a task of its own: a result opens in a
+  new tab, Back at its first page returns to the search page, and the search page's toolbar shows
+  the open tabs. Long-press a link to open it in a new or background tab or copy it.
+- Find in page, bookmarks, copy link, and Tor Browser's three security levels (Standard, Safer,
+  Safest), which turn off JavaScript, JIT, WebAssembly, SVG and site fonts step by step.
+- Less to fingerprint: pages get en-US whatever the phone's language, and motion sensors,
+  gamepads, WebGPU, DRM and beacons are off; lookalike names show as punycode.
+- New identity closes every tab, after asking.
+- Tapping the address bar selects the whole address, so what is typed replaces it.
 
 ## 0.1.1 (2026-11-21)
 
