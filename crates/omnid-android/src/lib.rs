@@ -81,6 +81,7 @@ fn start_with(data_dir: &Path, token: &str, tor: bool) -> Result<u16> {
         seeds,
         api_token: Some(token.to_owned()),
         start_paused: true,
+        socks: None,
     }))?;
     let port = daemon.addr().port();
     *running = Some(Running { runtime, daemon });

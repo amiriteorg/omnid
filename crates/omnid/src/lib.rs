@@ -2,6 +2,7 @@
 //! Android app embeds.
 
 pub mod api;
+mod socks;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -27,11 +28,15 @@ pub struct DaemonConfig {
     /// Required on every API request when set; see [`api::router`].
     pub api_token: Option<String>,
     pub start_paused: bool,
+    /// Where to serve the SOCKS5 proxy, if at all. It has no authentication:
+    /// anything that can reach it can use it, so keep it on loopback.
+    pub socks: Option<SocketAddr>,
 }
 
 /// A running daemon: routers, crawler and the local API.
 pub struct Daemon {
     addr: SocketAddr,
+    socks: Option<SocketAddr>,
     control: Arc<CrawlControl>,
     shutdown: CancellationToken,
     crawl: JoinHandle<StatsSnapshot>,
@@ -69,17 +74,33 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
     if !addr.ip().is_loopback() && cfg.api_token.is_none() {
         tracing::warn!("the API is reachable beyond this machine and has no token; set one");
     }
+    let socks = match cfg.socks {
+        Some(addr) => {
+            let listener = tokio::net::TcpListener::bind(addr)
+                .await
+                .with_context(|| format!("binding the SOCKS proxy to {addr}"))?;
+            let bound = listener.local_addr()?;
+            tokio::spawn(socks::serve(listener, gateway.clone(), shutdown.clone()));
+            tracing::info!("SOCKS5 proxy on {bound}");
+            Some(bound)
+        }
+        None => None,
+    };
     let state = api::AppState { gateway, index, control: control.clone(), jobs, safety };
     let router = api::router(state, addr, cfg.api_token);
     let stop = shutdown.clone().cancelled_owned();
     let server = tokio::spawn(async move { axum::serve(listener, router).with_graceful_shutdown(stop).await });
     tracing::info!("omnid {} listening on http://{addr}", env!("CARGO_PKG_VERSION"));
-    Ok(Daemon { addr, control, shutdown, crawl, server })
+    Ok(Daemon { addr, socks, control, shutdown, crawl, server })
 }
 
 impl Daemon {
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    pub fn socks_addr(&self) -> Option<SocketAddr> {
+        self.socks
     }
 
     pub fn control(&self) -> &Arc<CrawlControl> {

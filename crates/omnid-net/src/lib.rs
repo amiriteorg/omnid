@@ -16,12 +16,14 @@ mod guard;
 mod http;
 mod tor;
 
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use bytes::Bytes;
 use omnid_core::{Network, Source};
 use serde::Serialize;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use url::Url;
 
 pub use guard::is_public_ip;
@@ -44,6 +46,10 @@ pub struct GatewayConfig {
     /// addresses. Off by default: otherwise any submitted URL turns the
     /// daemon into a proxy into the operator's LAN.
     pub allow_private_addresses: bool,
+    /// Reach the clearnet through Tor exits instead of directly, for fetches
+    /// and proxied connections alike. Hides the crawler's address at the cost
+    /// of speed and of sites that block exits.
+    pub clearnet_via_tor: bool,
 }
 
 impl Default for GatewayConfig {
@@ -56,9 +62,17 @@ impl Default for GatewayConfig {
             i2p_proxy: Some(Url::parse("http://127.0.0.1:4444").expect("valid default")),
             fproxy: Some(Url::parse("http://127.0.0.1:8888").expect("valid default")),
             allow_private_addresses: false,
+            clearnet_via_tor: false,
         }
     }
 }
+
+/// A byte stream from [`Gateway::connect`].
+pub trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
+
+pub type BoxStream = Box<dyn Stream>;
 
 /// What to do with a response.
 #[derive(Debug, Clone, Copy)]
@@ -245,11 +259,20 @@ impl Gateway {
         };
         // A first bootstrap downloads the consensus and can outlast a request
         // timeout, so it is waited for outside of one.
-        if let (Source::Onion(_), Some(tor)) = (source, &self.tor) {
+        let over_tor = match source {
+            Source::Onion(_) => true,
+            Source::Clearnet(_) => self.cfg.clearnet_via_tor,
+            _ => false,
+        };
+        if let (true, Some(tor)) = (over_tor, &self.tor) {
             tor.ready().await.map_err(|error| FetchError::Transport { network, error })?;
         }
         let fetch = async {
             match source {
+                Source::Clearnet(url) if self.cfg.clearnet_via_tor => {
+                    let tor = self.tor.as_ref().ok_or_else(|| unavailable(network, "clearnet via Tor needs Tor"))?;
+                    tor.get(url, opts).await.map_err(|error| FetchError::Transport { network, error })
+                }
                 Source::Clearnet(url) => {
                     if !self.cfg.allow_private_addresses && !guard::host_is_public(url) {
                         return Err(FetchError::PrivateAddress(url.to_string()));
@@ -286,6 +309,97 @@ impl Gateway {
             }
         };
         tokio::time::timeout(timeout, fetch).await.map_err(|_| FetchError::Timeout(timeout))?
+    }
+
+    /// Opens a raw stream to `host:port` over the network its name implies:
+    /// `.onion` through Tor, `.i2p` through i2pd, anything else directly (or
+    /// through Tor with `clearnet_via_tor`). This is what the SOCKS proxy
+    /// serves.
+    pub async fn connect(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        let network = if host.ends_with(".onion") {
+            Network::Onion
+        } else if host.ends_with(".i2p") {
+            Network::I2p
+        } else {
+            Network::Clearnet
+        };
+        let tor = || self.tor.as_ref().ok_or_else(|| unavailable(network, "Tor is disabled"));
+        let transport = |error: BoxError| FetchError::Transport { network, error };
+        let over_tor = network == Network::Onion || (network == Network::Clearnet && self.cfg.clearnet_via_tor);
+        if over_tor {
+            tor()?.ready().await.map_err(transport)?;
+        }
+        let timeout = if network == Network::Clearnet && !over_tor {
+            self.cfg.clearnet_timeout
+        } else {
+            self.cfg.overlay_timeout
+        };
+        let connect = async {
+            if over_tor {
+                return Ok(Box::new(tor()?.stream(&host, port).await.map_err(transport)?) as BoxStream);
+            }
+            match network {
+                Network::I2p => self.i2p_tunnel(&host, port).await,
+                _ => self.direct(&host, port).await,
+            }
+        };
+        tokio::time::timeout(timeout, connect).await.map_err(|_| FetchError::Timeout(timeout))?
+    }
+
+    /// A direct TCP connection, refusing non-public addresses unless allowed;
+    /// the addresses connected to are the ones checked.
+    async fn direct(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
+        let network = Network::Clearnet;
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        let addrs: Vec<SocketAddr> = match host.parse::<IpAddr>() {
+            Ok(ip) => vec![SocketAddr::new(ip, port)],
+            Err(_) => tokio::net::lookup_host((host, port))
+                .await
+                .map_err(|e| FetchError::Transport { network, error: e.into() })?
+                .collect(),
+        };
+        let allowed: Vec<_> =
+            addrs.into_iter().filter(|a| self.cfg.allow_private_addresses || is_public_ip(a.ip())).collect();
+        if allowed.is_empty() {
+            return Err(FetchError::PrivateAddress(format!("{host}:{port}")));
+        }
+        let stream = tokio::net::TcpStream::connect(&allowed[..])
+            .await
+            .map_err(|e| FetchError::Transport { network, error: e.into() })?;
+        Ok(Box::new(stream))
+    }
+
+    /// An HTTP CONNECT tunnel through i2pd's HTTP proxy.
+    async fn i2p_tunnel(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
+        let network = Network::I2p;
+        let proxy = self.cfg.i2p_proxy.as_ref().ok_or_else(|| unavailable(network, "no I2P proxy configured"))?;
+        let (Some(proxy_host), Some(proxy_port)) = (proxy.host_str(), proxy.port_or_known_default()) else {
+            return Err(unavailable(network, "bad I2P proxy URL"));
+        };
+        let mut stream =
+            tokio::net::TcpStream::connect((proxy_host, proxy_port)).await.map_err(|_| FetchError::Unavailable {
+                network,
+                reason: format!("nothing is listening on {proxy}; is the router running?"),
+            })?;
+        let transport = |error: BoxError| FetchError::Transport { network, error };
+        let request = format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n");
+        stream.write_all(request.as_bytes()).await.map_err(|e| transport(e.into()))?;
+        // Read the response head a byte at a time so nothing after it is
+        // consumed: those bytes belong to the tunnel.
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            if head.len() > 8 << 10 {
+                return Err(transport("oversized CONNECT response".into()));
+            }
+            head.push(stream.read_u8().await.map_err(|e| transport(e.into()))?);
+        }
+        let status = String::from_utf8_lossy(&head);
+        let status = status.lines().next().unwrap_or_default();
+        if status.split_whitespace().nth(1) != Some("200") {
+            return Err(transport(format!("i2pd refused the tunnel: {status}").into()));
+        }
+        Ok(Box::new(stream))
     }
 
     /// FProxy may redirect to its own absolute URL; strip the origin so the

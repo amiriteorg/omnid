@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use arti_client::config::{BoolOrAuto, TorClientConfigBuilder};
-use arti_client::{BootstrapBehavior, StreamPrefs, TorClient};
+use arti_client::{BootstrapBehavior, DataStream, StreamPrefs, TorClient};
 use rustls::pki_types::ServerName;
 use tokio_rustls::TlsConnector;
 use tor_rtcompat::PreferredRuntime;
@@ -64,10 +64,16 @@ impl TorTransport {
         Ok(self.client.bootstrap().await?)
     }
 
+    /// A stream to `host:port` through Tor: an onion service, or the
+    /// clearnet through an exit.
+    pub(crate) async fn stream(&self, host: &str, port: u16) -> Result<DataStream, BoxError> {
+        Ok(self.client.connect_with_prefs((host, port), &self.prefs).await?)
+    }
+
     pub(crate) async fn get(&self, url: &Url, opts: &FetchOptions) -> Result<RawResponse, BoxError> {
         let host = url.host_str().ok_or("URL has no host")?;
         let port = url.port_or_known_default().ok_or("URL has no port")?;
-        let stream = self.client.connect_with_prefs((host, port), &self.prefs).await?;
+        let stream = self.stream(host, port).await?;
         if url.scheme() == "https" {
             let name = ServerName::try_from(host.to_owned())?;
             let stream = self.tls.connect(name, stream).await?;

@@ -44,6 +44,9 @@ struct Common {
     /// Let clearnet fetches reach loopback and private networks
     #[arg(long, global = true)]
     allow_private_addresses: bool,
+    /// Reach the clearnet through Tor exits instead of directly
+    #[arg(long, global = true)]
+    clearnet_via_tor: bool,
 }
 
 #[derive(Subcommand)]
@@ -81,6 +84,10 @@ struct ServeArgs {
     /// Start with crawling paused; resume with POST /api/crawl
     #[arg(long)]
     paused: bool,
+    /// Serve a SOCKS5 proxy here (e.g. 127.0.0.1:7172) so browsers can open
+    /// .onion and .i2p addresses through omnid; use remote DNS (socks5h)
+    #[arg(long, env = "OMNID_SOCKS")]
+    socks: Option<SocketAddr>,
     #[command(flatten)]
     crawl: CrawlOptions,
 }
@@ -143,6 +150,7 @@ async fn serve(common: &Common, data_dir: &Path, args: ServeArgs) -> Result<()> 
         seeds: seeds(&args.crawl)?,
         api_token: args.api_token,
         start_paused: args.paused,
+        socks: args.socks,
     })
     .await?;
     let stop = daemon.shutdown_token();
@@ -261,6 +269,7 @@ fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
         i2p_proxy: Some(common.i2p_proxy.clone()),
         fproxy: Some(common.fproxy.clone()),
         allow_private_addresses: common.allow_private_addresses,
+        clearnet_via_tor: common.clearnet_via_tor,
         ..GatewayConfig::default()
     }
 }
