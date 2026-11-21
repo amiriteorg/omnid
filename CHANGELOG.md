@@ -10,6 +10,26 @@
   its defaults and warns at start; `--clearnet-via-tor --no-dht` protects it the same way. The
   status says how the crawler reaches the clearnet. The README has a section on what OMNId hides
   and what it does not.
+- Security, from an independent audit:
+  - A redirect from an onion, I2P or Hyphanet site to the clearnet is never followed directly
+    (robots.txt, `omnid fetch`, `omnid download`, the blocklist fetch all did, from the machine's
+    IP), only through Tor exits.
+  - A page can no longer open a torrent app, or send the browser into I2P or Hyphanet, by script or
+    redirect: that takes a tap or typing, and a magnet goes to a torrent app only after a dialog
+    and without the trackers and peers a page can plant in the link.
+  - The browser's proxy keeps its port for the life of the app, so no other app can take it
+    while the daemon restarts; the search page loads the daemon's own port only.
+  - New identity ends the connections still open on the old circuits; requests that cannot say
+    which page they belong to get circuits of their own; hosts with a trailing dot no longer slip
+    past the rule that keeps pages from loading I2P or Hyphanet resources.
+  - Pages see `Accept-Language: en-US,en;q=0.5` whatever the phone's languages, and no Referer
+    (and `Origin: null`) when a request crosses between networks.
+  - Gecko prefs follow Tor Browser 16 more closely (service workers, push, TLS session identifiers
+    and remote settings off, among others; Safer also turns off the native regexp engine).
+  - A search with a huge offset could abort the daemon; the offset is capped at 10,000.
+  - Proxy clients' host names are checked before they reach a router.
+  - The search page and Settings follow Allow screenshots; download notifications keep the file
+    name off the lock screen; the search page's fields keep the keyboard from learning.
 
 ## 0.1.3 (2026-11-21)
 
