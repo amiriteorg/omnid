@@ -24,8 +24,12 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
 - Fast check: `./.agents/bin/eng verify --profile fast` (fmt, clippy `-D warnings`, tests)
 - Full check: `./.agents/bin/eng verify --profile full`
 - Targeted test: `cargo test -p <crate> [test name]`, e.g. `cargo test -p omnid-crawl --test e2e`
-- Live network tests (ignored by default): `cargo test -p omnid-dht -- --ignored --nocapture`
-- DHT soak: `cargo run --release -p omnid-dht --example soak -- <minutes>`
+- Live tests against real routers: `scripts/live-routers.sh all` (starts i2pd and Hyphanet, runs every
+  `#[ignore]`d live test, tears down); Tor-only: `cargo test --workspace -- --ignored live_tor`
+- Benchmarks (record results in `docs/benchmarks.md`): `cargo run --release -p omnid-crawl --example
+  bench_crawl`, `-p omnid-index --example bench_search`, `-p omnid-net --example bench_tor`,
+  `-p omnid-dht --example soak -- <minutes>`
+- Android unit tests: `(cd android && ./gradlew testDebugUnitTest)`
 - Android: `android/build-rust.sh && (cd android && ./gradlew assembleRelease)`; needs the SDK,
   an NDK and the `aarch64-linux-android` target. Not part of the eng profiles.
 - Security: `./.agents/bin/eng security`

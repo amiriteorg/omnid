@@ -314,7 +314,7 @@ impl Gateway {
     /// Opens a raw stream to `host:port` over the network its name implies:
     /// `.onion` through Tor, `.i2p` through i2pd, anything else directly (or
     /// through Tor with `clearnet_via_tor`). This is what the SOCKS proxy
-    /// serves.
+    /// serves. Tor streams buffer writes: flush after writing a request.
     pub async fn connect(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
         let host = host.trim_end_matches('.').to_ascii_lowercase();
         let network = if host.ends_with(".onion") {

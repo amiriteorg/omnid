@@ -226,11 +226,26 @@ cargo clippy --workspace --all-targets
 cargo fmt --all --check
 ```
 
-No test touches the network: crawls run against local servers, the proxy and
-tunnels against local stand-ins, and the Android bridge without Tor. Live
-checks: `cargo test -p omnid-dht -- --ignored --nocapture` and
-`cargo run --release -p omnid-dht --example soak -- 30`. The eng kit wraps the
-rest: `./.agents/bin/eng verify --profile fast` and `./.agents/bin/eng security`.
+No test touches the network unless it is ignored: crawls run against local
+servers, the proxy and tunnels against local stand-ins, and the Android bridge
+without Tor. Property tests (proptest) throw generated input at the parsers.
+The eng kit wraps the rest: `./.agents/bin/eng verify --profile fast` and
+`./.agents/bin/eng security`. Android: `cd android && ./gradlew testDebugUnitTest`.
+
+Live tests run against real networks and routers:
+
+```sh
+scripts/live-routers.sh all     # start i2pd and Hyphanet, run every live test, tear down
+cargo test --workspace -- --ignored live_tor   # just the Tor ones; needs no router
+```
+
+The script starts a client-only i2pd (`--notransit`) and a temporary Hyphanet
+node from a package it checks against a pinned hash and the release key, waits
+until each serves pages, and deletes their state afterwards. A live test whose
+router is not running fails and says so.
+
+Benchmarks and their recorded results are in [docs/benchmarks.md](docs/benchmarks.md):
+`bench_crawl`, `bench_search`, `bench_tor` and the DHT `soak`.
 
 ## License
 
