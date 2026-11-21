@@ -62,6 +62,8 @@ pub struct DaemonConfig {
 /// those reported for abuse), I2P's hubs and directories, and the Hyphanet
 /// project's default bookmarks, its indexes of freesites among them. Each
 /// answered on 2026-11-21. A network's seeds wait while its router is down.
+/// An onion site on Ahmia's blocklist is not added, though the seeds are
+/// exempt from it: five older ones are on it wrongly.
 pub const DEFAULT_SEEDS: &[&str] = &[
     // Tor: the Tor Project, the press, privacy tools and their makers.
     "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/",
@@ -75,6 +77,31 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "http://qubesosfasa4zl44o4tws22di6kepyzfeqv3tg4e3ztknltfxqrymdad.onion/",
     "http://dds6qkxpwdeubwucdiaord2xgbbeyds25rbsgr73tbfpqpt4a6vjwsyd.onion/",
     "http://w5j6stm77zs6652pgsij4awcjeel3eco7kvipheu6mtr623eyyehj4yd.onion/",
+    // The Tor Project's list of its onion services, its support and
+    // community portals, and Tor Metrics.
+    "http://xao2lxsmia2edq2n5zxg6uahx6xox2t7bfjw6b5vdzsxi7ezmqob6qid.onion/",
+    "http://rzuwtpc4wb3xdzrj3yeajsvm3fkq4vbeubm2tdxaqruzzzgs5dwemlad.onion/",
+    "http://xmrhfasfg5suueegrnc4gsgyi2tyclcy5oz7f5drnrodmdtob6t2ioyd.onion/",
+    "http://hctxrvjzfpvmzh2jllqhgvvkoepxb4kfzdjm6h7egcwlumggtktiftid.onion/",
+    // Debian's list of its onion services, its blog (Bits from Debian) and
+    // Debian micronews.
+    "http://jvgypgbnfyvfopg5msp6nwr2sl2fd6xmnguq35n7rfkw3yungjn2i4yd.onion/",
+    "http://xpsuwzyljwcmk3vmurhw5ryvi66azdexzdabng5bqu56r6xc35puyeyd.onion/",
+    "http://boowxjehkfc3ip6pnsrtt32s6j252rdzng5rcjhjt7yzh2ieiz5ka4yd.onion/",
+    // Privacy Guides, the Whonix forum, Systemli (a tech collective) and
+    // Nos oignons (Tor exit relays run by donations).
+    "http://www.xoe4vn5uwdztif6goazfbmogh6wh5jc4up35bqdflu6bkdc5cas5vjqd.onion/",
+    "http://forums.dds6qkxpwdeubwucdiaord2xgbbeyds25rbsgr73tbfpqpt4a6vjwsyd.onion/",
+    "http://7sk2kov2xwx6cbc32phynrifegg6pklmzs7luwcggtzrnlsolxxuyfyd.onion/",
+    "http://oignonspeuuqi7ovpov7srtuhpqut2vgt7lcmenfwwvjgjnbbsx4qeyd.onion/",
+    // Amnesty International and Bellingcat.
+    "https://www.amnestyl337aduwuvpf57irfl54ggtnuera45ygcxzuftwxjvvmpuzqd.onion/",
+    "http://bellcatmbguthn3age23lrbseln2lryzv3mt7whis7ktjw4qrestbzad.onion/",
+    // Free software: Cwtch, OnionShare, F-Droid and Bitcoin Core.
+    "http://cwtchim3z2gdsyb27acfc26lup5aqbegjrjsqulzrnkuoalq5h4gmcid.onion/",
+    "http://lldan5gahapx5k7iafb3s4ikijc4ni7gx5iywdflkba5y2ezyg6sjgyd.onion/",
+    "http://fdroidorg6cooksyluodepej4erfctzk7rrjpjbbr6wx24jh3lqyfwyd.onion/",
+    "http://6hasakffvppilxgehrswmffqurlcjjjhd76jgvaqmsg6ul25s7t3rzyd.onion/",
     // Ahmia, a search engine for onion services, and its list of them.
     "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/",
     "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/onions/",
@@ -88,6 +115,14 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "http://stats.i2p/",
     "http://notbob.i2p/",
     "http://isitup.i2p/",
+    // The I2P wiki, the Russian community's wiki (I2P-ilita), I2P+, I2P's
+    // Git forge and Postman's mail service. All are in the address book a
+    // new i2pd starts with: other names do not resolve until it has more.
+    "http://wiki.i2p-projekt.i2p/wiki/",
+    "http://wiki.ilita.i2p/",
+    "http://skank.i2p/",
+    "http://git.idk.i2p/",
+    "http://hq.postman.i2p/",
     // Hyphanet: the node's default bookmarks, Clean Spider (an index of
     // freesites) and the Index of Indexes among them.
     "freenet:USK@62H8KFSZWMyQ2MQgwvNhEYJ2m3SQl696PfsVfWQ-HQo,cJrPvdNz4AnrHJQXNteDV7k3YnAVY-MClt84gwH2qEo,AQACAAE/freenet-first-steps/24/",
@@ -96,6 +131,16 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "freenet:USK@0iU87PXyodL2nm6kCpmYntsteViIbMwlJE~wlqIVvZ0,nenxGvjXDElX5RIZxMvwSnOtRzUKJYjoXEDgkhY6Ljw,AQACAAE/freenetproject-mirror/519/",
     "freenet:USK@t5zaONbYd5DvGNNSokVnDCdrIEytn9U5SSD~pYF0RTE,guWyS9aCMcywU5PFBrKsMiXs7LzwKfQlGSRi17fpffc,AQACAAE/fsng/58/",
     "freenet:USK@8r-uSRcJPkAr-3v3YJR16OCx~lyV2XOKsiG4MOQQBMM,P42IgNemestUdaI7T6z3Og6P-Hi7g9U~e37R3kWGVj8,AQACAAE/freesite-HOWTO/4/",
+    // More of its bookmarks: the Freenet Privacy and Software Site, and the
+    // freesites of FMS (a message board system) and Freemail.
+    "freenet:USK@8AEGotJKXJ4ABJy1gKjls4SrrzpshQNoEMAbu0IFA94,blTuIOwf7k9p1R2GCfJSPSaOFzsuXLrFujOnV1Irjag,AQACAAE/fnpss/35/",
+    "freenet:USK@0npnMrqZNKRCRoGojZV93UNHCMN-6UU3rRSAmP6jNLE,~BG-edFtdCC1cSH4O3BWdeIYa8Sw5DfyrSV-TKdO5ec,AQACAAE/fms/155/",
+    "freenet:USK@cZu5Jx1eTvsN-p0c22uD3y3DvjKwv6bPRIHlCM5~4zQ,IOBbCUJWoNsYYPYcmscE70tFM-QjfWFW~myTPbeGIHg,AQACAAE/index/4/",
+    // The Freenet Documentation Wiki, Sone (a social network on Hyphanet)
+    // and Publish! (a guide to putting a freesite up).
+    "freenet:USK@z6lnOx7PPe16P3Sobu1KM9jiLiIxdvE3L918QMVCLak,AmZ7RemmWcKM2-W4Zs38Ks511lRTsWleMj2mVAReB4E,AQACAAE/freenetdocwiki/17/",
+    "freenet:USK@nwa8lHa271k2QvJ8aa0Ov7IHAV-DFOCFgmDt3X6BpCI,DuQSUZiI~agF8c-6tjsFFGuZ8eICrzWCILB60nT8KKo,AQACAAE/sone/83/",
+    "freenet:USK@940RYvj1-aowEHGsb5HeMTigq8gnV14pbKNsIvUO~-0,FdTbR3gIz21QNfDtnK~MiWgAf2kfwHe-cpyJXuLHdOE,AQACAAE/publish/3/",
 ];
 
 /// [`DEFAULT_SEEDS`] as crawl jobs.
@@ -438,6 +483,7 @@ pub fn read_seeds(path: &Path) -> Result<Vec<Job>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use omnid_crawl::Verdict;
 
     #[test]
     fn starts_somewhere_on_every_overlay_network() {
@@ -451,6 +497,56 @@ mod tests {
         let store = CrawlStore::in_memory().unwrap();
         assert_eq!(store.discover(&seeds, 0).unwrap(), seeds.len());
         assert_eq!(store.discover(&default_seeds(), 0).unwrap(), 0);
+    }
+
+    /// Onion sites on Ahmia's blocklist of 2026-11-21, as it lists them (the
+    /// MD5 of the hostname): five default seeds it names wrongly, then sites
+    /// left out of the seeds for being on it.
+    const AHMIA_LISTED: &[(&str, &str)] = &[
+        ("ProPublica", "047c9505707fbe1f54af4567310288cd"),
+        ("Riseup", "b1f4acf9c73f5957510f91758c804325"),
+        ("Proton", "902e3abeed429df1548eecaed3df3df3"),
+        ("Mullvad", "474f2b685fbec617b47cb5640bc3f7c9"),
+        ("Qubes OS", "5497b487cf65f6a0fa26606081a61709"),
+        ("Tor Blog", "f5bce0c96660995b7cb3b9d2cf026074"),
+        ("Tor Forum", "8ed45ee0976cbd121f427fefcb7141c1"),
+        ("Tor mailing lists", "7b114dd5d6c6b3172b51d3489d21ac5b"),
+        ("Debian", "ffc346a37a0b0a0fd4948e0873391ae5"),
+        ("Planet Debian", "75e8b8b65db55a1bad9c0f6598acd5e3"),
+        ("Freedom of the Press Foundation", "3a495bed2fb1e18ec391808c0fe4bab1"),
+        ("Free Software Foundation Europe", "fd613fb1cd38ec2801c6d1b0e2404542"),
+        ("Disroot", "73d781ae9f6219d8841150658541d30c"),
+        ("The Guardian", "3cc3fcdde6a76be8f884fe126bb31397"),
+        ("BBC News", "04d6a94372dfc244a3a9957431b9e577"),
+        ("Deutsche Welle", "75be80714a7defbdda296b6c06e37fc6"),
+        ("taz", "85bc82719b899e64fe8eb08833cf6f14"),
+        ("DuckDuckGo", "c7bfbaed0b59d804993973304bdf6d7a"),
+        ("Brave", "b1b993f914496d3c49251d1cf5e34ce4"),
+        ("SimpleX Chat", "d32b8bccb607727e29d9e03cc0901f01"),
+        ("DEF CON", "3318c7d48585d50352486d43a7f46bfa"),
+        ("DEF CON Media", "3d9dae3e25aa1019496f004cf1c5aad3"),
+        ("CIA", "a609305b13b6d3c156136689961a8de0"),
+        ("decoded.legal", "c0fc4d10a8d3162088d5ee794ef11601"),
+    ];
+
+    #[test]
+    fn adds_no_onion_seed_on_ahmias_blocklist() {
+        let safety = Safety::default();
+        let list: String = AHMIA_LISTED.iter().map(|(_, digest)| format!("{digest}\n")).collect();
+        assert_eq!(safety.set_published(&list), AHMIA_LISTED.len());
+        let listed: Vec<String> = default_seeds()
+            .iter()
+            .filter(|job| safety.check_source(&job.source) == Verdict::DeniedSite)
+            .map(|job| job.source.site_key())
+            .collect();
+        let wrongly = [
+            "p53lf57qovyuvwsc6xnrppyply3vtqm7l6pcobkmyqsiofyeznfu5uqd.onion",
+            "vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion",
+            "protonmailrmez3lotccipshtkleegetolb73fuirgj7r4o4vfu7ozyd.onion",
+            "o54hon2e2vj6c7m3aqqu6uyece65by3vgoxxhlqlsvkmacw6a7m7kiad.onion",
+            "qubesosfasa4zl44o4tws22di6kepyzfeqv3tg4e3ztknltfxqrymdad.onion",
+        ];
+        assert_eq!(listed, wrongly, "only the five it names wrongly");
     }
 
     #[test]
