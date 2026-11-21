@@ -37,6 +37,12 @@
 - The browser's downloads send its own Accept, Accept-Language and Sec-GPC.
 - The app and README say what the i2pd app's defaults (1-hop tunnels, one lasting I2P address)
   mean, and what to change.
+- 38 more default seeds, each answered through its network on 2026-11-21: 10 onion sites (the Tor
+  specifications, Tor research, Snowflake, OnionShare's documentation, MetaGer, FragDenStaat, the
+  Monero documentation, Wasabi Wallet, AirVPN, Njalla), 17 eepsites given by b32 address so that
+  any router resolves them (Let's Decentralize, discuss.i2p, Shadow Wiki and more) and 11
+  freesites from Clean Spider (Bob's Safe Closed Index, guides to Frost and FMS, Hyphanet
+  developers' sites and tools). None is on Ahmia's blocklist.
 
 ## 0.1.3 (2026-11-21)
 

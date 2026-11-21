@@ -73,7 +73,9 @@ pub struct DaemonConfig {
 /// project's default bookmarks, its indexes of freesites among them. Each
 /// answered on 2026-11-21. A network's seeds wait while its router is down.
 /// An onion site on Ahmia's blocklist is not added, though the seeds are
-/// exempt from it: five older ones are on it wrongly.
+/// exempt from it: five older ones are on it wrongly. An eepsite is named
+/// only if a new i2pd's address book has the name; otherwise it is given by
+/// its b32 address, which every router resolves.
 pub const DEFAULT_SEEDS: &[&str] = &[
     // Tor: the Tor Project, the press, privacy tools and their makers.
     "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/",
@@ -115,6 +117,21 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     // Ahmia, a search engine for onion services, and its list of them.
     "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/",
     "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/onions/",
+    // The Tor Project's specifications, research and Snowflake sites, and
+    // OnionShare's documentation.
+    "http://i3xi5qxvbrngh3g6o7czwjfxwjzigook7zxzjmgwg5b7xnjcn5hzciad.onion/",
+    "http://xhqthou6scpfnwjyzc3ekdgcbvj76ccgyjyxp6cgypxjlcuhnxiktnqd.onion/",
+    "http://oljlphash3bpqtrvqpr5gwzrhroziw4mddidi5d2qa4qjejcbrmoypqd.onion/",
+    "http://docs.lldan5gahapx5k7iafb3s4ikijc4ni7gx5iywdflkba5y2ezyg6sjgyd.onion/2.7.2/en/",
+    // MetaGer (a search engine), FragDenStaat (freedom-of-information
+    // requests in Germany), the Monero documentation, Wasabi Wallet, AirVPN
+    // and Njalla.
+    "http://metagerv65pwclop2rsfzg4jwowpavpwd6grhhlvdgsswvo6ii4akgyd.onion/",
+    "http://fdstaat23zv6kdmntgkvdzkr7hipl5oqswwi3xawzkj2w2gwsbxmrwyd.onion/",
+    "http://xmrdoc6phnvjbf5hmjbwdfu47zavzfngymlnwhs2gyxxpxmad4c65kyd.onion/",
+    "http://wasabiukrxmkdgve5kynjztuovbg43uxcbcxn6y2okcrsg7gb6jdmbad.onion/",
+    "https://airvpn3epnw2fnsbx5x2ppzjs6vxtdarldas7wjyqvhscj7x43fxylqd.onion/",
+    "https://njallalafimoej5i4eg7vlnqjvmb6zhdh27qxcatdn647jtwwwui3nad.onion/",
     // I2P: the project, its news, forum and registries, and directories.
     "http://i2p-projekt.i2p/",
     "http://planet.i2p/",
@@ -133,6 +150,34 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "http://skank.i2p/",
     "http://git.idk.i2p/",
     "http://hq.postman.i2p/",
+    // By b32 address, from reg.i2p's hosts.txt: Let's Decentralize (a guide
+    // to the overlay networks, with lists of their sites), the discuss.i2p
+    // forum, Shadow Wiki (privacy and surveillance), the Anthrill Linux wiki,
+    // The Cypherpunk Handbook and the I2P Learning Lab.
+    "http://mqtlargpv4247iylywxw6ibi6qpz6my5duqm33c4lcdhjg5yfh7q.b32.i2p/", // letsdecentralize.i2p
+    "http://wrnowoalzz5mquzaygmcrm4feuqco5gsxyn42fizbqjaprtdx5gq.b32.i2p/", // discuss.i2p
+    "http://63gxkfc4hlcbxrdoepw2i2hyxai5qkxmi636ag3y7sf5tq3imoya.b32.i2p/", // shadowwiki.i2p
+    "http://x3yq7si6yhwjuo7h67h5dn2odoncu2jdkj3wzkttycar5dq2yvcq.b32.i2p/", // wiki.anthrill.i2p
+    "http://poy7mv4bgjnjgxq73hck72x5lnspvev4pnsiea2gdyegt7xpeg3q.b32.i2p/", // cypherpunk-handbook.i2p
+    "http://7s6q2f2mmnf7nhryd75ivy4dzviw2fuqizsligzglvj7wkchp5nq.b32.i2p/", // theinformed.i2p
+    // i2pd's maintainers acetone and R4SAS (with his list of services on
+    // i2pd), the I2P plugin repository, Free Software Fans (a Chinese free
+    // software community), the OS3 security and network engineering
+    // master's site and ArchWorks (a self-hosting blog).
+    "http://tzwfy3dnqtm4wuofmcp3gcb5qjcytri635ei7kw7yrl6n3ul5n2a.b32.i2p/", // acetone.i2p
+    "http://2gafixvoztrndawkmhfxamci5lgd3urwnilxqmlo6ittu552cndq.b32.i2p/", // r4sas.i2p
+    "http://xowts5nmf5job77cqkngrwrmmud4suolt7tzqadmzhqhwew3whkq.b32.i2p/", // plugins.i2p
+    "http://fsfansa6cam2xdnbhekn6jirbijkgnve33pvf5vd6u5md6pqjjka.b32.i2p/", // fsfans.i2p
+    "http://7ugh7a46mrcnhe42k3nokjncbvwtv2fkpxlvd5c6odlfdb7puaqq.b32.i2p/", // os3.i2p
+    "http://yvbkgfldebduben772l4ngcrxassjykeamuskljqktpwrpqoqg3q.b32.i2p/", // archworks.i2p
+    // Software on I2P: EasyGPG, Xeres (friend-to-friend messaging), the
+    // Kestrel messaging protocol and Revuo Monero (a Monero newsletter);
+    // and Programthink's blog (Chinese, on privacy and censorship).
+    "http://bwxry5alzx5ihgrd3glah4eotddblzhalvpheppnw4zcajzqoora.b32.i2p/", // easygpg2.i2p
+    "http://f7vdjudujlxlvn6xru2tdllvzyejavmb27r7ytatjszrumpxlt4a.b32.i2p/", // xeres.i2p
+    "http://kestrellnbvhitrqntpk3tairex65bvmmtybbtuzh3k5z3sdtafa.b32.i2p/", // kestrel.i2p
+    "http://qve7i3ke5h2mbbyphd7agmh5awzcwulvrvghjvhndkagdbi4mkcq.b32.i2p/", // revuo-xmr.i2p
+    "http://programygfltn24q6foacm5gbuo3z2geub2k2k366llx3bph4ula.b32.i2p/", // programthink.i2p
     // Hyphanet: the node's default bookmarks, Clean Spider (an index of
     // freesites) and the Index of Indexes among them.
     "freenet:USK@62H8KFSZWMyQ2MQgwvNhEYJ2m3SQl696PfsVfWQ-HQo,cJrPvdNz4AnrHJQXNteDV7k3YnAVY-MClt84gwH2qEo,AQACAAE/freenet-first-steps/24/",
@@ -151,6 +196,23 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "freenet:USK@z6lnOx7PPe16P3Sobu1KM9jiLiIxdvE3L918QMVCLak,AmZ7RemmWcKM2-W4Zs38Ks511lRTsWleMj2mVAReB4E,AQACAAE/freenetdocwiki/17/",
     "freenet:USK@nwa8lHa271k2QvJ8aa0Ov7IHAV-DFOCFgmDt3X6BpCI,DuQSUZiI~agF8c-6tjsFFGuZ8eICrzWCILB60nT8KKo,AQACAAE/sone/83/",
     "freenet:USK@940RYvj1-aowEHGsb5HeMTigq8gnV14pbKNsIvUO~-0,FdTbR3gIz21QNfDtnK~MiWgAf2kfwHe-cpyJXuLHdOE,AQACAAE/publish/3/",
+    // From Clean Spider: Bob's Safe Closed Index (an index of freesites that
+    // leaves out adult content), the Freenet Information Portal, the Freenet
+    // Applications FreeSite, the Frost FAQ and the Unofficial Guide to FMS.
+    "freenet:USK@goCPIXupjEc1Nb4yX3iCtxdcKIwqU7XebpxUyn7GudM,VOdTMFgEGQalLFecSIGPJ46qlutbdYIeAC6SSClqHvs,AQACAAE/Bob-Safe-Closed-Index/13/",
+    "freenet:USK@D~O-C~so9RSMoJ~FWp9BHmE21npXmg0LzVTh-4xWoXU,bpMTwpHvzDmWzIOHSBkQZrdePdW2QhouvcWnh7KqFA8,AQACAAE/FIP/12/",
+    "freenet:USK@ugb~uuscsidMI-Ze8laZe~o3BUIb3S50i25RIwDH99M,9T20t3xoG-dQfMO94LGOl9AxRTkaz~TykFY-voqaTQI,AQACAAE/FAFS/53/",
+    "freenet:USK@ZVtoHFm~Lm5FctbjloVYwQ0b5KaAae6TeQGk8fswJs4,kRR5rHBQuNpaiFqZE-v3Rtv0e~LWFFbxbh9tAt44UEM,AQACAAE/FrostFAQinf/49/",
+    "freenet:USK@xedmmitRTj9-PXJxoPbD7RY1gf9pKi0OcsRmjNPPIU4,AzFWTYV~9-I~eXis14tIkJ4XkF17gIgZrB294LjFXjc,AQACAAE/fmsguide/6/",
+    // Hyphanet's developers and tools: Bombe's flog and jSite, Arne
+    // Babenhauserheide's site, the Sharesite plugin, FLIP (IRC over Hyphanet)
+    // and dgof (git over Hyphanet).
+    "freenet:USK@e3myoFyp5avg6WYN16ImHri6J7Nj8980Fm~aQe4EX1U,QvbWT0ImE0TwLODTl7EoJx2NBnwDxTbLTE6zkB-eGPs,AQACAAE/bombe/136/",
+    "freenet:USK@e3myoFyp5avg6WYN16ImHri6J7Nj8980Fm~aQe4EX1U,QvbWT0ImE0TwLODTl7EoJx2NBnwDxTbLTE6zkB-eGPs,AQACAAE/jSite/23/",
+    "freenet:USK@LHeuG-SU5ZvYQXTu8Y9mhjCYyQxB-m-W~ryElufr-2M,Ij9l0U1Wa~FQu7GFBf~ciwUbCwpTFv6mWZkS1YuoxQk,AQACAAE/arnebab-org/1314/",
+    "freenet:USK@dCnkUL22fAmKbKg-Cftx9j2m4IwyWB0QbGoiq1RSLP8,4d1TDqwRr4tYlsubLrQK~c4h0~FtmE-OXCDmFiI8BB4,AQACAAE/Sharesite/41/",
+    "freenet:USK@pGQPA-9PcFiE3A2tCuCjacK165UaX07AQYw98iDQrNA,8gwQ67ytBNR03hNj7JU~ceeew22HVq6G50dcEeMcgks,AQACAAE/flip/17/",
+    "freenet:USK@nrDOd1piehaN7z7s~~IYwH-2eK7gcQ9wAtPMxD8xPEs,y61pkcoRy-ccB7BHvLCzt3RUjeMILf8ox26NKvPZ-jk,AQACAAE/dgof/292/",
 ];
 
 /// [`DEFAULT_SEEDS`] as crawl jobs.
@@ -578,6 +640,7 @@ mod tests {
         ("DEF CON Media", "3d9dae3e25aa1019496f004cf1c5aad3"),
         ("CIA", "a609305b13b6d3c156136689961a8de0"),
         ("decoded.legal", "c0fc4d10a8d3162088d5ee794ef11601"),
+        ("Cryptostorm", "d2fe6126f48a9838528239a401d56815"),
     ];
 
     #[test]
