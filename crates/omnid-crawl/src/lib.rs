@@ -249,7 +249,10 @@ impl Crawler {
 
         loop {
             let now = Instant::now();
-            if refill || (frontier.queued() < ctx.cfg.frontier_capacity / 2 && now >= next_refill) {
+            // Refill when told to, when running low (at most once a second),
+            // and at once when there is nothing at all to do.
+            let idle = frontier.queued() == 0 && tasks.is_empty();
+            if refill || idle || (frontier.queued() < ctx.cfg.frontier_capacity / 2 && now >= next_refill) {
                 match ctx.store.take_due(now_secs(), frontier.room()) {
                     Ok(due) => {
                         nothing_due = due.is_empty();
@@ -280,9 +283,14 @@ impl Crawler {
             if tasks.is_empty() && (budget_spent || drained) {
                 break;
             }
-            // Waiting on a site's cool-down needs a short nap; an idle daemon
-            // only has to notice revisits coming due.
-            let nap = if frontier.queued() > 0 { Duration::from_millis(250) } else { Duration::from_secs(5) };
+            // Waiting on a site's cool-down needs a short nap, and so does
+            // work the store may still hold past the last refill; an idle
+            // daemon only has to notice revisits coming due.
+            let nap = if frontier.queued() > 0 || !nothing_due {
+                Duration::from_millis(250).min(next_refill.saturating_duration_since(now)).max(Duration::from_millis(1))
+            } else {
+                Duration::from_secs(5)
+            };
 
             tokio::select! {
                 _ = shutdown.cancelled() => break,

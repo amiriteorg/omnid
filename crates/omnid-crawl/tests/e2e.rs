@@ -82,6 +82,10 @@ fn hits(index: &SearchIndex, text: &str, networks: &[Network]) -> Vec<omnid_inde
 }
 
 fn crawler(index: Arc<SearchIndex>, store: Arc<CrawlStore>, max_pages: Option<u64>) -> Crawler {
+    crawler_with(index, store, CrawlConfig { max_pages, ..CrawlConfig::default() })
+}
+
+fn crawler_with(index: Arc<SearchIndex>, store: Arc<CrawlStore>, cfg: CrawlConfig) -> Crawler {
     let gateway = Gateway::new(GatewayConfig {
         tor_dir: None,
         i2p_proxy: None,
@@ -95,8 +99,7 @@ fn crawler(index: Arc<SearchIndex>, store: Arc<CrawlStore>, max_pages: Option<u6
     let cfg = CrawlConfig {
         politeness: HashMap::from([(Network::Clearnet, no_delay)]),
         commit_interval: Duration::from_millis(100),
-        max_pages,
-        ..CrawlConfig::default()
+        ..cfg
     };
     Crawler::new(Arc::new(gateway), index, Arc::new(safety), store, cfg)
 }
@@ -172,6 +175,20 @@ async fn resumes_from_the_store_without_refetching_fresh_pages() {
     for word in ["directory", "apples", "bananas", "cherries"] {
         assert_eq!(hits(&index, word, &[]).len(), 1, "{word}");
     }
+}
+
+#[tokio::test]
+async fn drains_a_store_bigger_than_the_working_set_without_stalling() {
+    let (base, _) = serve().await;
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    // One job in memory at a time: every page after the first comes from a
+    // refill. The crawl loop used to nap 5 s whenever the working set ran dry.
+    let cfg = CrawlConfig { frontier_capacity: 1, ..CrawlConfig::default() };
+    let crawler = crawler_with(index, Arc::new(CrawlStore::in_memory().unwrap()), cfg);
+    let started = std::time::Instant::now();
+    let stats = crawl(crawler, &[&base]).await;
+    assert_eq!(stats.indexed, 5, "{stats:?}");
+    assert!(started.elapsed() < Duration::from_secs(4), "took {:?}", started.elapsed());
 }
 
 #[tokio::test]
