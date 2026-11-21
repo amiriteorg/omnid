@@ -136,6 +136,11 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "freenet:USK@8AEGotJKXJ4ABJy1gKjls4SrrzpshQNoEMAbu0IFA94,blTuIOwf7k9p1R2GCfJSPSaOFzsuXLrFujOnV1Irjag,AQACAAE/fnpss/35/",
     "freenet:USK@0npnMrqZNKRCRoGojZV93UNHCMN-6UU3rRSAmP6jNLE,~BG-edFtdCC1cSH4O3BWdeIYa8Sw5DfyrSV-TKdO5ec,AQACAAE/fms/155/",
     "freenet:USK@cZu5Jx1eTvsN-p0c22uD3y3DvjKwv6bPRIHlCM5~4zQ,IOBbCUJWoNsYYPYcmscE70tFM-QjfWFW~myTPbeGIHg,AQACAAE/index/4/",
+    // The Freenet Documentation Wiki, Sone (a social network on Hyphanet)
+    // and Publish! (a guide to putting a freesite up).
+    "freenet:USK@z6lnOx7PPe16P3Sobu1KM9jiLiIxdvE3L918QMVCLak,AmZ7RemmWcKM2-W4Zs38Ks511lRTsWleMj2mVAReB4E,AQACAAE/freenetdocwiki/17/",
+    "freenet:USK@nwa8lHa271k2QvJ8aa0Ov7IHAV-DFOCFgmDt3X6BpCI,DuQSUZiI~agF8c-6tjsFFGuZ8eICrzWCILB60nT8KKo,AQACAAE/sone/83/",
+    "freenet:USK@940RYvj1-aowEHGsb5HeMTigq8gnV14pbKNsIvUO~-0,FdTbR3gIz21QNfDtnK~MiWgAf2kfwHe-cpyJXuLHdOE,AQACAAE/publish/3/",
 ];
 
 /// [`DEFAULT_SEEDS`] as crawl jobs.

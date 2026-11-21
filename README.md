@@ -300,7 +300,8 @@ A new level reloads every open tab.
   I2P's project site, wiki, news, forum, registries, the notbob.i2p and
   isitup.i2p directories, the Russian community's wiki, I2P+, I2P's Git forge
   and Postman's mail service; and the Hyphanet node's default bookmarks,
-  Clean Spider and the Index of Indexes among them (`omnid::DEFAULT_SEEDS`).
+  Clean Spider and the Index of Indexes among them, with the Freenet
+  Documentation Wiki, Sone and Publish! (`omnid::DEFAULT_SEEDS`).
   An onion site on Ahmia's blocklist is not made a seed (five older seeds are
   on it wrongly; see Safety), and every eepsite is in the address book a new
   i2pd starts with. A network's seeds wait while its router is down.

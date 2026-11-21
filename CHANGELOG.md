@@ -53,9 +53,9 @@
   (the Tor Project's list of its onion services, support and community portals and Tor Metrics;
   Debian's list of its onion services, blog and micronews; Privacy Guides, the Whonix forum,
   Systemli, Nos oignons, Amnesty International, Bellingcat, Cwtch, OnionShare, F-Droid and Bitcoin
-  Core), 5 eepsites (the I2P wiki, the I2P-ilita wiki, I2P+, I2P's Git forge and Postman HQ) and 3
-  freesites from the Hyphanet node's bookmarks (the Freenet Privacy and Software Site, FMS and
-  Freemail). None of the new onion sites is on Ahmia's blocklist, which a test now checks, and
+  Core), 5 eepsites (the I2P wiki, the I2P-ilita wiki, I2P+, I2P's Git forge and Postman HQ) and 6
+  freesites (from the Hyphanet node's bookmarks: the Freenet Privacy and Software Site, FMS and
+  Freemail; and the Freenet Documentation Wiki, Sone and Publish!). None of the new onion sites is on Ahmia's blocklist, which a test now checks, and
   each eepsite is in the address book a new i2pd starts with. An older install gains them at
   its next start.
 
