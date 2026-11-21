@@ -2,8 +2,10 @@
 <resources>
     <string name="app_name">omnid</string>
     <string name="share_label">Crawl with omnid</string>
-    <string name="starting">Starting omnid…</string>
-    <string name="failed">omnid could not start: %1$s</string>
+    <string name="starting">Starting omnid</string>
+    <string name="starting_detail">Connecting to Tor and opening your index</string>
+    <string name="failed_title">omnid could not start</string>
+    <string name="retry">Try again</string>
     <string name="channel_name">Running</string>
     <string name="channel_description">Shown while omnid keeps its index and routers available</string>
     <string name="notification_title">omnid is running</string>
@@ -27,6 +29,7 @@
     <string name="browser_allow_screenshots">Allow screenshots</string>
     <string name="browser_close">Close browser</string>
     <string name="browser_tor_plain">Tor · not encrypted</string>
+    <string name="browser_kind_onion">Onion</string>
     <string name="browser_not_an_address">Type a web address</string>
     <string name="browser_refused">omnid\'s browser does not open %1$s</string>
     <string name="browser_no_downloads">Downloads are off in omnid\'s browser</string>
@@ -37,6 +40,7 @@
     <string name="browser_error_security">Its certificate is not valid, so the connection could be intercepted.</string>
     <string name="browser_error_uri">That is not an address omnid can open.</string>
     <string name="browser_error_https_only">It has no secure version, and plain HTTP over a Tor exit could be read or changed.</string>
-    <string name="browser_error_timeout">It took too long to answer.</string>
-    <string name="browser_error_network">The connection failed.</string>
+    <string name="browser_error_timeout">It took too long to answer. Overlay sites can be slow: reload to try again.</string>
+    <string name="browser_error_network">The connection failed. Reload to try again, or use New identity for new circuits.</string>
+    <string name="browser_error_code">Error code %1$s</string>
 </resources>

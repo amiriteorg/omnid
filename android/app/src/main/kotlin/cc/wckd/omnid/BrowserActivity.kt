@@ -3,6 +3,7 @@ package cc.wckd.omnid
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -13,17 +14,19 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
-import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
@@ -44,26 +47,35 @@ class BrowserActivity : Activity() {
     companion object {
         const val EXTRA_URL = "url"
         private const val KEY_SCREENSHOTS = "browser_screenshots"
+
+        /**
+         * The page in view while the activity is recreated for a configuration change (the
+         * theme): handed to the new activity instead of closing the private session.
+         */
+        private var carried: Carried? = null
     }
+
+    private class Carried(val session: GeckoSession, val url: String?, val canGoBack: Boolean, val canGoForward: Boolean)
 
     private lateinit var geckoView: GeckoView
     private lateinit var address: EditText
     private lateinit var kind: TextView
-    private lateinit var back: TextView
-    private lateinit var forward: TextView
-    private lateinit var reload: TextView
+    private lateinit var back: ImageButton
+    private lateinit var reload: ImageButton
     private lateinit var progress: ProgressBar
     private lateinit var message: TextView
     private var runtime: GeckoRuntime? = null
     private var session: GeckoSession? = null
     private var url: String? = null
     private var canGoBack = false
+    private var canGoForward = false
     private var loading = false
+    /** System Back goes back a page first; registered only while it can (Android 13+). */
+    private var backCallback: Any? = null
     /** An address to load once the runtime is ready. */
     private var pending: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        requestWindowFeature(Window.FEATURE_NO_TITLE)
         super.onCreate(savedInstanceState)
         applyScreenshotSetting()
         buildViews()
@@ -80,24 +92,79 @@ class BrowserActivity : Activity() {
     }
 
     override fun onDestroy() {
-        // Closing the last private session makes Gecko drop its cookies and storage.
-        session?.close()
+        val current = session
+        if (current != null && isChangingConfigurations) {
+            // Recreated, not closed: the next instance takes the page over.
+            geckoView.releaseSession()
+            carried = Carried(current, url, canGoBack, canGoForward)
+        } else {
+            // Closing the last private session makes Gecko drop its cookies and storage.
+            current?.close()
+        }
         session = null
         super.onDestroy()
     }
 
+    /** Below Android 13; from 13 the back callback does this. */
     @Deprecated("Platform back handling; there is no AndroidX here")
     override fun onBackPressed() {
         val current = session
         if (current != null && canGoBack) current.goBack() else super.onBackPressed()
     }
 
+    /** From Android 13 (and always from 16), Back reaches the app only through a callback. */
+    private fun updateBack() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val current = backCallback as OnBackInvokedCallback?
+        if (canGoBack && current == null) {
+            val callback = OnBackInvokedCallback { session?.goBack() }
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+            backCallback = callback
+        } else if (!canGoBack && current != null) {
+            onBackInvokedDispatcher.unregisterOnBackInvokedCallback(current)
+            backCallback = null
+        }
+    }
+
     private fun start(ready: GeckoRuntime) {
         runtime = ready
+        val kept = carried
+        carried = null
+        if (kept != null) {
+            adopt(kept)
+            return
+        }
         openSession(ready)
         val first = pending
         pending = null
         if (first != null) load(first) else focusAddress()
+    }
+
+    /** Takes over the page a recreated instance was showing. */
+    private fun adopt(kept: Carried) {
+        session = kept.session.apply {
+            navigationDelegate = navigation
+            progressDelegate = progressListener
+            contentDelegate = content
+            permissionDelegate = DenyEverything
+        }
+        geckoView.setSession(kept.session)
+        url = kept.url
+        canGoBack = kept.canGoBack
+        canGoForward = kept.canGoForward
+        setEnabled(back, canGoBack)
+        updateBack()
+        showAddress()
+        showKind(url, secure = null)
+        pending = null
+        message.visibility = View.GONE
+        geckoView.visibility = View.VISIBLE
+    }
+
+    /** The full address while editing, the short form otherwise. */
+    private fun showAddress() {
+        val current = url.orEmpty()
+        address.setText(if (address.hasFocus()) current else BrowserConfig.displayAddress(current))
     }
 
     private fun openSession(runtime: GeckoRuntime) {
@@ -139,19 +206,18 @@ class BrowserActivity : Activity() {
             hasUserGesture: Boolean,
         ) {
             this@BrowserActivity.url = url
-            if (!address.hasFocus()) address.setText(url.orEmpty())
+            if (!address.hasFocus()) showAddress()
             showKind(url, secure = null)
         }
 
         override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
             this@BrowserActivity.canGoBack = canGoBack
-            back.isEnabled = canGoBack
-            back.alpha = if (canGoBack) 1f else 0.35f
+            setEnabled(back, canGoBack)
+            updateBack()
         }
 
         override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) {
-            forward.isEnabled = canGoForward
-            forward.alpha = if (canGoForward) 1f else 0.35f
+            this@BrowserActivity.canGoForward = canGoForward
         }
 
         override fun onLoadRequest(
@@ -264,23 +330,33 @@ class BrowserActivity : Activity() {
     private fun setLoading(loading: Boolean) {
         this.loading = loading
         progress.visibility = if (loading) View.VISIBLE else View.INVISIBLE
-        reload.text = if (loading) "✕" else "↻"
+        reload.setImageResource(if (loading) R.drawable.ic_stop else R.drawable.ic_reload)
         reload.contentDescription = getString(if (loading) R.string.browser_stop else R.string.browser_reload)
+    }
+
+    private fun setEnabled(button: ImageButton, enabled: Boolean) {
+        button.isEnabled = enabled
+        button.imageAlpha = if (enabled) 255 else 80
     }
 
     /** Which network the page came over, and whether the connection to it is encrypted. */
     private fun showKind(url: String?, secure: Boolean?) {
         val uri = url?.let(Uri::parse)
         val host = uri?.host.orEmpty()
-        val (label, color) = when {
-            uri == null || !BrowserConfig.isWebPage(uri.scheme, host) -> "" to 0
-            host.endsWith(".onion") -> "onion" to 0xFF7E57C2.toInt()
-            host.endsWith(".i2p") -> "i2p" to 0xFF00897B.toInt()
-            secure == false || uri.scheme == "http" -> getString(R.string.browser_tor_plain) to 0xFFB26A00.toInt()
-            else -> "Tor" to 0xFF2E7D32.toInt()
+        val (label, color, sealed) = when {
+            uri == null || !BrowserConfig.isWebPage(uri.scheme, host) -> Triple("", R.color.muted, true)
+            host.endsWith(".onion") -> Triple(getString(R.string.browser_kind_onion), R.color.onion, true)
+            host.endsWith(".i2p") -> Triple("I2P", R.color.i2p, true)
+            secure == false || uri.scheme == "http" -> Triple(getString(R.string.browser_tor_plain), R.color.warn, false)
+            else -> Triple("Tor", R.color.ok, true)
         }
         kind.text = label
-        kind.setTextColor(color)
+        kind.setTextColor(getColor(color))
+        val lock = checkNotNull(getDrawable(if (sealed) R.drawable.ic_lock else R.drawable.ic_lock_open)).mutate()
+        val size = (16 * resources.displayMetrics.density).toInt()
+        lock.setBounds(0, 0, size, size)
+        lock.setTint(getColor(color))
+        kind.setCompoundDrawablesRelative(lock, null, null, null)
         kind.visibility = if (label.isEmpty()) View.GONE else View.VISIBLE
     }
 
@@ -317,6 +393,7 @@ class BrowserActivity : Activity() {
 
     private fun showMenu(anchor: View) {
         PopupMenu(this, anchor).apply {
+            menu.add(0, 4, 0, R.string.browser_forward).isEnabled = canGoForward
             menu.add(0, 1, 0, R.string.browser_new_identity)
             menu.add(0, 2, 1, R.string.browser_allow_screenshots).apply {
                 isCheckable = true
@@ -331,6 +408,7 @@ class BrowserActivity : Activity() {
                         applyScreenshotSetting()
                     }
                     3 -> finish()
+                    4 -> session?.goForward()
                 }
                 true
             }
@@ -352,40 +430,43 @@ class BrowserActivity : Activity() {
 
     private fun buildViews() {
         fun dp(value: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
-        fun button(glyph: String, description: Int, onClick: (View) -> Unit) = TextView(this).apply {
-            text = glyph
-            textSize = 22f
-            gravity = Gravity.CENTER
-            minWidth = dp(44)
-            minHeight = dp(44)
+        val ripple = TypedValue().also { theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true) }.resourceId
+        fun button(icon: Int, description: Int, onClick: (View) -> Unit) = ImageButton(this).apply {
+            setImageResource(icon)
+            setBackgroundResource(ripple)
             contentDescription = getString(description)
-            isClickable = true
-            isFocusable = true
             setOnClickListener(onClick)
         }
-        back = button("‹", R.string.browser_back) { session?.goBack() }
-        forward = button("›", R.string.browser_forward) { session?.goForward() }
-        reload = button("↻", R.string.browser_reload) { if (loading) session?.stop() else session?.reload() }
-        val menu = button("⋮", R.string.browser_menu, ::showMenu)
-        for (view in listOf(back, forward)) {
-            view.isEnabled = false
-            view.alpha = 0.35f
-        }
+        back = button(R.drawable.ic_back, R.string.browser_back) { session?.goBack() }
+        reload = button(R.drawable.ic_reload, R.string.browser_reload) { if (loading) session?.stop() else session?.reload() }
+        val menu = button(R.drawable.ic_more, R.string.browser_menu, ::showMenu)
+        setEnabled(back, false)
         kind = TextView(this).apply {
-            textSize = 11f
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(8), 0, dp(4), 0)
+            gravity = Gravity.CENTER_VERTICAL
+            includeFontPadding = false
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            compoundDrawablePadding = dp(4)
+            setPadding(0, 0, dp(6), 0)
             visibility = View.GONE
         }
         address = EditText(this).apply {
             hint = getString(R.string.browser_address_hint)
             isSingleLine = true
             ellipsize = TextUtils.TruncateAt.END
-            textSize = 15f
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextColor(getColor(R.color.ink))
+            setHintTextColor(getColor(R.color.muted))
+            background = null
+            setPadding(0, 0, 0, 0)
             inputType = InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_CLASS_TEXT
             // The keyboard must not learn or sync what is typed here.
             imeOptions = EditorInfo.IME_ACTION_GO or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-            setSelectAllOnFocus(true)
+            // The full address to edit, selected; the short form again when done.
+            setOnFocusChangeListener { _, focused ->
+                showAddress()
+                if (focused) selectAll()
+            }
             setOnEditorActionListener { _, action, event ->
                 val enter = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
                 if (action == EditorInfo.IME_ACTION_GO || enter) {
@@ -396,31 +477,47 @@ class BrowserActivity : Activity() {
                 }
             }
         }
+        // The address pill: where the page came from and how, then the address.
+        val pill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            // Centre the badge and the address on each other, not on their text baselines.
+            isBaselineAligned = false
+            setBackgroundResource(R.drawable.bg_address)
+            setPadding(dp(14), 0, dp(12), 0)
+            addView(kind)
+            addView(address, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            setOnClickListener { focusAddress() }
+        }
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), 0, dp(4), 0)
-            addView(back)
-            addView(forward)
-            addView(kind)
-            addView(address, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(reload)
-            addView(menu)
+            setBackgroundColor(getColor(R.color.ground))
+            setPadding(dp(2), dp(6), dp(2), dp(6))
+            addView(back, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(pill, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(2); marginEnd = dp(2) })
+            addView(reload, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(menu, LinearLayout.LayoutParams(dp(48), dp(48)))
         }
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             visibility = View.INVISIBLE
+            progressTintList = ColorStateList.valueOf(getColor(R.color.glow))
+            progressBackgroundTintList = ColorStateList.valueOf(getColor(R.color.ground))
         }
         geckoView = GeckoView(this).apply { isFocusableInTouchMode = true }
         message = TextView(this).apply {
             gravity = Gravity.CENTER
-            setPadding(dp(24), dp(24), dp(24), dp(24))
+            setTextColor(getColor(R.color.ink_2))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setPadding(dp(32), dp(32), dp(32), dp(32))
             visibility = View.GONE
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            setBackgroundColor(getColor(R.color.ground))
             addView(bar, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            addView(progress, LinearLayout.LayoutParams.MATCH_PARENT, dp(3))
+            addView(progress, LinearLayout.LayoutParams.MATCH_PARENT, dp(2))
             addView(message, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
             addView(geckoView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
             // Edge to edge from Android 15: keep the toolbar and page clear of the system bars.
@@ -453,11 +550,13 @@ class BrowserActivity : Activity() {
             },
         )
         val escape = { text: String -> TextUtils.htmlEncode(text) }
+        // The brand's dark scheme always: Gecko's fingerprinting protection reports a light one.
         val html = "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>" +
-            "<body style='font:16px/1.5 sans-serif;margin:2rem;color:#444'>" +
-            "<h1 style='font-size:1.2rem'>${escape(getString(R.string.browser_error_title))}</h1>" +
-            "<p>${escape(reason)}</p><p style='word-break:break-all;color:#888'>${escape(uri.orEmpty())}</p>" +
-            "<p style='color:#888'>${escape("0x" + Integer.toHexString(error.code))}</p>"
+            "<body style='font:15px/1.55 sans-serif;margin:0;padding:3rem 1.5rem;background:#0B0D1F;color:#B2BBDF;min-height:100vh'>" +
+            "<h1 style='margin:0 0 .5rem;font-size:21.6px;font-weight:650;color:#EEF2FF'>${escape(getString(R.string.browser_error_title))}</h1>" +
+            "<p style='margin:0 0 1.25rem'>${escape(reason)}</p>" +
+            "<p style='margin:0;word-break:break-all;color:#8690BD;font:12.5px/1.5 monospace'>${escape(uri.orEmpty())}</p>" +
+            "<p style='margin:.5rem 0 0;color:#8690BD;font-size:12.5px'>${escape(getString(R.string.browser_error_code, "0x" + Integer.toHexString(error.code)))}</p>"
         return "data:text/html;charset=utf-8," + Uri.encode(html)
     }
 }

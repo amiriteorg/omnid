@@ -107,6 +107,7 @@ class OmnidService : Service() {
         )
         val notification = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
+            .setColor(getColor(R.color.glow))
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(getString(R.string.notification_text))
             .setContentIntent(open)

@@ -52,6 +52,16 @@ class BrowserConfigTest {
     }
 
     @Test
+    fun showsAddressesShortAndWithoutTheScheme() {
+        val onion = "2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion"
+        assertEquals("2gzyxa5i…53wid.onion", BrowserConfig.displayAddress("http://$onion/"))
+        assertEquals("www.bbcweb3h…ccrad.onion/news", BrowserConfig.displayAddress("https://www.bbcweb3hytmzhn5d532owbu6oqadra5z3ar726vq5kgwwn6aucdccrad.onion/news/"))
+        assertEquals("example.com/a?b=c", BrowserConfig.displayAddress("https://example.com/a?b=c"))
+        assertEquals("stats.i2p", BrowserConfig.displayAddress("http://stats.i2p"))
+        assertEquals("about:blank", BrowserConfig.displayAddress("about:blank"))
+    }
+
+    @Test
     fun turnsTypedTextIntoAddresses() {
         assertEquals("https://example.com/a", BrowserConfig.address(" example.com/a "))
         assertEquals("http://x.onion/", BrowserConfig.address("x.onion/"))

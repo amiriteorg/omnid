@@ -18,6 +18,12 @@ trap 'rm -rf "$tmp"' EXIT
 magick "$master" -filter Lanczos -resize 272x272 -background none -gravity center -extent 432x432 "$tmp/foreground.png"
 cwebp -quiet -lossless -z 9 "$tmp/foreground.png" -o android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp
 
+# The app's toolbar mark in the dark scheme: the glowing rings themselves, cropped to the
+# rings and their glow, on transparent (the light scheme uses drawable/ic_brand_mark.xml).
+mkdir -p android/app/src/main/res/drawable-night-nodpi
+magick "$master" -gravity center -crop 1000x1000+-3+1 +repage -filter Lanczos -resize 128x128 "$tmp/mark.png"
+cwebp -quiet -lossless -z 9 "$tmp/mark.png" -o android/app/src/main/res/drawable-night-nodpi/ic_brand_mark.webp
+
 # The search page's icon: the launcher icon's visible 72dp, rounded; 128 px
 # covers a 32 px tab icon at 4x. Quantised: 8 KB instead of 57, 48 dB PSNR.
 magick -size 432x432 "xc:$background" "$tmp/foreground.png" -composite -gravity center -crop 288x288+0+0 +repage \
