@@ -43,9 +43,20 @@ internal object BrowserConfig {
         "network.connectivity-service.enabled" to false,
         // Fingerprinting.
         "privacy.resistFingerprinting" to true,
+        // The phone's language would set it apart: pages get en-US, as in Tor Browser.
+        "privacy.spoof_english" to 2,
         "webgl.disabled" to true,
+        "dom.webgpu.enabled" to false,
         "geo.enabled" to false,
         "dom.battery.enabled" to false,
+        "device.sensors.enabled" to false,
+        "dom.gamepad.enabled" to false,
+        "dom.vr.enabled" to false,
+        // DRM goes through the phone's MediaDrm, which has a per-device ID.
+        "media.eme.enabled" to false,
+        "beacon.enabled" to false,
+        // A lookalike name in another script shows as the punycode it is.
+        "network.IDN_show_punycode" to true,
         // Other sites see where a request came from, not the page.
         "network.http.referer.XOriginTrimmingPolicy" to 2,
         // WebAuthn needs Google Play services, which the app leaves out.
@@ -113,6 +124,13 @@ internal object BrowserConfig {
      */
     fun retriesOverHttp(url: String?): Boolean =
         url?.startsWith("https:", ignoreCase = true) == true && (isI2p(url) || isHyphanet(url))
+
+    /**
+     * The address to copy or share: a Hyphanet page's key as `freenet:USK@…` (`http://hyphanet/`
+     * means something only inside OMNId), anything else as it is.
+     */
+    fun shareable(url: String): String =
+        if (isHyphanet(url)) "freenet:" + url.substringAfter("://").substringAfter('/') else url
 
     /** Whether the address is a Hyphanet page, through the node. */
     fun isHyphanet(url: String?): Boolean = runCatching { URI(url).host }.getOrNull()?.lowercase() == HYPHANET_HOST

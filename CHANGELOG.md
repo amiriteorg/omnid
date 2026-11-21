@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- The app's browser has tabs (up to 16) and a tab list, in a task of its own: a result opens in a
+  new tab, Back at its first page returns to the search page, and the search page's toolbar shows
+  the open tabs. Long-press a link to open it in a new or background tab or copy it.
+- Find in page, bookmarks, copy link, and Tor Browser's three security levels (Standard, Safer,
+  Safest), which turn off JavaScript, JIT, WebAssembly, SVG and site fonts step by step.
+- Less to fingerprint: pages get en-US whatever the phone's language, and motion sensors,
+  gamepads, WebGPU, DRM and beacons are off; lookalike names show as punycode.
+- New identity closes every tab, after asking.
+- Tapping the address bar selects the whole address, so what is typed replaces it.
+
 ## 0.1.1 (2026-11-21)
 
 - The app and the search page write the name OMNId; the command and package stay `omnid`.

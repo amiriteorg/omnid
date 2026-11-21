@@ -39,11 +39,16 @@
         </activity>
 
         <!-- GeckoView, private, every request through the daemon. Not exported: only
-             omnid's own search page opens it. -->
+             omnid's own search page opens it. A task of its own, so its tabs stay open
+             behind the search page and the launcher icon does not close them. -->
         <activity
             android:name=".BrowserActivity"
+            android:autoRemoveFromRecents="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|density"
             android:exported="false"
+            android:label="@string/browser_label"
+            android:launchMode="singleTask"
+            android:taskAffinity="cc.wckd.omnid.browser"
             android:theme="@style/Theme.Omnid.Browser"
             android:windowSoftInputMode="adjustResize" />
 

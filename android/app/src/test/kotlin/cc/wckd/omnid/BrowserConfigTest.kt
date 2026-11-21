@@ -18,6 +18,11 @@ class BrowserConfigTest {
         assertEquals(false, prefs["network.proxy.failover_direct"])
         assertEquals(true, prefs["network.dns.disabled"])
         assertEquals(false, prefs["media.peerconnection.enabled"])
+        // What a page could tell this phone apart by.
+        assertEquals(2, prefs["privacy.spoof_english"])
+        for (off in listOf("device.sensors.enabled", "dom.gamepad.enabled", "media.eme.enabled", "dom.webgpu.enabled")) {
+            assertEquals(off, false, prefs[off])
+        }
     }
 
     @Test
@@ -93,5 +98,11 @@ class BrowserConfigTest {
         for (notAnAddress in listOf("", "tor browser", "localhost", "file:///etc/hosts", "javascript:alert(1)", ".onion")) {
             assertNull(notAnAddress, BrowserConfig.address(notAnAddress))
         }
+    }
+
+    @Test
+    fun sharesHyphanetPagesByTheirKey() {
+        assertEquals("freenet:USK@abc,def,AQACAAE/site/1/", BrowserConfig.shareable("http://hyphanet/USK@abc,def,AQACAAE/site/1/"))
+        assertEquals("http://stats.i2p/", BrowserConfig.shareable("http://stats.i2p/"))
     }
 }
