@@ -3040,6 +3040,7 @@ dependencies = [
  "anyhow",
  "axum",
  "blake3",
+ "encoding_rs",
  "html5ever",
  "md-5",
  "omnid-core",

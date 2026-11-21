@@ -6,8 +6,10 @@
 //! tokenizer is linear, and title, meta tags, links and visible text need no
 //! tree.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 
+use encoding_rs::{Encoding, UTF_8, UTF_16BE, UTF_16LE};
 use html5ever::tendril::StrTendril;
 use html5ever::tokenizer::states::RawKind;
 use html5ever::tokenizer::{BufferQueue, Tag, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts};
@@ -37,12 +39,53 @@ pub struct Extracted {
 }
 
 pub fn extract(content_type: Option<&str>, body: &[u8]) -> Extracted {
-    let source = String::from_utf8_lossy(body);
-    if content_type.is_some_and(|ct| ct.to_ascii_lowercase().contains("html")) {
+    let html = content_type.is_some_and(|ct| ct.to_ascii_lowercase().contains("html"));
+    let source = decode_text(content_type, body, html);
+    if html {
         return extract_html(&source);
     }
     let text = collapse(&source, MAX_TEXT_BYTES);
     Extracted { description: truncate(&text, FALLBACK_DESCRIPTION_BYTES).to_owned(), text, ..Default::default() }
+}
+
+/// Decodes in the HTML spec's order of precedence: byte-order mark, the
+/// Content-Type charset, a `<meta>` charset in the first 1024 bytes, UTF-8.
+fn decode_text<'a>(content_type: Option<&str>, body: &'a [u8], html: bool) -> Cow<'a, str> {
+    let from_header = content_type.and_then(charset_param).and_then(|label| Encoding::for_label(label.as_bytes()));
+    let from_meta = || {
+        let encoding = Encoding::for_label(meta_charset(body)?.as_bytes())?;
+        // A page that says it is UTF-16 in ASCII is not UTF-16 (spec §13.2.3.2).
+        Some(if encoding == UTF_16LE || encoding == UTF_16BE { UTF_8 } else { encoding })
+    };
+    let encoding = from_header.or_else(|| if html { from_meta() } else { None }).unwrap_or(UTF_8);
+    // decode() lets a byte-order mark override the label.
+    encoding.decode(body).0
+}
+
+fn charset_param(content_type: &str) -> Option<&str> {
+    content_type.split(';').skip(1).find_map(|param| {
+        let (key, value) = param.split_once('=')?;
+        key.trim().eq_ignore_ascii_case("charset").then(|| value.trim().trim_matches(['"', '\'']))
+    })
+}
+
+/// A simplified version of the spec's prescan: finds `charset=` inside a
+/// `<meta` tag, which covers both `<meta charset>` and the `http-equiv` form.
+fn meta_charset(body: &[u8]) -> Option<String> {
+    let head = String::from_utf8_lossy(&body[..body.len().min(1024)]).to_ascii_lowercase();
+    let mut rest = head.as_str();
+    while let Some(start) = rest.find("<meta") {
+        rest = &rest[start + 5..];
+        let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
+        let Some(at) = tag.find("charset") else { continue };
+        let Some(value) = tag[at + 7..].trim_start().strip_prefix('=') else { continue };
+        let value = value.trim_start().trim_start_matches(['"', '\'']);
+        let end = value.find(['"', '\'', ';', ' ', '/', '>']).unwrap_or(value.len());
+        if end > 0 {
+            return Some(value[..end].to_owned());
+        }
+    }
+    None
 }
 
 fn extract_html(source: &str) -> Extracted {
@@ -251,6 +294,31 @@ mod tests {
         let e = extract(Some("text/plain"), b"line one\n\nline two <a href=x>");
         assert_eq!(e.text, "line one line two <a href=x>");
         assert!(e.links.is_empty());
+    }
+
+    #[test]
+    fn decodes_declared_charsets() {
+        let (cyrillic, _, _) = encoding_rs::WINDOWS_1251.encode("<title>Привет, мир</title>");
+        assert_eq!(extract(Some("text/html; charset=windows-1251"), &cyrillic).title, "Привет, мир");
+        assert_eq!(extract(Some("text/html; charset=\"CP1251\""), &cyrillic).title, "Привет, мир");
+
+        let mut page = b"<meta charset='windows-1251'>".to_vec();
+        page.extend_from_slice(&cyrillic);
+        assert_eq!(extract(Some("text/html"), &page).title, "Привет, мир", "<meta charset>");
+
+        let (sjis, _, _) = encoding_rs::SHIFT_JIS.encode("<title>日本語</title>");
+        let mut page = br#"<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">"#.to_vec();
+        page.extend_from_slice(&sjis);
+        assert_eq!(extract(Some("text/html"), &page).title, "日本語", "http-equiv form");
+    }
+
+    #[test]
+    fn bom_beats_labels_and_utf8_is_the_default() {
+        let mut utf16: Vec<u8> = vec![0xFF, 0xFE];
+        utf16.extend("<title>wide</title>".encode_utf16().flat_map(u16::to_le_bytes));
+        assert_eq!(extract(Some("text/html; charset=iso-8859-1"), &utf16).title, "wide");
+        assert_eq!(extract(Some("text/html"), "<title>café</title>".as_bytes()).title, "café");
+        assert_eq!(extract(Some("text/html"), b"<meta charset=utf-16><title>x</title>").title, "x");
     }
 
     #[test]

@@ -136,7 +136,6 @@ The daemon itself:
 - HTTPS onions need a certificate that validates; expired or self-signed ones
   are refused. Facebook's onion rejects the TLS handshake (HTTPS onions such
   as BBC's work).
-- Bodies are decoded as UTF-8 (lossy); other charsets index poorly.
 - The frontier and the seen-set are in memory, and nothing is re-crawled
   within one run.
 
