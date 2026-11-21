@@ -15,12 +15,17 @@
   (i2pd's own 5xx pages) hands the request to the next router. The browser's and the SOCKS
   proxy's streams also start on the next router when the first has not answered within 3 seconds.
   The status shows every router.
+- A secure proxy for other apps. The proxy speaks HTTP as well as SOCKS5 on the same port (CONNECT,
+  and absolute-form requests passed on in origin form). `--socks-password` makes it private: only
+  clients with the password get in, nothing goes direct, and each username gets Tor circuits of
+  its own. In the app, Settings → Proxy for other apps serves this at 127.0.0.1:7172 with a
+  password made on the phone. Every proxy listener now drops a client that says nothing for 15 s
+  and serves at most 512 at once. `Native.start` takes its settings as one JSON object.
 - Settings (⋮ → Settings, on the search page and in the browser): theme (as the phone, light or
   dark) and text size on web pages; the security level, loading images (off, pages load far faster
   over Tor) and screenshots; the networks a search starts with, the languages ranked first, and
   blocked words and blocked sites for the crawler; crawl speed (Gentle, Normal, Fast) and crawling
   on battery and mobile data; the I2P router and Hyphanet node; the version and licenses.
-  `Native.start` takes the crawl speed.
 - The browser: words typed into the address bar that are not an address search the index; ⋮ gains
   Reopen closed tab (the last ten, in memory only), Share, Desktop site (per tab) and Settings;
   video goes full screen from its own controls, hiding the toolbar and system bars until Back.

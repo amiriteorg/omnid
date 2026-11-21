@@ -15,7 +15,7 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
 - `crates/omnid-crawl` — crawl store (SQLite), frontier, robots.txt, extraction, safety gate,
   crawl loop. End-to-end tests in `crates/omnid-crawl/tests/e2e.rs`.
 - `crates/omnid` — the daemon as a library (`omnid::start`), the CLI, the HTTP API, the search page
-  (`src/ui`, compiled in), the SOCKS proxy.
+  (`src/ui`, compiled in), the proxy (`socks.rs`: SOCKS5 and HTTP on one port).
 - `crates/omnid-android` + `android/` — JNI bridge and the Kotlin app (platform APIs only, plus
   GeckoView for the browser: `Browser.kt`, `BrowserActivity.kt`, `BrowserConfig.kt`, the plain-Kotlin
   rules in `Tabs.kt`, `Bookmarks.kt`, `SecurityLevel.kt`, `Routers.kt` and `Settings.kt`, and the
@@ -52,6 +52,11 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
   themselves. Its Gecko prefs send anything else to a dead-end port and are read back before a page
   loads (`BrowserConfig.critical`); keep both when changing either side. Bump GeckoView with every
   Firefox release: it carries the security fixes.
+- The proxy for other apps (`socks::Access::Apps`, the app's Settings and `--socks-password`) is
+  routed like the browser's, through `Gateway::connect_browser`, never direct, with `app:` before
+  the username as the isolation key so it never shares circuits with a browser site. Every proxy
+  listener drops a client that has not finished its handshake in 15 s and serves at most 512 at once;
+  HTTP heads are parsed strictly and refused, never repaired, when malformed.
 - Media is never downloaded: bodies are read only for `is_indexable_type`, checked on headers
   before the body. The DHT fetches only info dicts over `ut_metadata`; never pieces.
 - Everything from the network is hostile: no panics on malformed input, explicit caps on bytes,

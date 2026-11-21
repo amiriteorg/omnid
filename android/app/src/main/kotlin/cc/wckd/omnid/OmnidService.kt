@@ -14,6 +14,7 @@ import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import org.json.JSONObject
 
 /**
  * Keeps the daemon running while the app is in the background: a foreground service, so the
@@ -21,10 +22,11 @@ import java.util.concurrent.Executors
  */
 class OmnidService : Service() {
     /**
-     * Where the running daemon listens, the token its API requires, and the port of the browser's
-     * proxy, which takes the same token as its password.
+     * Where the running daemon listens, the token its API requires, the port of the browser's
+     * proxy, which takes the same token as its password, and the port of the proxy for other apps
+     * (0 when it is off or another app holds its port).
      */
-    data class Endpoint(val port: Int, val token: String, val browserProxyPort: Int) {
+    data class Endpoint(val port: Int, val token: String, val browserProxyPort: Int, val appProxyPort: Int = 0) {
         val origin get() = "http://127.0.0.1:$port"
     }
 
@@ -66,11 +68,16 @@ class OmnidService : Service() {
         native.execute {
             try {
                 val prefs = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE)
-                val node = prefs.getString(HyphanetNode.KEY, "").orEmpty()
-                val router = prefs.getString(I2pRouter.KEY, "").orEmpty()
-                val speed = Settings.crawlSpeed(prefs.getString(Settings.CRAWL_SPEED, null)).ordinal
-                val port = Native.start(File(filesDir, "omnid").path, token, node, router, speed)
-                endpoint = Endpoint(port, token, Native.browserProxyPort())
+                val options = JSONObject()
+                    .put("hyphanetNode", prefs.getString(HyphanetNode.KEY, "").orEmpty())
+                    .put("i2pRouter", prefs.getString(I2pRouter.KEY, "").orEmpty())
+                    .put("crawlSpeed", Settings.crawlSpeed(prefs.getString(Settings.CRAWL_SPEED, null)).ordinal)
+                if (prefs.getBoolean(Settings.APP_PROXY, false)) {
+                    val password = if (prefs.getBoolean(Settings.APP_PROXY_LOCKED, true)) Settings.appProxyPassword(prefs) else null
+                    options.put("appProxy", JSONObject().put("port", Settings.APP_PROXY_PORT).put("password", password ?: JSONObject.NULL))
+                }
+                val port = Native.start(File(filesDir, "omnid").path, token, options.toString())
+                endpoint = Endpoint(port, token, Native.browserProxyPort(), Native.appProxyPort())
                 failure = null
                 val crawlPolicy = CrawlPolicy(this) { paused, reason ->
                     native.execute { Native.setPaused(paused, reason) }

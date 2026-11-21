@@ -25,7 +25,7 @@ async fn live_socks_proxy_opens_onions_through_the_daemon() {
         seeds: vec![],
         api_token: Some("live".into()),
         start_paused: true,
-        socks: Some(loopback),
+        socks: Some((loopback, omnid::ProxyAccess::Open)),
         browser_proxy: None,
         dht: None,
         dht_harvest: false,
