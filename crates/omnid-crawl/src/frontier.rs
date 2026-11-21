@@ -85,6 +85,12 @@ impl Frontier {
         true
     }
 
+    /// Queues a job ahead of everything else on its network, even when the
+    /// frontier is full: for addresses a person asked for.
+    pub(crate) fn push_urgent(&mut self, job: Job) {
+        self.queues.entry(job.source.network()).or_default().push_front(job);
+    }
+
     /// The next job whose network has a free slot and whose site is idle and
     /// out of its cool-down.
     pub(crate) fn pop_ready(&mut self, now: Instant) -> Option<Job> {
@@ -224,5 +230,14 @@ mod tests {
         let mut f = Frontier::new(HashMap::new(), 1);
         assert!(f.push(job("http://a.example/")));
         assert!(!f.push(job("http://b.example/")));
+    }
+
+    #[test]
+    fn urgent_jobs_skip_the_line_and_the_cap() {
+        let mut f = Frontier::new(HashMap::new(), 1);
+        assert!(f.push(job("http://queued.example/")));
+        f.push_urgent(job("http://asked-for.example/"));
+        assert_eq!(f.queued(), 2);
+        assert_eq!(f.pop_ready(Instant::now()).unwrap().source.site_key(), "asked-for.example");
     }
 }

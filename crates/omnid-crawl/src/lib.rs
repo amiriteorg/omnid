@@ -298,12 +298,21 @@ impl Crawler {
                 }
                 Some(_) = writes.join_next(), if !writes.is_empty() => {}
                 job = jobs.recv(), if jobs_open => match job {
+                    // Seeds and submissions go straight to the front of the
+                    // frontier: a full working set must not make someone
+                    // wait behind thousands of discovered links.
                     Some(job) => {
-                        match ctx.store.schedule(&[job], now_secs()).and_then(|()| ctx.store.known()) {
-                            Ok(known) => stats.known.store(known, Ordering::Relaxed),
+                        let now = now_secs();
+                        let url = job.source.to_string();
+                        let claimed = ctx.store.schedule(std::slice::from_ref(&job), now).and_then(|()| {
+                            stats.known.store(ctx.store.known()?, Ordering::Relaxed);
+                            ctx.store.claim(&url, now)
+                        });
+                        match claimed {
+                            Ok(true) => frontier.push_urgent(job),
+                            Ok(false) => {}
                             Err(e) => tracing::error!("crawl store: {e}"),
                         }
-                        refill = true;
                     }
                     None => jobs_open = false,
                 },

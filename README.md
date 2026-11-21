@@ -35,7 +35,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Safety gate | done for text; see [Safety](#safety) |
 | Local API and search page, optional token | done, live tested |
 | SOCKS5 proxy (`.onion`/`.i2p` for any browser) | done, live tested with curl over Tor |
-| Android app (arm64) | done, run on an Android 16 emulator |
+| Android app (arm64) | done, run on an Android 16 emulator: crawled 225 onion pages over embedded Tor, magnets via the DHT |
 
 Not built yet: router lifecycle management (starting i2pd and Hyphanet as child processes), index
 sync between nodes, near-duplicate detection, a desktop app shell.
@@ -97,7 +97,8 @@ same daemon in a foreground service, shows its search page in a WebView, and
 crawls only on a charger and an unmetered network unless "Crawl on battery
 and mobile data" is on. Share an onion, magnet or link to the app to crawl
 it. A new install seeds itself with the Tor Project's and the BBC's onion
-services.
+services. Magnets are resolved through the DHT on the phone too; the phone
+never harvests the DHT.
 
 ## Layout
 

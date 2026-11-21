@@ -124,6 +124,16 @@ impl CrawlStore {
         tx.commit()
     }
 
+    /// Marks one due, idle address queued, for handing straight to the
+    /// frontier. Returns false when it is already queued or not due.
+    pub fn claim(&self, url: &str, now: i64) -> rusqlite::Result<bool> {
+        let claimed = self.db().execute(
+            "UPDATE pages SET state = 1 WHERE url = ?1 AND state = 0 AND next_visit <= ?2",
+            params![url, now],
+        )?;
+        Ok(claimed == 1)
+    }
+
     /// Up to `limit` addresses due by `now`, shallowest first, marked queued
     /// so they are not handed out twice.
     pub fn take_due(&self, now: i64, limit: usize) -> rusqlite::Result<Vec<Job>> {
@@ -287,6 +297,16 @@ mod tests {
         assert!((deferred - after_failure * 0.7).abs() < 1e-6, "deferring keeps liveness");
         assert_eq!(store.take_due(DEFERRED, 10).unwrap().len(), 1, "a missing router only defers");
         assert_eq!(backoff(40), MAX_BACKOFF);
+    }
+
+    #[test]
+    fn claims_a_due_address_once() {
+        let store = CrawlStore::in_memory().unwrap();
+        store.schedule(&[job("http://a.example/", 0, 0.5)], 0).unwrap();
+        assert!(store.claim("http://a.example/", 0).unwrap());
+        assert!(!store.claim("http://a.example/", 0).unwrap(), "already queued");
+        assert!(store.take_due(0, 10).unwrap().is_empty(), "claimed jobs are not handed out again");
+        assert!(!store.claim("http://unknown.example/", 0).unwrap());
     }
 
     #[test]
