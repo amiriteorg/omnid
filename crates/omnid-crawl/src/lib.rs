@@ -33,6 +33,8 @@ pub const DISCOVERED_TRUST: f32 = 0.5;
 pub const HARVESTED_TRUST: f32 = 0.3;
 /// Peers at which a torrent counts as fully alive.
 const HEALTHY_SWARM: f32 = 20.0;
+/// File names kept in the index per torrent; the description keeps the count.
+const MAX_INDEXED_FILES: usize = 1_000;
 
 #[derive(Debug, Clone)]
 pub struct CrawlConfig {
@@ -423,8 +425,10 @@ impl Context {
             .filter(|name| !name.is_empty())
             .or_else(|| magnet.name.clone())
             .unwrap_or_else(|| info_hash.clone());
-        let files = meta.as_ref().map(|m| m.files.clone()).unwrap_or_default();
-        let file_list = files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>().join("\n");
+        let all_files = meta.as_ref().map(|m| m.files.as_slice()).unwrap_or_default();
+        // Every name is checked; only the first ones are stored.
+        let file_list = all_files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>().join("\n");
+        let files = all_files.iter().take(MAX_INDEXED_FILES).cloned().collect();
         let link_name = magnet.name.as_deref().unwrap_or_default();
         let verdict = self.safety.check_content(&[&url, &title, link_name, &file_list]);
         if verdict != Verdict::Allow {

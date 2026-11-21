@@ -131,6 +131,13 @@ pub enum DhtError {
     Io(#[from] io::Error),
 }
 
+/// Reads a torrent's info dictionary: the bytes whose SHA-1 is the info hash,
+/// as [`Dht::metadata`] fetches them or a `.torrent` file holds them under
+/// `info`. Hostile input is bounded; see `bencode::Limits::INFO`.
+pub fn parse_info_dict(info: &[u8]) -> Result<TorrentMeta, DhtError> {
+    meta::parse_info(info).map_err(DhtError::BadMetadata)
+}
+
 /// A handle on the DHT client. Clones share one socket and routing table;
 /// the background tasks stop when the last clone is dropped.
 #[derive(Clone)]

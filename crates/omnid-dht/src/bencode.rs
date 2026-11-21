@@ -63,8 +63,11 @@ impl Limits {
     pub(crate) const KRPC: Limits = Limits { depth: 16, values: 8192 };
     /// An extension message on the peer wire.
     pub(crate) const PEER: Limits = Limits { depth: 16, values: 4096 };
-    /// A torrent's info dict. A million values covers well over 100 000 files.
-    pub(crate) const INFO: Limits = Limits { depth: 64, values: 1 << 20 };
+    /// A torrent's info dict. About five values per file, so this covers
+    /// torrents of some 50 000 files, while the worst input (empty lists, two
+    /// bytes a value) peaks near 12 MiB instead of 48 (tests/memory.rs).
+    /// Bigger torrents are indexed from their links alone.
+    pub(crate) const INFO: Limits = Limits { depth: 64, values: 1 << 18 };
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
