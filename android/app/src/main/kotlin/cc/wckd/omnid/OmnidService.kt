@@ -73,6 +73,8 @@ class OmnidService : Service() {
                     .put("i2pRouter", prefs.getString(I2pRouter.KEY, "").orEmpty())
                     .put("crawlSpeed", Settings.crawlSpeed(prefs.getString(Settings.CRAWL_SPEED, null)).ordinal)
                     .put("abuseBlocklist", prefs.getBoolean(Settings.ABUSE_BLOCKLIST, true))
+                    .put("clearnetViaTor", prefs.getBoolean(Settings.CRAWL_VIA_TOR, true))
+                    .put("torrentLookups", prefs.getBoolean(Settings.TORRENT_LOOKUPS, false))
                 if (prefs.getBoolean(Settings.APP_PROXY, false)) {
                     val password = if (prefs.getBoolean(Settings.APP_PROXY_LOCKED, true)) Settings.appProxyPassword(prefs) else null
                     options.put("appProxy", JSONObject().put("port", Settings.APP_PROXY_PORT).put("password", password ?: JSONObject.NULL))

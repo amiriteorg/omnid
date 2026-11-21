@@ -141,6 +141,10 @@ pub enum FetchError {
     Timeout(Duration),
     #[error("redirect to an unsupported location `{0}`")]
     BadRedirect(String),
+    /// A redirect from an onion, I2P or Hyphanet site to the clearnet, which
+    /// would go direct: refused, see [`Gateway::leaves_anonymity`].
+    #[error("refusing to follow `{0}` from an anonymity network to the clearnet directly")]
+    LeavesAnonymity(String),
     /// The message carries the whole cause chain: reqwest's top-level error
     /// alone ("error sending request") says nothing useful.
     #[error("{network}: {}", chain(.error.as_ref()))]
@@ -181,6 +185,9 @@ pub struct Gateway {
     i2p: Routers,
     fproxy: Routers,
     tor: Option<tor::TorTransport>,
+    /// Cancelled by [`Gateway::new_identity`], then replaced: the browser's
+    /// streams opened before it end with it ([`Gateway::identity`]).
+    identity: std::sync::Mutex<tokio_util::sync::CancellationToken>,
 }
 
 /// The TLS every connection omnid makes uses: Mozilla's roots (webpki-roots), checked by rustls
@@ -239,7 +246,7 @@ impl Gateway {
             Some(dir) => Some(tor::TorTransport::new(dir, &cfg.user_agent)?),
             None => None,
         };
-        Ok(Self { clearnet: clearnet.build()?, i2p, fproxy, tor, cfg })
+        Ok(Self { clearnet: clearnet.build()?, i2p, fproxy, tor, cfg, identity: Default::default() })
     }
 
     pub async fn fetch(&self, source: &Source, opts: &FetchOptions) -> Result<Page, FetchError> {
@@ -255,7 +262,9 @@ impl Gateway {
                 _ => None,
             };
             match redirect {
-                Some(next) if hops < opts.max_redirects => {
+                Some(next)
+                    if hops < opts.max_redirects && !self.leaves_anonymity(current.network(), next.network()) =>
+                {
                     hops += 1;
                     current = next;
                 }
@@ -280,7 +289,11 @@ impl Gateway {
             None => disabled(Network::Onion),
         };
         vec![
-            RouterStatus { network: Network::Clearnet, state: RouterState::Ready, detail: "direct".into() },
+            RouterStatus {
+                network: Network::Clearnet,
+                state: RouterState::Ready,
+                detail: if self.cfg.clearnet_via_tor { "through Tor" } else { "direct" }.into(),
+            },
             tor,
             probe(&self.i2p, Network::I2p, "i2pd HTTP proxy").await,
             probe(&self.fproxy, Network::Hyphanet, "FProxy").await,
@@ -418,16 +431,37 @@ impl Gateway {
         tokio::time::timeout(timeout, connect).await.map_err(|_| FetchError::Timeout(timeout))?
     }
 
+    /// Whether a step from `from` to `to` (a redirect, say) would leave an
+    /// anonymity network for a direct clearnet connection, from this
+    /// machine's own address. A site on an onion, I2P or Hyphanet, or a
+    /// magnet, could point at a clearnet address its author watches and so
+    /// learn who followed it; only with `clearnet_via_tor` does the clearnet
+    /// go through Tor too. [`Gateway::fetch`] leaves such a redirect
+    /// unfollowed, whatever `max_redirects` says.
+    pub fn leaves_anonymity(&self, from: Network, to: Network) -> bool {
+        from != Network::Clearnet && to == Network::Clearnet && !self.cfg.clearnet_via_tor
+    }
+
     /// The best Hyphanet node's FProxy, if one is configured.
     pub fn fproxy(&self) -> Option<&Url> {
         self.fproxy.best()
     }
 
-    /// New Tor circuits for every site the browser visits from now on.
+    /// New Tor circuits for every site the browser visits from now on, and
+    /// the end of the streams it opened before: a page reopened soon after
+    /// must not come back on a kept-alive connection over the old circuits.
     pub fn new_identity(&self) {
         if let Some(tor) = &self.tor {
             tor.new_identity();
         }
+        let old = std::mem::take(&mut *self.identity.lock().expect("identity lock poisoned"));
+        old.cancel();
+    }
+
+    /// The browser's current identity: cancelled when [`Gateway::new_identity`]
+    /// replaces it, so streams opened under it can end then.
+    pub fn identity(&self) -> tokio_util::sync::CancellationToken {
+        self.identity.lock().expect("identity lock poisoned").clone()
     }
 
     /// A direct TCP connection, refusing non-public addresses unless allowed;

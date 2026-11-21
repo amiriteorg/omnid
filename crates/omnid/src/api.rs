@@ -215,9 +215,18 @@ async fn crawl(State(state): State<AppState>, Json(desired): Json<CrawlState>) -
 async fn status(State(state): State<AppState>) -> Json<serde_json::Value> {
     let mut routers = state.gateway.status().await;
     let dht = state.dht.as_ref().map(Dht::status);
-    if let (Some(dht), Some(magnet)) = (&dht, routers.iter_mut().find(|r| r.network == Network::Magnet)) {
-        magnet.state = if dht.ready { RouterState::Ready } else { RouterState::Starting };
-        magnet.detail = format!("DHT, {} nodes", dht.nodes);
+    if let Some(magnet) = routers.iter_mut().find(|r| r.network == Network::Magnet) {
+        match &dht {
+            Some(dht) => {
+                magnet.state = if dht.ready { RouterState::Ready } else { RouterState::Starting };
+                magnet.detail = format!("DHT, {} nodes", dht.nodes);
+            }
+            // Turned off (the app's default, or --no-dht), not missing.
+            None => {
+                magnet.state = RouterState::Disabled;
+                magnet.detail = "DHT off: magnets are indexed from their links alone".into();
+            }
+        }
     }
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),

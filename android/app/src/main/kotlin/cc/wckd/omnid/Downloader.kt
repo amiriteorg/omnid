@@ -191,6 +191,9 @@ internal object Downloader {
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setColor(context.getColor(R.color.glow))
+            // On the lock screen, that a download runs, not what it is.
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion(context))
             .setContentTitle(job.name)
             .setContentText(text)
             .setProgress(100, percent, total <= 0)
@@ -200,6 +203,13 @@ internal object Downloader {
             .build()
         channel(context).notify(job.id, notification)
     }
+
+    /** What the lock screen shows instead of a download's notification. */
+    private fun publicVersion(context: Context): Notification = Notification.Builder(context, CHANNEL)
+        .setSmallIcon(android.R.drawable.stat_sys_download)
+        .setColor(context.getColor(R.color.glow))
+        .setContentTitle(context.getString(R.string.download_channel))
+        .build()
 
     /** Done ([error] null), cancelled (empty) or failed. */
     private fun finished(context: Context, job: Job, error: String?) {
@@ -215,6 +225,9 @@ internal object Downloader {
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(if (error == null) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
             .setColor(context.getColor(R.color.glow))
+            // On the lock screen, that a download runs, not what it is.
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion(context))
             .setContentTitle(job.name)
             .setContentText(if (error == null) context.getString(R.string.download_done) else context.getString(R.string.download_failed, error))
             .setContentIntent(if (error == null) downloads else null)

@@ -144,6 +144,8 @@ async fn proxy<S: AsyncRead + AsyncWrite + Unpin>(
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "the client said nothing in time"))??;
     let Request { host, port, username, reply, early } = request;
     let username = username.unwrap_or_default();
+    // Taken before connecting: a New identity from now on ends this stream.
+    let identity = gateway.identity();
     let connected = match access {
         Access::Open => gateway.connect(&host, port).await,
         Access::Browser { .. } => gateway.connect_browser(&host, port, &username).await,
@@ -160,8 +162,12 @@ async fn proxy<S: AsyncRead + AsyncWrite + Unpin>(
             upstream.write_all(&early).await?;
             // Tor streams buffer writes until flushed.
             upstream.flush().await?;
-            tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
-            Ok(())
+            let browser = matches!(access, Access::Browser { .. });
+            tokio::select! {
+                copied = tokio::io::copy_bidirectional(&mut client, &mut upstream) => copied.map(|_| ()),
+                // The browser's New identity: its streams on the old circuits end.
+                () = identity.cancelled(), if browser => Ok(()),
+            }
         }
         Err(e) => {
             match reply {
@@ -236,7 +242,13 @@ async fn socks_handshake<S: AsyncRead + AsyncWrite + Unpin>(s: &mut S, access: &
             let [len] = read_array(s).await?;
             let mut name = vec![0u8; len.into()];
             s.read_exact(&mut name).await?;
-            String::from_utf8(name).map_err(|_| invalid("host name is not UTF-8"))?
+            match String::from_utf8(name) {
+                Ok(name) if valid_host(&name) => name,
+                _ => {
+                    reply_socks(s, NOT_ALLOWED).await?;
+                    return Err(invalid("not a host name"));
+                }
+            }
         }
         0x04 => Ipv6Addr::from(read_array::<16, _>(s).await?).to_string(),
         _ => {
@@ -404,10 +416,20 @@ fn base64_decode(text: &str) -> Option<Vec<u8>> {
 fn authority(target: &str) -> Option<(String, u16)> {
     let (host, port) = target.rsplit_once(':')?;
     let host = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(host);
-    if host.is_empty() || host.contains(['/', '@', ' ']) {
+    if !valid_host(host) {
         return None;
     }
     Some((host.to_owned(), port.parse().ok()?))
+}
+
+/// A host a client may ask for: an IP address, or a name of letters, digits,
+/// `-`, `_` and dots. Nothing else reaches a router, where a CR or LF would
+/// let the client write its own request lines into the CONNECT sent to i2pd.
+fn valid_host(host: &str) -> bool {
+    host.parse::<std::net::IpAddr>().is_ok()
+        || (!host.is_empty()
+            && host.len() <= 253
+            && host.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')))
 }
 
 /// The bound address is not meaningful here, so it is reported as 0.0.0.0:0.
@@ -745,6 +767,7 @@ mod tests {
             (b"GET /relative HTTP/1.1\r\n\r\n", "400"),
             (b"CONNECT a.example HTTP/1.1\r\n\r\n", "400"),
             (b"GET http://a.example/ HTTP/2\r\n\r\n", "400"),
+            (b"CONNECT a.i2p\rInjected:80 HTTP/1.1\r\n\r\n", "400"),
         ] {
             let (result, answer) = exchange(&gateway, &Access::Open, request).await;
             assert!(result.is_err(), "{}", String::from_utf8_lossy(request));
@@ -804,5 +827,71 @@ mod tests {
         for bad in ["x.onion", "x.onion:http", ":80", "user@x:80"] {
             assert!(authority(bad).is_none(), "{bad}");
         }
+    }
+
+    #[tokio::test]
+    async fn refuses_host_names_a_router_could_misread() {
+        let (target, written) = negotiate(b"\x05\x01\x00\x05\x01\x00\x03\x0aa.i2p\r\nX:1\x00\x50").await;
+        assert!(target.is_err());
+        assert_eq!(written[2..4], [5, NOT_ALLOWED]);
+        assert!(valid_host("stats.i2p") && valid_host("_dmarc.example") && valid_host("::1") && valid_host("10.0.0.1"));
+        assert!(!valid_host("") && !valid_host("a b") && !valid_host("a/b") && !valid_host(&"a".repeat(254)));
+    }
+
+    /// An i2pd stand-in: answers every CONNECT with 200, then echoes.
+    async fn echoing_router() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut head = Vec::new();
+                    while !head.ends_with(b"\r\n\r\n") {
+                        let Ok(byte) = stream.read_u8().await else { return };
+                        head.push(byte);
+                    }
+                    stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+                    let (mut read, mut write) = stream.split();
+                    let _ = tokio::io::copy(&mut read, &mut write).await;
+                });
+            }
+        });
+        format!("http://{addr}/")
+    }
+
+    #[tokio::test]
+    async fn new_identity_ends_the_browsers_open_streams() {
+        let router = echoing_router().await;
+        let config = GatewayConfig {
+            tor_dir: None,
+            i2p_proxies: vec![router.parse().unwrap()],
+            fproxies: vec![],
+            ..GatewayConfig::default()
+        };
+        let gateway = Arc::new(Gateway::new(config).unwrap());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(serve(listener, gateway.clone(), Arc::new(browser()), CancellationToken::new()));
+        let open = || async {
+            let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+            client
+                .write_all(b"\x05\x01\x02\x01\x09stats.i2p\x06s3cret\x05\x01\x00\x03\x09stats.i2p\x00\x50")
+                .await
+                .unwrap();
+            let mut replies = [0u8; 14];
+            client.read_exact(&mut replies).await.unwrap();
+            assert_eq!(replies[4..6], [5, SUCCEEDED]);
+            client.write_all(b"ping").await.unwrap();
+            let mut echoed = [0u8; 4];
+            client.read_exact(&mut echoed).await.unwrap();
+            assert_eq!(&echoed, b"ping");
+            client
+        };
+        let mut before = open().await;
+        gateway.new_identity();
+        let mut buf = [0u8; 1];
+        let read = tokio::time::timeout(Duration::from_secs(2), before.read(&mut buf)).await;
+        assert!(matches!(read, Ok(Ok(0))), "the stream from before ends: {read:?}");
+        let _after = open().await;
     }
 }

@@ -52,6 +52,9 @@ internal object Browser {
             .consoleOutput(false)
             // The text size setting is a factor Gecko applies itself, not the phone's font scale.
             .automaticFontSizeAdjustment(false)
+            // Pages see en-US whatever the phone's languages: GeckoView would otherwise offer
+            // them every system locale (Accept-Language is set by the proxy extension too).
+            .locales(arrayOf("en-US"))
             .build()
         val runtime = try {
             GeckoRuntime.create(context.applicationContext, settings)

@@ -15,11 +15,11 @@
     <string name="crawl_anytime">Crawl on battery and mobile data</string>
     <string name="stop_omnid">Stop OMNId</string>
     <string name="hyphanet_node">Hyphanet node</string>
-    <string name="hyphanet_node_detail">OMNId reaches Hyphanet through a node\'s FProxy. Leave this empty for a node on this phone, or enter one on your own computer, over Tailscale for instance. A node on this phone stays the fallback.</string>
+    <string name="hyphanet_node_detail">OMNId reaches Hyphanet through a node\'s FProxy. Leave this empty for a node on this phone, or enter one on your own computer, over Tailscale for instance. A node on this phone stays the fallback. OMNId does not encrypt the way to a node: use one only over a network you trust, such as Tailscale.</string>
     <string name="hyphanet_node_hint">http://100.x.y.z:8888</string>
     <string name="hyphanet_node_invalid">That is not a node\'s address: use http://host:port</string>
     <string name="i2p_router">I2P router</string>
-    <string name="i2p_router_detail">OMNId reaches I2P through a router\'s HTTP proxy. Leave this empty for the i2pd app on this phone, or enter a router on your own computer, over Tailscale for instance. The i2pd app stays the fallback.</string>
+    <string name="i2p_router_detail">OMNId reaches I2P through a router\'s HTTP proxy. Leave this empty for the i2pd app on this phone, or enter a router on your own computer, over Tailscale for instance. The i2pd app stays the fallback. OMNId does not encrypt the way to a router: use one only over a network you trust, such as Tailscale, or its network sees which sites you ask for.</string>
     <string name="i2p_router_hint">http://100.x.y.z:4444</string>
     <string name="i2p_router_invalid">That is not a router\'s address: use http://host:port</string>
     <string name="save">Save</string>
@@ -138,6 +138,11 @@
     <string name="settings_anytime_about">While off, OMNId crawls only while the phone charges on Wi-Fi. Search works either way.</string>
     <string name="settings_blocklist">Ahmia\'s blocklist</string>
     <string name="settings_blocklist_about">Skips onion sites Ahmia lists for child sexual abuse material. It also lists ordinary ones (Tor\'s blog, Debian, the Guardian); your seeds are crawled whatever it says. Turned off, what it blocked is crawled again; your blocked words and sites still apply.</string>
+    <string name="settings_anonymity">Anonymity</string>
+    <string name="settings_crawl_via_tor">Crawl the web through Tor</string>
+    <string name="settings_crawl_via_tor_about">While on, web pages the crawler fetches come through Tor, like everything the browser opens. Off is faster, but a page found on an onion site could then make your phone fetch an address its author watches, from your own IP.</string>
+    <string name="settings_torrent_lookups">Torrent lookups</string>
+    <string name="settings_torrent_lookups_about">Finds torrents\' names and file lists on the BitTorrent network. It cannot go through Tor: that network sees your phone\'s address and every torrent it looks up, those found on onion sites too. While off, torrents are listed from their links alone.</string>
     <string name="settings_routers">Networks</string>
     <string name="settings_router_phone">On this phone</string>
     <string name="settings_app_proxy">Proxy for other apps</string>
@@ -145,7 +150,7 @@
     <string name="settings_app_proxy_about">Other apps on this phone reach Tor, I2P and Hyphanet through OMNId, as a SOCKS5 or HTTP proxy. Nothing goes direct, and each username gets Tor circuits of its own.</string>
     <string name="settings_app_proxy_address">Address</string>
     <string name="settings_app_proxy_running">%1$s · SOCKS5 and HTTP</string>
-    <string name="settings_app_proxy_taken">Not running: another app holds port %1$d</string>
+    <string name="settings_app_proxy_taken">Not running: another app holds port %1$d. Apps set to use the proxy would be talking to that app, not OMNId: turn their proxy setting off until this says it runs.</string>
     <string name="settings_app_proxy_starting">Starting…</string>
     <string name="settings_app_proxy_locked">Require the password</string>
     <string name="settings_app_proxy_locked_about">While off, any app on this phone can use the proxy, not only the ones you set up.</string>
@@ -180,6 +185,14 @@
     <string name="settings_download_connections_value">%1$d at once</string>
     <string name="settings_download_connections_one">One at a time</string>
     <string name="settings_download_connections_about">A large file from a server that allows it comes in parts over several Tor circuits at once, which is faster and goes on when a circuit fails.</string>
+
+    <!-- Magnet links. -->
+    <string name="magnet_ask">Open this torrent in another app?</string>
+    <string name="magnet_ask_detail">A torrent app connects to the BitTorrent network directly, outside Tor: that network sees your address and which torrent you asked for. OMNId hands over only the torrent\'s hash and name, without the trackers and peers a page can put in a link.</string>
+    <string name="magnet_open">Open in torrent app</string>
+    <string name="magnet_add">Add to OMNId</string>
+    <string name="magnet_invalid">Not a torrent link OMNId can hand on: it has no valid info hash.</string>
+    <string name="magnet_no_app">No torrent app is installed.</string>
 
     <!-- The browser's menu. -->
     <string name="browser_share">Share</string>

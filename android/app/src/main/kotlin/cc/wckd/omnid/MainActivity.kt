@@ -84,7 +84,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         drawnWith = Appearance.chosen(this)
         restorePage = savedInstanceState?.getString(KEY_PAGE)
-        web = WebView(this).apply {
+        Appearance.applyScreenshots(this)
+        web = PrivateWebView(this).apply {
             // The page draws its own; the platform's grey bar would sit on top of it.
             isVerticalScrollBarEnabled = false
             settings.javaScriptEnabled = true
@@ -95,9 +96,15 @@ class MainActivity : Activity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
-                    if (uri.host == "127.0.0.1") return false
+                    // The daemon's own pages load here, and nothing else on this phone: the
+                    // page's cookie (the API token) would go to any loopback port it loaded.
+                    if (uri.host == "127.0.0.1" && uri.port == loaded?.port) return false
+                    if (uri.host == "127.0.0.1" || uri.host.equals("localhost", ignoreCase = true)) return true
                     if (uri.toString() == I2PD_LINK) {
                         launch(I2pd.intent(this@MainActivity))
+                    } else if (uri.scheme.equals("magnet", ignoreCase = true)) {
+                        // A result: already in the index, so only the torrent app, after asking.
+                        askTorrentApp(uri.toString(), offerIndex = false)
                     } else if (BrowserConfig.isWebPage(uri.scheme, uri.host)) {
                         val open = ActivityOptions.makeCustomAnimation(this@MainActivity, R.anim.browser_open_enter, R.anim.browser_open_exit)
                         startActivity(
@@ -198,6 +205,7 @@ class MainActivity : Activity() {
     /** Back from installing or starting i2pd, say so. */
     override fun onResume() {
         super.onResume()
+        Appearance.applyScreenshots(this)
         if (Appearance.chosen(this) != drawnWith) {
             recreate()
             return
@@ -449,5 +457,17 @@ class MainActivity : Activity() {
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, intent.dataString ?: intent.`package`.orEmpty(), Toast.LENGTH_LONG).show()
         }
+    }
+}
+
+/**
+ * The search page's WebView, whose text fields the keyboard must not learn from: what is searched
+ * for here stays out of its suggestions and anything it syncs.
+ */
+internal class PrivateWebView(context: android.content.Context) : WebView(context) {
+    override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? {
+        val connection = super.onCreateInputConnection(outAttrs)
+        outAttrs.imeOptions = outAttrs.imeOptions or android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        return connection
     }
 }

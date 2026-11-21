@@ -107,6 +107,7 @@ class SettingsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        Appearance.applyScreenshots(this)
         if (Appearance.chosen(this) != drawnWith) recreate()
     }
 
@@ -135,7 +136,9 @@ class SettingsActivity : Activity() {
         divider()
         toggle(R.string.settings_images, R.string.settings_images_about, Settings.IMAGES, default = true)
         divider()
-        toggle(R.string.browser_allow_screenshots, R.string.settings_screenshots_about, Settings.SCREENSHOTS, default = false)
+        toggle(R.string.browser_allow_screenshots, R.string.settings_screenshots_about, Settings.SCREENSHOTS, default = false) {
+            Appearance.applyScreenshots(this)
+        }
         divider()
         choice(R.string.settings_download_connections, connectionsName(Downloads.connections(prefs.getInt(Downloads.CONNECTIONS, Downloads.DEFAULT_CONNECTIONS)))) {
             askConnections()
@@ -161,6 +164,11 @@ class SettingsActivity : Activity() {
         toggle(R.string.crawl_anytime, R.string.settings_anytime_about, CrawlPolicy.KEY_ANYTIME, default = false)
         divider()
         toggle(R.string.settings_blocklist, R.string.settings_blocklist_about, Settings.ABUSE_BLOCKLIST, default = true) { restartDaemon() }
+
+        section(R.string.settings_anonymity)
+        toggle(R.string.settings_crawl_via_tor, R.string.settings_crawl_via_tor_about, Settings.CRAWL_VIA_TOR, default = true) { restartDaemon() }
+        divider()
+        toggle(R.string.settings_torrent_lookups, R.string.settings_torrent_lookups_about, Settings.TORRENT_LOOKUPS, default = false) { restartDaemon() }
 
         section(R.string.settings_routers)
         choice(R.string.i2p_router, prefs.getString(I2pRouter.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_phone) }) {

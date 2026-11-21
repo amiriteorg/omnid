@@ -401,7 +401,14 @@ impl Job<'_> {
                 return Err(DownloadError::TooManyRedirects);
             }
             redirects += 1;
-            url = self.gateway.redirect(&url, &location).ok_or(FetchError::BadRedirect(location))?;
+            let next = self.gateway.redirect(&url, &location).ok_or(FetchError::BadRedirect(location))?;
+            // The browser's route never goes direct; the direct one must not
+            // be led off an anonymity network by a redirect.
+            if matches!(self.opts.route, Route::Direct) && self.gateway.leaves_anonymity(network(&url), network(&next))
+            {
+                return Err(FetchError::LeavesAnonymity(next.to_string()).into());
+            }
+            url = next;
         }
     }
 

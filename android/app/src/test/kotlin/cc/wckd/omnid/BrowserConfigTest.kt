@@ -15,6 +15,10 @@ class BrowserConfigTest {
         assertEquals("127.0.0.1", prefs["network.proxy.socks"])
         assertTrue("a port no app can listen on", (prefs["network.proxy.socks_port"] as Int) < 1024)
         assertEquals(true, prefs["network.proxy.socks_remote_dns"])
+        assertEquals(true, prefs["network.proxy.socks5_remote_dns"])
+        assertTrue("checked before a page loads", "network.proxy.socks5_remote_dns" in BrowserConfig.critical)
+        assertEquals(false, prefs["dom.serviceWorkers.enabled"])
+        assertEquals(true, prefs["security.ssl.disable_session_identifiers"])
         assertEquals(false, prefs["network.proxy.failover_direct"])
         assertEquals(true, prefs["network.dns.disabled"])
         assertEquals(false, prefs["media.peerconnection.enabled"])
@@ -104,5 +108,16 @@ class BrowserConfigTest {
     fun sharesHyphanetPagesByTheirKey() {
         assertEquals("freenet:USK@abc,def,AQACAAE/site/1/", BrowserConfig.shareable("http://hyphanet/USK@abc,def,AQACAAE/site/1/"))
         assertEquals("http://stats.i2p/", BrowserConfig.shareable("http://stats.i2p/"))
+    }
+
+    @Test
+    fun entersAnOverlayOnlyFromAnotherNetwork() {
+        val onion = "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/"
+        assertTrue(BrowserConfig.entersOverlay(onion, "http://stats.i2p/"))
+        assertTrue(BrowserConfig.entersOverlay("https://example.com/", "http://hyphanet/USK@x/site/1/"))
+        assertTrue(BrowserConfig.entersOverlay("http://stats.i2p/", "http://hyphanet/USK@x/site/1/"))
+        assertFalse("within I2P", BrowserConfig.entersOverlay("http://stats.i2p/", "http://reg.i2p/"))
+        assertFalse("to the clearnet", BrowserConfig.entersOverlay(onion, "https://example.com/"))
+        assertFalse("a new tab, typed", BrowserConfig.entersOverlay(null, "http://stats.i2p/"))
     }
 }

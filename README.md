@@ -355,6 +355,66 @@ A new level reloads every open tab.
   copies the previous version's pages into it on first start, then removes
   the old directory.
 
+## Anonymity
+
+What OMNId hides, and from whom:
+
+- **Your browsing.** Every page the app's browser opens goes through the
+  daemon: the clearnet and onion sites through Tor, each site on circuits of
+  its own; `.i2p` through your I2P router; Hyphanet pages through your node.
+  Nothing in the browser connects directly: its Gecko prefs send whatever the
+  proxy extension does not route to a dead-end port, checked before a page
+  loads. It resists fingerprinting as Firefox's resist-fingerprinting does,
+  which is not Tor Browser (see Known limitations).
+- **Your crawling.** The crawler follows what it finds, so content on one
+  network could make it connect on another: a page on an onion site linking to
+  a clearnet address its author watches, or to a magnet the author follows on
+  the BitTorrent DHT, would show the author your IP if the crawler fetched or
+  looked it up directly. On the phone the crawler reaches web pages through Tor
+  (Settings → Crawl the web through Tor) and the DHT is off (Settings → Torrent
+  lookups), unless you change them. A computer running `omnid serve` keeps its
+  defaults (direct clearnet, the DHT on), says so in its log at start, and
+  takes `--clearnet-via-tor --no-dht` for the same protection.
+- **Your other apps**, through the private proxy (Settings → Proxy for other
+  apps, or `--socks-password`): never direct, each username on circuits of its
+  own.
+- **Downloads** go the browser's way, never direct. Their parallel
+  connections use circuits of their own, so more exits see parts of a file
+  being fetched (encrypted where the site uses HTTPS), each only its part.
+- **Where you came from.** A redirect from an onion, I2P or Hyphanet site to
+  the clearnet is never followed directly (only through Tor exits); a request
+  that crosses from one network to another carries no Referer and
+  `Origin: null`; pages see `Accept-Language: en-US,en;q=0.5` whatever the
+  phone's languages; and a page cannot, by script or redirect, send the
+  browser into I2P or Hyphanet or open another app: that takes a tap or
+  typing. A magnet goes to a torrent app only after a dialog, and without the
+  trackers and peers a page can put in a link.
+- **One visit from the next.** New identity closes every tab, gives every
+  site new circuits and ends the connections still open on the old ones;
+  TLS sessions are not resumed. A request that cannot say which page it
+  belongs to gets circuits of its own rather than sharing one with others.
+
+What it does not hide:
+
+- **That you use Tor, I2P and Hyphanet.** Your network sees connections to Tor
+  guards, to I2P peers or your router elsewhere, and to your Hyphanet node.
+  There are no Tor bridges yet.
+- **What your I2P router and Hyphanet node fetch for you.** Run them on a
+  machine you control; the setup in Quick start keeps them on your tailnet for
+  your own devices only.
+- **A file you open in another app**, which may go online by itself, and the
+  torrent app a magnet is handed to, which goes online directly.
+- **One I2P identity.** Your I2P router's HTTP proxy sends everything through
+  one I2P destination: the browser's eepsites, the crawler's and the apps
+  behind the proxy, so eepsites can link those visits to each other (though
+  not to your IP). There is no per-site isolation on I2P as there is on Tor.
+- **How OMNId downloads.** The daemon's download requests differ from the
+  browser's own (their headers, HTTP/1.1, several exits within a second), so a
+  server can tell an OMNId download apart.
+- **An adversary watching both ends** of a Tor, I2P or Hyphanet connection,
+  who can match them by timing. These networks do not defend against that,
+  and neither does OMNId.
+
 ## Safety
 
 - **The crawler never downloads media.** Only `text/html`,

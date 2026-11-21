@@ -33,6 +33,18 @@ internal object Settings {
     /** Whether the crawler keeps Ahmia's blocklist of onion services in its safety gate. On by default. */
     const val ABUSE_BLOCKLIST = "abuse_blocklist"
 
+    /**
+     * Whether the crawler reaches web pages through Tor. On by default: directly, a page found on
+     * an onion site could make the phone fetch an address its author watches, from its own IP.
+     */
+    const val CRAWL_VIA_TOR = "crawl_via_tor"
+
+    /**
+     * Whether the daemon joins the BitTorrent DHT for magnets' names and file lists. Off by
+     * default: the DHT cannot go through Tor, so it sees the phone's IP and what it looks up.
+     */
+    const val TORRENT_LOOKUPS = "torrent_lookups"
+
     fun crawlSpeed(stored: String?): CrawlSpeed = CrawlSpeed.entries.firstOrNull { it.name == stored } ?: CrawlSpeed.NORMAL
 
     /** The search page's networks, in its own words (app.js), in the order its chips show. */

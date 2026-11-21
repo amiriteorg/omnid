@@ -23,6 +23,8 @@ internal object BrowserConfig {
         "network.proxy.socks_port" to DEAD_END_PORT,
         "network.proxy.socks_version" to 5,
         "network.proxy.socks_remote_dns" to true,
+        // The name SOCKS5 goes by now; the one above is for SOCKS4.
+        "network.proxy.socks5_remote_dns" to true,
         "network.proxy.no_proxies_on" to "",
         "network.proxy.allow_hijacking_localhost" to true,
         "network.proxy.failover_direct" to false,
@@ -36,7 +38,6 @@ internal object BrowserConfig {
         // Connections nobody asked for.
         "network.prefetch-next" to false,
         "network.dns.disablePrefetch" to true,
-        "network.predictor.enabled" to false,
         "network.http.speculative-parallel-limit" to 0,
         "browser.send_pings" to false,
         "network.captive-portal-service.enabled" to false,
@@ -61,6 +62,37 @@ internal object BrowserConfig {
         "network.http.referer.XOriginTrimmingPolicy" to 2,
         // WebAuthn needs Google Play services, which the app leaves out.
         "security.webauth.webauthn" to false,
+        // Brought in line with Tor Browser 16 (001-base-profile.js, 000-tor-browser.js).
+        // Workers and push outlive the page and its site; their requests belong to no page.
+        "dom.serviceWorkers.enabled" to false,
+        "dom.push.enabled" to false,
+        "dom.push.serverURL" to "",
+        // A resumed TLS session would tie a visit to the one before, New identity or not.
+        "security.ssl.disable_session_identifiers" to true,
+        "security.ssl.require_safe_negotiation" to true,
+        "security.cert_pinning.enforcement_level" to 2,
+        // Lists Mozilla's servers push; Tor Browser turns them off.
+        "security.remote_settings.crlite_filters.enabled" to false,
+        "security.pki.crlite_mode" to 0,
+        "security.remote_settings.intermediates.enabled" to false,
+        "privacy.fingerprintingProtection.remoteOverrides.enabled" to false,
+        // Reports a page could have sent elsewhere about the browser.
+        "dom.reporting.enabled" to false,
+        "dom.reporting.header.enabled" to false,
+        "dom.reporting.crash.enabled" to false,
+        "dom.postMessage.sharedArrayBuffer.withCOOP_COEP" to false,
+        // A PDF's own scripts, whatever the page's JavaScript setting.
+        "pdfjs.enableScripting" to false,
+        // Streams that once played through a stack of their own, outside the proxy.
+        "media.hls.enabled" to false,
+        // Hardware codecs and the system's accent colour tell phones apart.
+        "media.hevc.enabled" to false,
+        "widget.non-native-theme.use-theme-accent" to false,
+        "font.name-list.emoji" to "Noto Color Emoji",
+        "browser.privatebrowsing.forceMediaMemoryCache" to true,
+        // Other apps open only what the app hands them itself (Magnets).
+        "network.protocol-handler.external-default" to false,
+        "intl.accept_languages" to "en-US, en",
     )
 
     /** Prefs that must have taken effect before a page loads; without them requests could leak. */
@@ -69,6 +101,7 @@ internal object BrowserConfig {
         "network.proxy.socks",
         "network.proxy.socks_port",
         "network.proxy.socks_remote_dns",
+        "network.proxy.socks5_remote_dns",
         "network.proxy.failover_direct",
         "network.proxy.allow_hijacking_localhost",
         "network.dns.disabled",
@@ -131,6 +164,26 @@ internal object BrowserConfig {
      */
     fun shareable(url: String): String =
         if (isHyphanet(url)) "freenet:" + url.substringAfter("://").substringAfter('/') else url
+
+    /**
+     * Whether a load from a page at [from] to [to] enters I2P or Hyphanet from another network: the
+     * browser allows that only when typed or tapped, since a script or redirect could otherwise
+     * make every visitor's router or node fetch an address the page's author watches.
+     */
+    fun entersOverlay(from: String?, to: String): Boolean {
+        val into = when {
+            isI2p(to) -> "i2p"
+            isHyphanet(to) -> "hyphanet"
+            else -> return false
+        }
+        val on = when {
+            from == null -> return false
+            isI2p(from) -> "i2p"
+            isHyphanet(from) -> "hyphanet"
+            else -> "other"
+        }
+        return on != into
+    }
 
     /** Whether the address is a Hyphanet page, through the node. */
     fun isHyphanet(url: String?): Boolean = runCatching { URI(url).host }.getOrNull()?.lowercase() == HYPHANET_HOST
