@@ -22,6 +22,10 @@ const MAX_IDLE_PER_SITE: usize = 2;
 /// Sites with circuits of their own; past this many, every site starts over
 /// on new circuits rather than the map growing without bound.
 const MAX_ISOLATED_SITES: usize = 4_096;
+/// A site key that starts with this is used once (the browser's proxy
+/// extension gives one to a request it cannot place): its stream gets circuits
+/// no other stream shares, and it takes no room among the sites kept.
+const ONE_OFF: char = '~';
 
 pub(crate) struct TorTransport {
     client: Arc<TorClient<PreferredRuntime>>,
@@ -58,6 +62,11 @@ struct Isolation(Mutex<HashMap<String, IsolationToken>>);
 
 impl Isolation {
     fn token(&self, site: &str) -> IsolationToken {
+        // A stream that could not say which site it is for gets circuits of
+        // its own, and they are not kept for another.
+        if site.starts_with(ONE_OFF) {
+            return IsolationToken::new();
+        }
         let mut tokens = self.0.lock().expect("isolation lock poisoned");
         if tokens.len() >= MAX_ISOLATED_SITES && !tokens.contains_key(site) {
             tokens.clear();
@@ -68,7 +77,9 @@ impl Isolation {
     /// A fresh token for `site`, replacing the one it had.
     fn renew(&self, site: &str) -> IsolationToken {
         let token = IsolationToken::new();
-        self.0.lock().expect("isolation lock poisoned").insert(site.to_owned(), token);
+        if !site.starts_with(ONE_OFF) {
+            self.0.lock().expect("isolation lock poisoned").insert(site.to_owned(), token);
+        }
         token
     }
 
@@ -260,6 +271,17 @@ mod tests {
         assert_eq!(isolation.token("example.com"), renewed, "and stays on it");
         isolation.reset();
         assert_ne!(isolation.token("example.com"), renewed, "a new identity gets new circuits");
+    }
+
+    #[test]
+    fn one_off_keys_share_nothing_and_are_not_kept() {
+        let isolation = Isolation::default();
+        let site = isolation.token("example.com");
+        let first = isolation.token("~3f2a");
+        assert_ne!(isolation.token("~3f2a"), first, "never the same circuits twice");
+        assert_ne!(first, site);
+        isolation.renew("~3f2a");
+        assert_eq!(isolation.0.lock().unwrap().len(), 1, "only the site is remembered");
     }
 
     #[test]
