@@ -59,6 +59,8 @@ class BrowserConfigTest {
         for (url in listOf("http://stats.i2p/", "https://example.com/", "https://x.onion/", "https://example.i2p.com/", "https://i2p/", "not a url", "https://[::1/", null)) {
             assertFalse("$url", BrowserConfig.retriesOverHttp(url))
         }
+        assertTrue(BrowserConfig.isI2p("http://stats.i2p/"))
+        assertFalse(BrowserConfig.isI2p("http://x.onion/"))
     }
 
     @Test

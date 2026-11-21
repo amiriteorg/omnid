@@ -44,6 +44,8 @@ import org.json.JSONObject
 class MainActivity : Activity() {
     private companion object {
         const val KEY_PAGE = "page"
+        /** The page's link to the i2pd app (app.js): opens it, or its F-Droid page. */
+        const val I2PD_LINK = "omnid:i2pd"
     }
 
     private lateinit var web: WebView
@@ -78,7 +80,9 @@ class MainActivity : Activity() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
                     if (uri.host == "127.0.0.1") return false
-                    if (BrowserConfig.isWebPage(uri.scheme, uri.host)) {
+                    if (uri.toString() == I2PD_LINK) {
+                        launch(I2pd.intent(this@MainActivity))
+                    } else if (BrowserConfig.isWebPage(uri.scheme, uri.host)) {
                         val open = ActivityOptions.makeCustomAnimation(this@MainActivity, R.anim.browser_open_enter, R.anim.browser_open_exit)
                         startActivity(
                             Intent(this@MainActivity, BrowserActivity::class.java).putExtra(BrowserActivity.EXTRA_URL, uri.toString()),
@@ -91,6 +95,8 @@ class MainActivity : Activity() {
                 }
 
                 override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) = updateBack()
+
+                override fun onPageFinished(view: WebView, url: String?) = tellPage()
             }
             visibility = View.INVISIBLE
         }
@@ -142,6 +148,17 @@ class MainActivity : Activity() {
     override fun onStop() {
         OmnidService.unobserve(onServiceChange)
         super.onStop()
+    }
+
+    /** Back from installing or starting i2pd, say so. */
+    override fun onResume() {
+        super.onResume()
+        tellPage()
+    }
+
+    /** What the page cannot find out for itself: whether the i2pd app is installed. */
+    private fun tellPage() {
+        if (loaded != null) web.evaluateJavascript("window.omnidApp?.i2pd(${I2pd.isInstalled(this)})", null)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -331,11 +348,13 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun openElsewhere(uri: Uri) {
+    private fun openElsewhere(uri: Uri) = launch(Intent(Intent.ACTION_VIEW, uri))
+
+    private fun launch(intent: Intent) {
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, uri))
+            startActivity(intent)
         } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, uri.toString(), Toast.LENGTH_LONG).show()
+            Toast.makeText(this, intent.dataString ?: intent.`package`.orEmpty(), Toast.LENGTH_LONG).show()
         }
     }
 }

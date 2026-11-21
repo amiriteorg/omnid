@@ -383,6 +383,16 @@ const ROUTERS = [
 
 const STATE_WORDS = { ready: "Ready", starting: "Connecting", unreachable: "Not running", disabled: "Off", unsupported: "Not available" };
 
+// Inside the Android app, whether the i2pd app is installed: the app says so when the page loads
+// and whenever it comes back to the front. null elsewhere.
+let i2pdInstalled = null;
+window.omnidApp = {
+  i2pd(installed) {
+    i2pdInstalled = Boolean(installed);
+    refreshStatus();
+  },
+};
+
 function explain(network, router) {
   const state = router?.state ?? "disabled";
   const detail = router?.detail ?? "";
@@ -397,6 +407,8 @@ function explain(network, router) {
       return "Torrent lookups are off.";
     case "i2p":
       if (state === "ready") return `.i2p sites go through the I2P router (${detail}).`;
+      if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and omnid uses it right away.";
+      if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router on this phone: the free i2pd app, from F-Droid. omnid uses it as soon as it runs, with nothing to set up.";
       return "Reaching .i2p sites needs an I2P router, such as the i2pd app, running on this device.";
     case "hyphanet":
       if (state === "ready") return `Hyphanet sites go through the Hyphanet node (${detail}).`;
@@ -407,6 +419,12 @@ function explain(network, router) {
         : "omnid's crawler reads web pages directly from this device.";
   }
   return detail;
+}
+
+// The I2P row's way to the i2pd app, inside the Android app, which opens it or its F-Droid page.
+function routerAction(network, state) {
+  if (network !== "i2p" || state === "ready" || i2pdInstalled === null) return null;
+  return el("a", { class: "button small", href: "omnid:i2pd" }, i2pdInstalled ? "Open i2pd" : "Get i2pd");
 }
 
 let statusTimer;
@@ -426,7 +444,8 @@ async function refreshStatus() {
       return el("li", { class: state },
         el("span", { class: "state-dot" }),
         el("b", {}, name, el("span", {}, STATE_WORDS[state] ?? state)),
-        el("p", {}, explain(network, byNetwork[network])));
+        el("p", {}, explain(network, byNetwork[network])),
+        routerAction(network, state));
     }));
 
     const c = status.crawl;

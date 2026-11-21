@@ -36,7 +36,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Local API and search page, optional token | done, live tested |
 | SOCKS5 proxy (`.onion`/`.i2p` for any browser) | done, live tested with curl over Tor |
 | Android app (arm64) | done, run on an Android 16 emulator: crawled 225 onion pages over embedded Tor, magnets via the DHT |
-| Browser in the Android app: GeckoView, private, every request through the daemon | done, run on the emulator: onion and clearnet pages over Tor, check.torproject.org reports Tor, New identity changes the exit |
+| Browser in the Android app: GeckoView, private, every request through the daemon | done, run on the emulator: onion and clearnet pages over Tor, check.torproject.org reports Tor, New identity changes the exit, reg.i2p through the i2pd app |
 
 Not built yet: router lifecycle management (starting i2pd and Hyphanet as child processes), index
 sync between nodes, near-duplicate detection, a desktop app shell.
@@ -103,7 +103,10 @@ crawls only on a charger and an unmetered network unless "Crawl on battery
 and mobile data" is on. Share an onion, magnet or link to the app to crawl
 it. A new install seeds itself with the Tor Project's and the BBC's onion
 services. Magnets are resolved through the DHT on the phone too; the phone
-never harvests the DHT.
+never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
+from F-Droid and start its router: its HTTP proxy is on 127.0.0.1:4444, where
+omnid looks, so there is nothing to set up. Until then the I2P row under the
+network strip offers "Get i2pd" or "Open i2pd".
 
 Results open in omnid's own browser, GeckoView (Firefox's engine) in private
 mode: onion and `.i2p` results as well as clearnet ones, typed addresses too.
@@ -248,7 +251,8 @@ The Android app's browser:
   as far as resist-fingerprinting allows. Use Tor Browser where that matters.
   GeckoView must be updated with every Firefox release, which carries its
   security fixes (`android/app/build.gradle.kts`).
-- The phone has no I2P router unless one is installed and configured.
+- On the phone, `.i2p` needs the i2pd app with its router running; omnid
+  cannot start it (i2pd offers other apps no way to).
 - GeckoView takes the APK from 24 MB to 103 MB, with native libraries
   compressed in the APK and unpacked on install.
 - Through the SOCKS proxy, `.i2p` requests reach the site with your client's

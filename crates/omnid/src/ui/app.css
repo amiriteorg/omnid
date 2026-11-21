@@ -124,6 +124,7 @@ svg.icon { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: no
 .router-list .starting b span { color: var(--warn); }
 .router-list .unreachable b span, .router-list .disabled b span { color: var(--muted); }
 .router-list p { grid-column: 2; margin: 0; font-size: var(--t-body); color: var(--ink-2); }
+.router-list .button { grid-column: 2; justify-self: start; margin-top: 0.4rem; text-decoration: none; }
 .crawl-row { display: flex; align-items: center; gap: 0.75rem; padding-top: 0.65rem; }
 .crawl-row p { flex: 1; margin: 0; font-size: var(--t-body); color: var(--ink-2); }
 

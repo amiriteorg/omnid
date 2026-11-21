@@ -539,6 +539,8 @@ class BrowserActivity : Activity() {
     private fun errorPage(uri: String?, error: WebRequestError): String {
         val reason = getString(
             when {
+                // omnid's proxy refuses a .i2p site when no I2P router answers.
+                error.code == WebRequestError.ERROR_CONNECTION_REFUSED && BrowserConfig.isI2p(uri) -> R.string.browser_error_no_i2p_router
                 // omnid's proxy reports a host Tor or I2P could not reach as an unknown host.
                 error.code == WebRequestError.ERROR_UNKNOWN_HOST -> R.string.browser_error_unreachable
                 error.code == WebRequestError.ERROR_HTTPS_ONLY -> R.string.browser_error_https_only

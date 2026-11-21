@@ -105,10 +105,12 @@ internal object BrowserConfig {
      * does for onion services (which Gecko leaves alone on its own), so HTTP is not readable on
      * the way there.
      */
-    fun retriesOverHttp(url: String?): Boolean {
-        val uri = runCatching { URI(url) }.getOrNull() ?: return false
-        val host = uri.host?.lowercase()?.trimEnd('.') ?: return false
-        return uri.scheme.equals("https", ignoreCase = true) && host.endsWith(".i2p")
+    fun retriesOverHttp(url: String?): Boolean = url?.startsWith("https:", ignoreCase = true) == true && isI2p(url)
+
+    /** Whether the address is a `.i2p` site, which the daemon reaches through an I2P router. */
+    fun isI2p(url: String?): Boolean {
+        val host = runCatching { URI(url).host }.getOrNull() ?: return false
+        return host.lowercase().trimEnd('.').endsWith(".i2p")
     }
 
     /**
