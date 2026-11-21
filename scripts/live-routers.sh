@@ -63,11 +63,12 @@ start_i2pd() {
   else
     mkdir -p "$dir"
     say "starting i2pd (client only)"
-    (cd "$dir" && nohup i2pd --datadir="$dir" --notransit --upnp.enabled=false \
+    # exec, so no shell stays behind waiting on i2pd and holding our stdout.
+    (cd "$dir" && exec nohup i2pd --datadir="$dir" --notransit --upnp.enabled=false \
       --httpproxy.address=127.0.0.1 --httpproxy.port=4444 \
       --socksproxy.address=127.0.0.1 --socksproxy.port=4447 \
       --http.address=127.0.0.1 --http.port=7070 \
-      --log=file --logfile="$dir/i2pd.log" --loglevel=warn --pidfile="$dir/i2pd.pid" >"$dir/stdout.log" 2>&1 &)
+      --log=file --logfile="$dir/i2pd.log" --loglevel=warn --pidfile="$dir/i2pd.pid" >"$dir/stdout.log" 2>&1) &
   fi
   # Tunnels come up first; names resolve once the address book has loaded.
   wait_for 120 "i2pd's proxy" nc -z 127.0.0.1 4444
@@ -145,8 +146,8 @@ EOF
     local cp=$java/freenet.jar:$java/freenet-ext-29.jar:$pkg/jna-$JNA_VERSION.jar:$pkg/jna-platform-$JNA_VERSION.jar
     cp=$cp:$java/bcprov-jdk15on-1.59.jar:$java/pebble-3.1.5.jar:$java/unbescape-1.1.6.RELEASE.jar:$java/slf4j-api-1.7.25.jar
     say "starting Hyphanet $HYPHANET_BUILD"
-    # exec, so the background process is Java itself and its PID is the
-    # one recorded.
+    # exec, so the background process is Java itself, its PID is the one
+    # recorded, and no shell stays behind holding our stdout.
     (cd "$node" && exec nohup java -cp "$cp" -Dnetworkaddress.cache.ttl=0 -Djava.io.tmpdir="$node/tmp" \
       --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED \
       --add-opens=java.base/java.io=ALL-UNNAMED -Xss512k -Xmx512m \
