@@ -20,8 +20,11 @@ import java.util.concurrent.Executors
  * index and routers stay up and crawling can continue on a charger.
  */
 class OmnidService : Service() {
-    /** Where the running daemon listens, and the token its API requires. */
-    data class Endpoint(val port: Int, val token: String) {
+    /**
+     * Where the running daemon listens, the token its API requires, and the port of the browser's
+     * proxy, which takes the same token as its password.
+     */
+    data class Endpoint(val port: Int, val token: String, val browserProxyPort: Int) {
         val origin get() = "http://127.0.0.1:$port"
     }
 
@@ -59,7 +62,7 @@ class OmnidService : Service() {
         native.execute {
             try {
                 val port = Native.start(File(filesDir, "omnid").path, token)
-                endpoint = Endpoint(port, token)
+                endpoint = Endpoint(port, token, Native.browserProxyPort())
                 failure = null
                 val crawlPolicy = CrawlPolicy(this) { paused, reason -> native.execute { Native.setPaused(paused, reason) } }
                 policy = crawlPolicy

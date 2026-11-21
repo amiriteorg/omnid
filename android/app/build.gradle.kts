@@ -7,7 +7,10 @@ plugins {
 android {
     namespace = "cc.wckd.omnid"
     compileSdk {
-        version = release(37)
+        // 37.2: GeckoView compiles against it.
+        version = release(37) {
+            minorApiLevel = 2
+        }
     }
 
     defaultConfig {
@@ -59,6 +62,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Native libraries compressed in the APK and unpacked on install: with GeckoView the APK is
+    // 103 MB this way and 218 MB stored, and it is downloaded directly, not through a store.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
@@ -66,5 +77,10 @@ android {
 }
 
 dependencies {
+    // The browser's engine (MPL-2.0). Update with every Firefox release: it carries the security
+    // fixes. Google Play services is left out; WebAuthn, which needs it, is turned off.
+    implementation("org.mozilla.geckoview:geckoview-arm64-v8a:160.0.20261116130455") {
+        exclude(group = "com.google.android.gms")
+    }
     testImplementation("junit:junit:4.13.2")
 }

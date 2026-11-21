@@ -20,4 +20,15 @@ internal object Native {
     /** Pauses or resumes crawling; a non-empty [reason] is shown in the UI. */
     @JvmStatic
     external fun setPaused(paused: Boolean, reason: String)
+
+    /**
+     * The port of the browser's SOCKS5 proxy on loopback, 0 when the daemon is not running. It
+     * wants the daemon's token as its password and takes the site as the username.
+     */
+    @JvmStatic
+    external fun browserProxyPort(): Int
+
+    /** New Tor circuits for every site the browser visits from now on. */
+    @JvmStatic
+    external fun newIdentity()
 }

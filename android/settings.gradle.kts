@@ -17,6 +17,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // GeckoView, and nothing else, from Mozilla.
+        exclusiveContent {
+            forRepository { maven("https://maven.mozilla.org/maven2/") }
+            filter { includeGroup("org.mozilla.geckoview") }
+        }
     }
 }
 

@@ -29,8 +29,8 @@ import java.net.URL
 import org.json.JSONObject
 
 /**
- * The daemon's own search page in a WebView. Only the daemon's origin loads inside; clearnet
- * links and magnets go to the apps that handle them.
+ * The daemon's own search page in a WebView. Only the daemon's origin loads inside; web results
+ * open in omnid's browser and magnets in the app that handles them.
  */
 class MainActivity : Activity() {
     private lateinit var web: WebView
@@ -51,8 +51,13 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.TRANSPARENT)
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    if (request.url.host == "127.0.0.1") return false
-                    openElsewhere(request.url)
+                    val uri = request.url
+                    if (uri.host == "127.0.0.1") return false
+                    if (BrowserConfig.isWebPage(uri.scheme, uri.host)) {
+                        startActivity(Intent(this@MainActivity, BrowserActivity::class.java).putExtra(BrowserActivity.EXTRA_URL, uri.toString()))
+                    } else {
+                        openElsewhere(uri)
+                    }
                     return true
                 }
             }

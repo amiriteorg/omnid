@@ -33,6 +33,14 @@
             </intent-filter>
         </activity>
 
+        <!-- GeckoView, private, every request through the daemon. Not exported: only
+             omnid's own search page opens it. -->
+        <activity
+            android:name=".BrowserActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|uiMode|density"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- specialUse: a long-running local gateway and index has no closer
              type, and dataSync is cut off after six hours on Android 15. -->
         <service

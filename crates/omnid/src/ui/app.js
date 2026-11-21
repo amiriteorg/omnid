@@ -50,12 +50,15 @@ const languageName = (() => {
   }
 })();
 
-// Only clearnet URLs and magnets get a link. Opening an onion or .i2p
-// address in an ordinary browser fails at best and leaks a DNS lookup at
-// worst, so those are shown for copying into the right browser.
+// Clearnet URLs and magnets get a link. Opening an onion or .i2p address in
+// an ordinary browser fails at best and leaks a DNS lookup at worst, so there
+// those are shown for copying into the right browser; inside the app, omnid's
+// own browser opens them over Tor or I2P.
 function routeItem(route) {
+  const embedded = document.documentElement.classList.contains("embedded");
+  const web = /^https?:\/\//.test(route.url);
   const linkable =
-    (route.network === "clearnet" && /^https?:\/\//.test(route.url)) ||
+    (web && (route.network === "clearnet" || (embedded && ["onion", "i2p"].includes(route.network)))) ||
     (route.network === "magnet" && route.url.startsWith("magnet:?xt=urn:btih:"));
   const target = linkable
     ? el("a", { href: route.url, rel: "noreferrer noopener", target: "_blank" }, route.url)

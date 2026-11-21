@@ -15,7 +15,9 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
   crawl loop. End-to-end tests in `crates/omnid-crawl/tests/e2e.rs`.
 - `crates/omnid` — the daemon as a library (`omnid::start`), the CLI, the HTTP API, the search page
   (`src/ui`, compiled in), the SOCKS proxy.
-- `crates/omnid-android` + `android/` — JNI bridge and the Kotlin app (platform APIs only).
+- `crates/omnid-android` + `android/` — JNI bridge and the Kotlin app (platform APIs only, plus
+  GeckoView for the browser: `Browser.kt`, `BrowserActivity.kt`, `BrowserConfig.kt` and the
+  extension in `android/app/src/main/assets/browser-proxy/`).
 
 Dependencies point down this list; `omnid-core` depends on no other omnid crate.
 
@@ -38,6 +40,11 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
 
 - Only `omnid-net` and `omnid-dht` open network connections. Clearnet connections go through the
   private-address guard unless `allow_private_addresses` is set.
+- The app's browser (GeckoView) reaches the network only through the daemon's browser proxy
+  (`socks::Access::Browser` → `Gateway::connect_browser`: password required, Tor or i2pd, never
+  direct). Its Gecko prefs send anything else to a dead-end port and are read back before a page
+  loads (`BrowserConfig.critical`); keep both when changing either side. Bump GeckoView with every
+  Firefox release: it carries the security fixes.
 - Media is never downloaded: bodies are read only for `is_indexable_type`, checked on headers
   before the body. The DHT fetches only info dicts over `ut_metadata`; never pieces.
 - Everything from the network is hostile: no panics on malformed input, explicit caps on bytes,

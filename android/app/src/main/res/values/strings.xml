@@ -16,4 +16,27 @@
     <string name="paused_charger_wifi">waiting for a charger and Wi-Fi</string>
     <string name="paused_charger">waiting for a charger</string>
     <string name="paused_unmetered">waiting for an unmetered network</string>
+    <string name="browser_address_hint">Address or .onion</string>
+    <string name="browser_back">Back</string>
+    <string name="browser_forward">Forward</string>
+    <string name="browser_reload">Reload</string>
+    <string name="browser_stop">Stop</string>
+    <string name="browser_menu">Browser menu</string>
+    <string name="browser_new_identity">New identity</string>
+    <string name="browser_new_identity_done">New identity: new circuits, nothing kept</string>
+    <string name="browser_allow_screenshots">Allow screenshots</string>
+    <string name="browser_close">Close browser</string>
+    <string name="browser_tor_plain">Tor · not encrypted</string>
+    <string name="browser_not_an_address">Type a web address</string>
+    <string name="browser_refused">omnid\'s browser does not open %1$s</string>
+    <string name="browser_no_downloads">Downloads are off in omnid\'s browser</string>
+    <string name="browser_unsafe">The browser could not be set up safely, so nothing was loaded: %1$s</string>
+    <string name="browser_error_title">This page did not load</string>
+    <string name="browser_error_proxy">omnid\'s proxy did not answer: omnid may have stopped. Reopen it from the search page.</string>
+    <string name="browser_error_unreachable">Tor or I2P could not reach it: the site may be down or the address wrong. Try again, or use New identity for new circuits.</string>
+    <string name="browser_error_security">Its certificate is not valid, so the connection could be intercepted.</string>
+    <string name="browser_error_uri">That is not an address omnid can open.</string>
+    <string name="browser_error_https_only">It has no secure version, and plain HTTP over a Tor exit could be read or changed.</string>
+    <string name="browser_error_timeout">It took too long to answer.</string>
+    <string name="browser_error_network">The connection failed.</string>
 </resources>

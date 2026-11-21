@@ -36,6 +36,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Local API and search page, optional token | done, live tested |
 | SOCKS5 proxy (`.onion`/`.i2p` for any browser) | done, live tested with curl over Tor |
 | Android app (arm64) | done, run on an Android 16 emulator: crawled 225 onion pages over embedded Tor, magnets via the DHT |
+| Browser in the Android app: GeckoView, private, every request through the daemon | done, run on the emulator: onion and clearnet pages over Tor, check.torproject.org reports Tor, New identity changes the exit |
 
 Not built yet: router lifecycle management (starting i2pd and Hyphanet as child processes), index
 sync between nodes, near-duplicate detection, a desktop app shell.
@@ -103,6 +104,13 @@ and mobile data" is on. Share an onion, magnet or link to the app to crawl
 it. A new install seeds itself with the Tor Project's and the BBC's onion
 services. Magnets are resolved through the DHT on the phone too; the phone
 never harvests the DHT.
+
+Results open in omnid's own browser, GeckoView (Firefox's engine) in private
+mode: onion and `.i2p` results as well as clearnet ones, typed addresses too.
+Every request goes through the daemon, over Tor (or i2pd for `.i2p`), with
+each site on Tor circuits of its own; ⋮ → New identity drops the session and
+gives every site new circuits. GeckoView makes the APK much larger; see
+[Known limitations](#known-limitations).
 
 ## Layout
 
@@ -199,17 +207,50 @@ The daemon itself:
   app sets a fresh random one each start.
 - The search page renders crawled text as text only, sends a strict CSP, and
   links only clearnet and magnet routes. Onion and `.i2p` addresses are shown
-  for copying, because opening them in an ordinary browser leaks a DNS lookup.
+  for copying, because opening them in an ordinary browser leaks a DNS lookup;
+  inside the Android app they open in its own browser.
 - The SOCKS proxy has no authentication; it is off unless `--socks` is given
   and should stay on loopback.
+
+The Android app's browser:
+
+- **Nothing leaves it directly.** A bundled extension sends every request to
+  a SOCKS5 listener in the daemon that wants the app's per-start secret, so
+  other apps on the phone cannot use it, and that listener only goes through
+  Tor or i2pd, never direct, whatever the crawler is set to. Requests the
+  extension does not route (Gecko's own) go to port 9 on loopback, which no
+  app can listen on, and fail. Names resolve at the exit, never on the phone;
+  localhost goes through the proxy too, so pages cannot reach omnid's API.
+- **It checks before it loads.** GeckoView reads the proxy, DNS and WebRTC
+  prefs from a file at startup and ignores one it cannot read, so the app
+  reads the critical ones back and loads nothing unless they took effect.
+- **Each site on its own circuits**, as in Tor Browser: the site you are on is
+  the proxy username, and the daemon keeps a Tor isolation token per site. A
+  stream that fails is tried once more on a new circuit for that site.
+- Private mode only: cookies and storage last until the browser closes.
+  Firefox's resist-fingerprinting is on, WebRTC, WebGL, geolocation and
+  prefetching are off, HTTPS only on the clearnet (onions are exempt), strict
+  tracking protection, no Safe Browsing lookups. Site permissions (camera,
+  microphone, location, notifications) are refused, downloads are off, and
+  screenshots and the recent-apps thumbnail are blocked unless allowed in ⋮.
 
 ## Known limitations
 
 - HTTPS onions need a certificate that validates; expired or self-signed ones
   are refused. Facebook's onion rejects the TLS handshake (HTTPS onions such
   as BBC's work).
-- The SOCKS proxy does not isolate streams per client the way Tor Browser
-  does; everything shares circuits.
+- The `--socks` proxy does not isolate streams per client the way Tor Browser
+  does; everything shares circuits. (The Android browser's proxy does.)
+- The Android browser is not Tor Browser. It runs release GeckoView with
+  Firefox's own fingerprinting protection, not Tor Browser's patched ESR, so a
+  site can tell it apart from Tor Browser and from other omnid users only
+  as far as resist-fingerprinting allows. Use Tor Browser where that matters.
+  GeckoView must be updated with every Firefox release, which carries its
+  security fixes (`android/app/build.gradle.kts`).
+- `.i2p` sites without HTTPS hit the browser's HTTPS-only rule (onions are
+  exempt), and the phone has no i2pd unless one is installed and configured.
+- GeckoView takes the APK from 24 MB to 103 MB, with native libraries
+  compressed in the APK and unpacked on install.
 - Through the SOCKS proxy, `.i2p` requests reach the site with your client's
   own headers: i2pd rewrites them only on its plain HTTP proxy. Some eepsites
   (stats.i2p) refuse anything but I2P's standard `User-Agent: MYOB/6.66 (AN/ON)`.
@@ -258,5 +299,7 @@ Benchmarks and their recorded results are in [docs/benchmarks.md](docs/benchmark
 
 MIT, see [LICENSE](LICENSE). Dependencies are permissively licensed (MIT,
 Apache-2.0, BSD, ISC, Zlib, Unicode) except `option-ext`, an unmodified
-MPL-2.0 dependency of arti; binary distributions, the APK included, should
-ship the dependencies' license notices.
+MPL-2.0 dependency of arti, and GeckoView in the Android app, MPL-2.0 and
+unmodified (its licenses are at `about:license` in the browser); binary
+distributions, the APK included, should ship the dependencies' license
+notices.
