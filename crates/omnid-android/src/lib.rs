@@ -253,6 +253,16 @@ fn init_logging() {
     #[cfg(not(target_os = "android"))]
     let builder = tracing_subscriber::fmt();
     let _already_set = builder.with_env_filter(filter).try_init();
+    // A panic's message and place otherwise go to stderr, which Android
+    // drops; the app sees only "Rust panic: non-string panic payload".
+    #[cfg(target_os = "android")]
+    {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            tracing::error!("{info}");
+            previous(info);
+        }));
+    }
 }
 
 /// tracing → logcat, under the tag `omnid`.
