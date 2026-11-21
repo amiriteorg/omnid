@@ -25,8 +25,8 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Address parsing: URLs, bare hosts, v3 onions, `.i2p`, `freenet:` keys, magnets | done, unit tested |
 | Clearnet fetch, gzip/brotli/deflate | done, live tested |
 | Tor fetch, HTTP and HTTPS, via embedded arti, gzip over Tor | done, live tested against real onion services |
-| I2P fetch via i2pd's HTTP proxy | written; tested against a stand-in, not a live router |
-| Hyphanet fetch via FProxy | written; not tested against a live node |
+| I2P via i2pd: fetching, crawling and the SOCKS tunnel | done, live tested against i2pd 3.0 (stats.i2p, reg.i2p, notbob.i2p) |
+| Hyphanet via FProxy: fetching, crawling, newer-edition redirects | done, live tested against a Hyphanet 1507 node |
 | Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested |
 | DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
 | Index: stemming, accent folding, snippets, ranking, facets, paging, mirror folding | done, unit tested |
@@ -199,6 +199,17 @@ The daemon itself:
   as BBC's work).
 - The SOCKS proxy does not isolate streams per client the way Tor Browser
   does; everything shares circuits.
+- Through the SOCKS proxy, `.i2p` requests reach the site with your client's
+  own headers: i2pd rewrites them only on its plain HTTP proxy. Some eepsites
+  (stats.i2p) refuse anything but I2P's standard `User-Agent: MYOB/6.66 (AN/ON)`.
+  The crawler uses the plain proxy and is not affected.
+- Dependency advisories (`eng security`, osv-scanner): the bundled SQLite in
+  `libsqlite3-sys` 0.38 has a local-only CVE fixed in 0.39, which waits on arti
+  (0.48 pins rusqlite 0.40; one SQLite per build) and needs crafted files in
+  omnid's own data directory. `rsa` and `crypto-bigint` timing issues come
+  through arti's key management and concern private-key operations a Tor
+  client does not perform. bincode, chrono, humantime and paste are flagged
+  as unmaintained. None is suppressed in the scanner.
 - The Android build is arm64 only.
 
 ## Development
@@ -210,7 +221,10 @@ cargo fmt --all --check
 ```
 
 No test touches the network: crawls run against local servers, the proxy and
-tunnels against local stand-ins, and the Android bridge without Tor.
+tunnels against local stand-ins, and the Android bridge without Tor. Live
+checks: `cargo test -p omnid-dht -- --ignored --nocapture` and
+`cargo run --release -p omnid-dht --example soak -- 30`. The eng kit wraps the
+rest: `./.agents/bin/eng verify --profile fast` and `./.agents/bin/eng security`.
 
 ## License
 
