@@ -3072,6 +3072,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "omnid-dht"
+version = "0.1.0"
+dependencies = [
+ "omnid-core",
+ "rand 0.10.4",
+ "serde",
+ "sha1",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "omnid-index"
 version = "0.1.0"
 dependencies = [

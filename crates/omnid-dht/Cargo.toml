@@ -1,0 +1,17 @@
+[package]
+name = "omnid-dht"
+description = "Read-only BitTorrent DHT client: magnet metadata (BEP 9) and info hash sampling (BEP 51)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+omnid-core.workspace = true
+rand.workspace = true
+serde.workspace = true
+sha1.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tracing.workspace = true
