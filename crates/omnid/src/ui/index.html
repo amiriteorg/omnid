@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>omnid</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>omnid</h1>
+    <ul id="routers" aria-label="Networks"></ul>
+  </header>
+
+  <main>
+    <form id="search" role="search">
+      <input id="q" type="search" placeholder="Search every network" autocomplete="off" autofocus aria-label="Search">
+      <fieldset id="networks">
+        <legend>Networks</legend>
+        <label><input type="checkbox" value="clearnet" checked> clearnet</label>
+        <label><input type="checkbox" value="onion" checked> onion</label>
+        <label><input type="checkbox" value="i2p" checked> i2p</label>
+        <label><input type="checkbox" value="hyphanet" checked> hyphanet</label>
+        <label><input type="checkbox" value="magnet" checked> magnet</label>
+      </fieldset>
+    </form>
+    <p id="summary" aria-live="polite"></p>
+    <ol id="results"></ol>
+  </main>
+
+  <footer>
+    <form id="submit">
+      <input id="url" placeholder="Add an onion, .i2p, freenet: key, magnet or URL" autocomplete="off" required aria-label="Address to crawl">
+      <button>Crawl</button>
+    </form>
+    <p id="submit-result" aria-live="polite"></p>
+    <p id="crawl"></p>
+  </footer>
+</body>
+</html>

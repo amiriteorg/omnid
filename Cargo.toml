@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+
+[workspace.dependencies]
+omnid-core = { path = "crates/omnid-core" }
+omnid-crawl = { path = "crates/omnid-crawl" }
+omnid-index = { path = "crates/omnid-index" }
+omnid-net = { path = "crates/omnid-net" }
+
+anyhow = "1"
+# rustls instead of native-tls so the same TLS stack builds for Android.
+arti-client = { version = "0.48", default-features = false, features = [
+    "tokio",
+    "rustls",
+    "compression",
+    "static-sqlite",
+    "onion-service-client",
+    "vanguards",
+] }
+axum = "0.8"
+blake3 = "1"
+bytes = "1"
+clap = { version = "4", features = ["derive", "env"] }
+data-encoding = "2"
+dirs = "7"
+http = "1"
+html5ever = "0.40"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+md-5 = "0.11"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "charset", "http2"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tantivy = "0.27"
+tempfile = "3"
+texting_robots = "0.2"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync", "signal"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12", "logging"] }
+tokio-util = "0.7"
+tor-rtcompat = { version = "0.48", default-features = false, features = ["tokio", "rustls"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = { version = "2", features = ["serde"] }
+webpki-roots = "1"

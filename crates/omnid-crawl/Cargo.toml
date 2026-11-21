@@ -1,0 +1,25 @@
+[package]
+name = "omnid-crawl"
+description = "Crawl scheduler, extraction and the safety gate in front of the index"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+omnid-core.workspace = true
+omnid-index.workspace = true
+omnid-net.workspace = true
+anyhow.workspace = true
+blake3.workspace = true
+html5ever.workspace = true
+md-5.workspace = true
+serde.workspace = true
+texting_robots.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tempfile.workspace = true
