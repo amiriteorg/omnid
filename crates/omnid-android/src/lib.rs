@@ -61,6 +61,16 @@ pub struct Options {
     /// Ahmia's blocklist of onion services in the safety gate; on unless the
     /// app's Settings turn it off.
     pub abuse_blocklist: bool,
+    /// The crawler reaches the clearnet through Tor exits, on unless the app's
+    /// Settings turn it off: directly, a page found on an onion site could
+    /// make the phone fetch a clearnet address its author watches, from the
+    /// phone's own IP.
+    pub clearnet_via_tor: bool,
+    /// Joins the BitTorrent DHT for magnets' names and file lists; off unless
+    /// the app's Settings turn it on. It cannot go through Tor: the DHT and
+    /// the peers asked for metadata see the phone's IP and every torrent it
+    /// looks up, those found on onion sites included.
+    pub torrent_lookups: bool,
 }
 
 impl Default for Options {
@@ -71,6 +81,8 @@ impl Default for Options {
             crawl_speed: 1,
             app_proxy: None,
             abuse_blocklist: true,
+            clearnet_via_tor: true,
+            torrent_lookups: false,
         }
     }
 }
@@ -123,7 +135,13 @@ fn start_with(data_dir: &Path, token: &str, options: &Options, networks: bool) -
     }
     LOGGING.call_once(init_logging);
     let speed = CrawlSpeed::from_ordinal(options.crawl_speed);
-    tracing::info!(?speed, app_proxy = options.app_proxy.is_some(), "starting the daemon");
+    tracing::info!(
+        ?speed,
+        app_proxy = options.app_proxy.is_some(),
+        clearnet_via_tor = options.clearnet_via_tor,
+        torrent_lookups = options.torrent_lookups,
+        "starting the daemon"
+    );
 
     std::fs::create_dir_all(data_dir).with_context(|| format!("creating {}", data_dir.display()))?;
     // The starter seeds a new install needs and an older one is missing:
@@ -167,7 +185,8 @@ fn start_with(data_dir: &Path, token: &str, options: &Options, networks: bool) -
         browser_proxy: Some(token.to_owned()),
         // Magnets get their file lists; harvesting the whole DHT is a
         // server's job, not a phone's.
-        dht: networks.then(|| omnid_dht::DhtConfig { max_peer_connections: 4, ..omnid_dht::DhtConfig::default() }),
+        dht: (networks && options.torrent_lookups)
+            .then(|| omnid_dht::DhtConfig { max_peer_connections: 4, ..omnid_dht::DhtConfig::default() }),
         dht_harvest: false,
         abuse_blocklist: networks && options.abuse_blocklist,
     }))?;
@@ -180,7 +199,11 @@ fn start_with(data_dir: &Path, token: &str, options: &Options, networks: bool) -
 /// was given ahead of the phone's own: the i2pd app's proxy and a node's
 /// FProxy on this phone, where they listen by default, stay as the fallback.
 fn gateway(data_dir: &Path, options: &Options, networks: bool) -> Result<GatewayConfig> {
-    let mut gateway = GatewayConfig { tor_dir: networks.then(|| data_dir.join("tor")), ..GatewayConfig::default() };
+    let mut gateway = GatewayConfig {
+        tor_dir: networks.then(|| data_dir.join("tor")),
+        clearnet_via_tor: networks && options.clearnet_via_tor,
+        ..GatewayConfig::default()
+    };
     if let Some(node) = elsewhere(&options.hyphanet_node, "Hyphanet node", &["http", "https"])? {
         gateway.fproxies.retain(|n| *n != node);
         gateway.fproxies.insert(0, node);
@@ -706,6 +729,7 @@ mod tests {
         )
         .unwrap();
         assert!(options.abuse_blocklist, "on unless the app says otherwise");
+        assert!(options.clearnet_via_tor && !options.torrent_lookups, "anonymous unless the app says otherwise");
         let off: Options = serde_json::from_str(r#"{"abuseBlocklist": false}"#).unwrap();
         assert!(!off.abuse_blocklist);
         assert_eq!(off.crawl_speed, 1, "the rest as by default");

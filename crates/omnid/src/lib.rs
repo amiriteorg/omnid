@@ -242,6 +242,20 @@ pub struct Daemon {
 /// multi-threaded Tokio runtime.
 pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
     std::fs::create_dir_all(&cfg.data_dir).with_context(|| format!("creating {}", cfg.data_dir.display()))?;
+    // What found on an anonymity network can make this machine connect from
+    // its own address: said once, where an operator looks.
+    if cfg.gateway.tor_dir.is_some() && !cfg.gateway.clearnet_via_tor {
+        tracing::warn!(
+            "the crawler reaches the clearnet directly: a page on an onion site can make it fetch an address its \
+             author watches, from this machine's IP (--clearnet-via-tor prevents it)"
+        );
+    }
+    if cfg.dht.is_some() {
+        tracing::warn!(
+            "the BitTorrent DHT sees this machine's IP and every torrent it looks up, those found on onion sites \
+             included (--no-dht prevents it)"
+        );
+    }
     let gateway = Arc::new(Gateway::new(cfg.gateway).map_err(|e| anyhow!("starting the gateway: {e}"))?);
     let index = Arc::new(open_index(&cfg.data_dir)?);
     let store = Arc::new(open_store(&cfg.data_dir)?);

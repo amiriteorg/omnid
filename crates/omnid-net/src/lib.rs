@@ -280,7 +280,11 @@ impl Gateway {
             None => disabled(Network::Onion),
         };
         vec![
-            RouterStatus { network: Network::Clearnet, state: RouterState::Ready, detail: "direct".into() },
+            RouterStatus {
+                network: Network::Clearnet,
+                state: RouterState::Ready,
+                detail: if self.cfg.clearnet_via_tor { "through Tor" } else { "direct" }.into(),
+            },
             tor,
             probe(&self.i2p, Network::I2p, "i2pd HTTP proxy").await,
             probe(&self.fproxy, Network::Hyphanet, "FProxy").await,

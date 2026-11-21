@@ -162,6 +162,11 @@ class SettingsActivity : Activity() {
         divider()
         toggle(R.string.settings_blocklist, R.string.settings_blocklist_about, Settings.ABUSE_BLOCKLIST, default = true) { restartDaemon() }
 
+        section(R.string.settings_anonymity)
+        toggle(R.string.settings_crawl_via_tor, R.string.settings_crawl_via_tor_about, Settings.CRAWL_VIA_TOR, default = true) { restartDaemon() }
+        divider()
+        toggle(R.string.settings_torrent_lookups, R.string.settings_torrent_lookups_about, Settings.TORRENT_LOOKUPS, default = false) { restartDaemon() }
+
         section(R.string.settings_routers)
         choice(R.string.i2p_router, prefs.getString(I2pRouter.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_phone) }) {
             askRouter(R.string.i2p_router, R.string.i2p_router_detail, R.string.i2p_router_hint, R.string.i2p_router_invalid, I2pRouter.KEY, I2pRouter::parse)

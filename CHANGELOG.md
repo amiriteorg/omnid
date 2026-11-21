@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Anonymity: on the phone, the crawler now reaches web pages through Tor and the BitTorrent DHT is
+  off by default (Settings → Anonymity → Crawl the web through Tor, Torrent lookups). The crawler
+  follows what it finds, so directly, a page on an onion site could make the phone fetch a clearnet
+  address, or look up a magnet on the DHT, that its author watches, and learn the phone's IP. With
+  lookups off, magnets are listed from their links alone. A computer running `omnid serve` keeps
+  its defaults and warns at start; `--clearnet-via-tor --no-dht` protects it the same way. The
+  status says how the crawler reaches the clearnet. The README has a section on what OMNId hides
+  and what it does not.
+
 ## 0.1.3 (2026-11-21)
 
 - `omnid download <address> [-o PATH] [--connections N] [--max-bytes N] [--force]`: a file in

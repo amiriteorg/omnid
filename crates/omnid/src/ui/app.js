@@ -533,7 +533,9 @@ function explain(network, router) {
     case "magnet":
       if (state === "ready") return "Finds torrent names and file lists on the BitTorrent network. Files themselves are never downloaded.";
       if (state === "starting") return "Joining the BitTorrent network to look up torrents.";
-      return "Torrent lookups are off.";
+      return EMBEDDED
+        ? "Torrent lookups are off: torrents are listed from their links alone. ⋮ → Settings → Torrent lookups turns them on, but the BitTorrent network cannot go through Tor and sees your address."
+        : "Torrent lookups are off.";
     case "i2p":
       if (state === "ready") return `I2P sites go through the I2P router ${whereIs(detail) || "on this device"}.`;
       if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and OMNId uses it right away, or use a router on your own computer: ⋮ → Settings → I2P router.";
@@ -544,9 +546,10 @@ function explain(network, router) {
       if (EMBEDDED) return `No Hyphanet node answers ${whereIs(detail) || "on this device"}. Use one on your own computer, over Tailscale for instance: ⋮ → Settings → Hyphanet node.`;
       return "Hyphanet sites need a Hyphanet node running on this device.";
     case "clearnet":
+      if (detail === "through Tor") return "OMNId's crawler reads web pages through Tor, as its browser does.";
       return EMBEDDED
-        ? "OMNId's crawler reads web pages directly from this device. Pages you open in its browser go through Tor."
-        : "OMNId's crawler reads web pages directly from this device.";
+        ? "OMNId's crawler reads web pages directly from this device. Pages you open in its browser go through Tor. ⋮ → Settings → Crawl the web through Tor hides this device's address."
+        : "OMNId's crawler reads web pages directly from this device (--clearnet-via-tor hides its address).";
   }
   return detail;
 }

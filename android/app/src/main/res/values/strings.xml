@@ -138,6 +138,11 @@
     <string name="settings_anytime_about">While off, OMNId crawls only while the phone charges on Wi-Fi. Search works either way.</string>
     <string name="settings_blocklist">Ahmia\'s blocklist</string>
     <string name="settings_blocklist_about">Skips onion sites Ahmia lists for child sexual abuse material. It also lists ordinary ones (Tor\'s blog, Debian, the Guardian); your seeds are crawled whatever it says. Turned off, what it blocked is crawled again; your blocked words and sites still apply.</string>
+    <string name="settings_anonymity">Anonymity</string>
+    <string name="settings_crawl_via_tor">Crawl the web through Tor</string>
+    <string name="settings_crawl_via_tor_about">While on, web pages the crawler fetches come through Tor, like everything the browser opens. Off is faster, but a page found on an onion site could then make your phone fetch an address its author watches, from your own IP.</string>
+    <string name="settings_torrent_lookups">Torrent lookups</string>
+    <string name="settings_torrent_lookups_about">Finds torrents\' names and file lists on the BitTorrent network. It cannot go through Tor: that network sees your phone\'s address and every torrent it looks up, those found on onion sites too. While off, torrents are listed from their links alone.</string>
     <string name="settings_routers">Networks</string>
     <string name="settings_router_phone">On this phone</string>
     <string name="settings_app_proxy">Proxy for other apps</string>
