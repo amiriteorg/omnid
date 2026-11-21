@@ -295,9 +295,11 @@ fn validate_onion(domain: &str) -> Result<(), SourceError> {
     }
 }
 
-/// Extracts a Hyphanet key from `freenet:KEY`, `hyphanet:KEY`, `/KEY` or a
-/// bare key, normalising the key type to upper case.
+/// Extracts a Hyphanet key from `freenet:KEY`, `hyphanet:KEY`, `/KEY`,
+/// `/freenet:KEY` (FProxy's redirects) or a bare key, normalising the key
+/// type to upper case.
 fn hyphanet_key(input: &str) -> Option<String> {
+    let input = input.trim_start_matches('/');
     let rest = strip_prefix_ignore_case(input, "freenet:")
         .or_else(|| strip_prefix_ignore_case(input, "hyphanet:"))
         .unwrap_or(input)
@@ -372,6 +374,17 @@ mod tests {
         assert_eq!(base.join("../"), Some(Source::Hyphanet("USK@abc,def,AQACAAE/site/".into())));
         assert_eq!(base.join("/SSK@xyz/other/"), Some(Source::Hyphanet("SSK@xyz/other/".into())));
         assert_eq!(base.join("/not-a-key"), None);
+    }
+
+    #[test]
+    fn follows_fproxy_edition_redirects() {
+        // FProxy answers a stale USK edition with `Location: /freenet:USK@.../<newer>/...`.
+        let base = Source::parse("freenet:USK@abc,def,AQACAAE/site/20/page.html").unwrap();
+        assert_eq!(
+            base.join("/freenet:USK@abc,def,AQACAAE/site/21/page.html"),
+            Some(Source::Hyphanet("USK@abc,def,AQACAAE/site/21/page.html".into()))
+        );
+        assert_eq!(Source::parse("/hyphanet:SSK@xyz/other/").unwrap(), Source::Hyphanet("SSK@xyz/other/".into()));
     }
 
     #[test]
