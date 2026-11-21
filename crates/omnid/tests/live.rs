@@ -107,7 +107,7 @@ async fn live_browser_proxy_goes_only_through_tor() {
         api_token: Some("live".into()),
         start_paused: true,
         socks: None,
-        browser_proxy: Some("live-secret".into()),
+        browser_proxy: Some(omnid::BrowserProxy { password: "live-secret".into(), listener: None }),
         dht: None,
         dht_harvest: false,
         abuse_blocklist: false,

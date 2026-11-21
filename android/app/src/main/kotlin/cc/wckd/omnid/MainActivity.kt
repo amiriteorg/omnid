@@ -95,7 +95,10 @@ class MainActivity : Activity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
-                    if (uri.host == "127.0.0.1") return false
+                    // The daemon's own pages load here, and nothing else on this phone: the
+                    // page's cookie (the API token) would go to any loopback port it loaded.
+                    if (uri.host == "127.0.0.1" && uri.port == loaded?.port) return false
+                    if (uri.host == "127.0.0.1" || uri.host.equals("localhost", ignoreCase = true)) return true
                     if (uri.toString() == I2PD_LINK) {
                         launch(I2pd.intent(this@MainActivity))
                     } else if (BrowserConfig.isWebPage(uri.scheme, uri.host)) {

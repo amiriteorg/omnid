@@ -30,6 +30,20 @@ static RUNNING: Mutex<Option<Running>> = Mutex::new(None);
 /// the app forgets them.
 static DOWNLOADS: Mutex<BTreeMap<i64, Arc<DownloadJob>>> = Mutex::new(BTreeMap::new());
 static NEXT_DOWNLOAD: AtomicI64 = AtomicI64::new(1);
+/// The browser's proxy listener, bound once for the process: a restart of
+/// the daemon (a setting, Retry) hands each new daemon a copy, and the port
+/// is never released for another app to take while GeckoView, which lives as
+/// long as the process, still sends there. Connections made while no daemon
+/// runs wait in its backlog.
+static BROWSER_LISTENER: Mutex<Option<std::net::TcpListener>> = Mutex::new(None);
+
+fn browser_listener() -> Result<std::net::TcpListener> {
+    let mut kept = BROWSER_LISTENER.lock().expect("listener lock poisoned");
+    if kept.is_none() {
+        *kept = Some(std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).context("binding the browser's proxy")?);
+    }
+    Ok(kept.as_ref().expect("bound above").try_clone()?)
+}
 static LOGGING: Once = Once::new();
 
 struct Running {
@@ -181,8 +195,10 @@ fn start_with(data_dir: &Path, token: &str, options: &Options, networks: bool) -
         api_token: Some(token.to_owned()),
         start_paused: true,
         socks: app_proxy,
-        // The app's browser, behind the same secret as the API.
-        browser_proxy: Some(token.to_owned()),
+        // The app's browser, behind the same secret as the API, on the port
+        // it had before: kept for the process, so no other app can take it
+        // while the browser still sends there.
+        browser_proxy: Some(omnid::BrowserProxy { password: token.to_owned(), listener: Some(browser_listener()?) }),
         // Magnets get their file lists; harvesting the whole DHT is a
         // server's job, not a phone's.
         dht: (networks && options.torrent_lookups)
@@ -769,8 +785,12 @@ mod tests {
         write!(stream, "GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{started}\r\nAuthorization: Bearer token\r\nConnection: close\r\n\r\n").unwrap();
         let mut body = String::new();
         stream.read_to_string(&mut body).unwrap();
+        let browser_port = browser_proxy_port();
         stop();
         assert_eq!(browser_proxy_port(), 0, "and down again");
+        // The port stays this process's while no daemon runs: another app
+        // cannot take it from the browser.
+        assert!(std::net::TcpListener::bind(("127.0.0.1", browser_port)).is_err(), "the browser's port is still held");
         assert_eq!(app_proxy_port(), 0);
         assert!(body.starts_with("HTTP/1.1 200"), "{body}");
         assert!(body.contains("waiting for a charger"), "{body}");

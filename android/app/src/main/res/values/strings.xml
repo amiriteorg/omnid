@@ -150,7 +150,7 @@
     <string name="settings_app_proxy_about">Other apps on this phone reach Tor, I2P and Hyphanet through OMNId, as a SOCKS5 or HTTP proxy. Nothing goes direct, and each username gets Tor circuits of its own.</string>
     <string name="settings_app_proxy_address">Address</string>
     <string name="settings_app_proxy_running">%1$s · SOCKS5 and HTTP</string>
-    <string name="settings_app_proxy_taken">Not running: another app holds port %1$d</string>
+    <string name="settings_app_proxy_taken">Not running: another app holds port %1$d. Apps set to use the proxy would be talking to that app, not OMNId: turn their proxy setting off until this says it runs.</string>
     <string name="settings_app_proxy_starting">Starting…</string>
     <string name="settings_app_proxy_locked">Require the password</string>
     <string name="settings_app_proxy_locked_about">While off, any app on this phone can use the proxy, not only the ones you set up.</string>

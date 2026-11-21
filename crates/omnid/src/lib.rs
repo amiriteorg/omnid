@@ -6,6 +6,16 @@ mod socks;
 
 pub use socks::Access as ProxyAccess;
 
+/// The app's browser's proxy: the password it wants, and where it listens.
+pub struct BrowserProxy {
+    pub password: String,
+    /// A loopback listener the caller keeps open across daemons, so its port
+    /// is never free while the browser may still send there: another app
+    /// that took it could answer for the daemon and see, or send directly,
+    /// everything the browser asks for. `None` binds a new loopback port.
+    pub listener: Option<std::net::TcpListener>,
+}
+
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -39,11 +49,11 @@ pub struct DaemonConfig {
     /// to whom. An open one has no authentication: anything that can reach it
     /// can use it, so keep it on loopback.
     pub socks: Option<(SocketAddr, ProxyAccess)>,
-    /// Serves the app's built-in browser, on a free loopback port
-    /// ([`Daemon::browser_proxy_addr`]), to clients that send this password:
+    /// Serves the app's built-in browser, on a loopback port
+    /// ([`Daemon::browser_proxy_addr`]), to clients that send its password:
     /// everything through Tor or i2pd, never direct, each site on circuits of
     /// its own.
-    pub browser_proxy: Option<String>,
+    pub browser_proxy: Option<BrowserProxy>,
     /// The BitTorrent DHT, for magnets' file lists and swarm sizes. `None`
     /// leaves magnets indexed from their links alone.
     pub dht: Option<DhtConfig>,
@@ -337,10 +347,16 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
         None => None,
     };
     let browser_proxy = match cfg.browser_proxy {
-        Some(password) => {
-            let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-                .await
-                .context("binding the browser's proxy")?;
+        Some(BrowserProxy { password, listener }) => {
+            let listener = match listener {
+                Some(kept) => {
+                    kept.set_nonblocking(true)?;
+                    tokio::net::TcpListener::from_std(kept)?
+                }
+                None => tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+                    .await
+                    .context("binding the browser's proxy")?,
+            };
             let bound = listener.local_addr()?;
             let access = Arc::new(socks::Access::Browser { password });
             tokio::spawn(socks::serve(listener, gateway.clone(), access, shutdown.clone()));
