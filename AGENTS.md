@@ -8,7 +8,8 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
 
 - `crates/omnid-core` — `Source` (address parsing, canonical form, link joining) and `IndexedDoc`.
 - `crates/omnid-net` — `Gateway::fetch` / `Gateway::connect`: every outbound connection, the
-  private-address guard, Tor (arti), TLS, decompression caps.
+  private-address guard, Tor (arti), TLS, decompression caps, and the router pool
+  (`routers.rs`: several i2pd proxies or Hyphanet nodes, best first, with failover and racing).
 - `crates/omnid-dht` — read-only BitTorrent DHT client and its own bencode codec.
 - `crates/omnid-index` — Tantivy schema, analyzer, ranking, snippets, mirror folding.
 - `crates/omnid-crawl` — crawl store (SQLite), frontier, robots.txt, extraction, safety gate,

@@ -9,6 +9,15 @@
   subdomains, and what it blocked on them is crawled again at the next start; the operator's own
   denylist still applies. A bare top-level name in a published list is ignored, so one bad line
   cannot shut a whole network.
+- Several I2P routers and Hyphanet nodes at once: `--i2p-proxy` and `--fproxy` repeat (or take a
+  comma-separated list), best first. A request goes to the first router that answers; one that
+  cannot be reached rests, longer each time, and is tried last until it is back; a gateway error
+  (i2pd's own 5xx pages) hands the request to the next router. The browser's and the SOCKS
+  proxy's streams also start on the next router when the first has not answered within 3 seconds.
+  The status shows every router.
+- The app takes an I2P router elsewhere under ⋮ → I2P router, such as one on your computer over
+  Tailscale, asked before the i2pd app on the phone, which stays the fallback; a Hyphanet node
+  set under ⋮ → Hyphanet node now keeps a node on the phone as its fallback too.
 
 ## 0.1.2 (2026-11-21)
 

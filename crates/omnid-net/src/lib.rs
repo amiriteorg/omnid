@@ -5,8 +5,8 @@
 //! |----------|-----------------------------------------------------|
 //! | clearnet | reqwest, with a resolver that refuses private IPs   |
 //! | onion    | arti, in-process, HTTP/1.1 over a Tor stream        |
-//! | i2p      | i2pd's HTTP proxy                                   |
-//! | hyphanet | the node's FProxy                                   |
+//! | i2p      | i2pd's HTTP proxy, of one router or several         |
+//! | hyphanet | a node's FProxy, of one node or several             |
 //! | magnet   | not yet: needs the DHT module                       |
 //!
 //! Redirects are resolved here, against the source that issued them, so a
@@ -14,6 +14,7 @@
 
 mod guard;
 mod http;
+mod routers;
 mod tor;
 
 use std::net::{IpAddr, SocketAddr};
@@ -26,6 +27,8 @@ use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use url::Url;
 
+use crate::routers::Routers;
+
 pub use guard::is_public_ip;
 
 /// The name `http://hyphanet/USK@…` gives the Hyphanet node's FProxy, for the
@@ -35,6 +38,10 @@ pub const HYPHANET_HOST: &str = "hyphanet";
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+/// Where i2pd's HTTP proxy and a Hyphanet node's FProxy listen by default.
+pub const DEFAULT_I2P_PROXY: &str = "http://127.0.0.1:4444";
+pub const DEFAULT_FPROXY: &str = "http://127.0.0.1:8888";
+
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
     pub user_agent: String,
@@ -43,10 +50,14 @@ pub struct GatewayConfig {
     pub overlay_timeout: Duration,
     /// Where arti keeps its state and directory cache. `None` disables Tor.
     pub tor_dir: Option<PathBuf>,
-    /// i2pd's HTTP proxy. `None` disables I2P.
-    pub i2p_proxy: Option<Url>,
-    /// The Hyphanet node's FProxy. `None` disables Hyphanet.
-    pub fproxy: Option<Url>,
+    /// i2pd HTTP proxies, best first: routers on this machine or elsewhere
+    /// (the owner's computer over Tailscale, say). Each reaches all of I2P;
+    /// one that cannot be reached is passed over until it is back. Empty
+    /// disables I2P.
+    pub i2p_proxies: Vec<Url>,
+    /// Hyphanet nodes' FProxy, best first, in the same way. Empty disables
+    /// Hyphanet.
+    pub fproxies: Vec<Url>,
     /// Lets clearnet fetches reach loopback, private and link-local
     /// addresses. Off by default: otherwise any submitted URL turns the
     /// daemon into a proxy into the operator's LAN.
@@ -64,8 +75,8 @@ impl Default for GatewayConfig {
             clearnet_timeout: Duration::from_secs(20),
             overlay_timeout: Duration::from_secs(90),
             tor_dir: None,
-            i2p_proxy: Some(Url::parse("http://127.0.0.1:4444").expect("valid default")),
-            fproxy: Some(Url::parse("http://127.0.0.1:8888").expect("valid default")),
+            i2p_proxies: vec![Url::parse(DEFAULT_I2P_PROXY).expect("valid default")],
+            fproxies: vec![Url::parse(DEFAULT_FPROXY).expect("valid default")],
             allow_private_addresses: false,
             clearnet_via_tor: false,
         }
@@ -159,8 +170,8 @@ pub struct RouterStatus {
 pub struct Gateway {
     cfg: GatewayConfig,
     clearnet: reqwest::Client,
-    i2p: Option<reqwest::Client>,
-    fproxy: Option<reqwest::Client>,
+    i2p: Routers,
+    fproxy: Routers,
     tor: Option<tor::TorTransport>,
 }
 
@@ -207,20 +218,15 @@ impl Gateway {
                 .redirect(reqwest::redirect::Policy::none())
                 .user_agent(&cfg.user_agent)
                 .timeout(cfg.overlay_timeout)
+                .connect_timeout(routers::CONNECT_TIMEOUT)
                 .no_proxy();
             if let Some(proxy) = proxy {
                 builder = builder.proxy(reqwest::Proxy::all(proxy.as_str())?);
             }
             Ok(builder.build()?)
         };
-        let i2p = match &cfg.i2p_proxy {
-            Some(proxy) => Some(overlay(Some(proxy))?),
-            None => None,
-        };
-        let fproxy = match &cfg.fproxy {
-            Some(_) => Some(overlay(None)?),
-            None => None,
-        };
+        let i2p = Routers::new(Network::I2p, &cfg.i2p_proxies, |proxy| overlay(Some(proxy)))?;
+        let fproxy = Routers::new(Network::Hyphanet, &cfg.fproxies, |_| overlay(None))?;
         let tor = match &cfg.tor_dir {
             Some(dir) => Some(tor::TorTransport::new(dir, &cfg.user_agent)?),
             None => None,
@@ -268,8 +274,8 @@ impl Gateway {
         vec![
             RouterStatus { network: Network::Clearnet, state: RouterState::Ready, detail: "direct".into() },
             tor,
-            probe(Network::I2p, self.cfg.i2p_proxy.as_ref(), "i2pd HTTP proxy").await,
-            probe(Network::Hyphanet, self.cfg.fproxy.as_ref(), "FProxy").await,
+            probe(&self.i2p, Network::I2p, "i2pd HTTP proxy").await,
+            probe(&self.fproxy, Network::Hyphanet, "FProxy").await,
             RouterStatus {
                 network: Network::Magnet,
                 state: RouterState::Unsupported,
@@ -313,21 +319,12 @@ impl Gateway {
                     tor.get(url, opts).await.map_err(|error| FetchError::Transport { network, error })
                 }
                 Source::I2p(url) => {
-                    let (client, proxy) = self
-                        .i2p
-                        .as_ref()
-                        .zip(self.cfg.i2p_proxy.as_ref())
-                        .ok_or_else(|| unavailable(network, "no I2P proxy configured"))?;
-                    http::reqwest_get(client, url.as_str(), opts).await.map_err(|e| router_error(network, proxy, e))
+                    via_routers(&self.i2p, network, "no I2P proxy configured", |_| Ok(url.clone()), opts).await
                 }
                 Source::Hyphanet(key) => {
-                    let (client, fproxy) = self
-                        .fproxy
-                        .as_ref()
-                        .zip(self.cfg.fproxy.as_ref())
-                        .ok_or_else(|| unavailable(network, "no FProxy configured"))?;
-                    let url = fproxy.join(key).map_err(|e| FetchError::Transport { network, error: e.into() })?;
-                    http::reqwest_get(client, url.as_str(), opts).await.map_err(|e| router_error(network, fproxy, e))
+                    let page =
+                        |node: &Url| node.join(key).map_err(|e| FetchError::Transport { network, error: e.into() });
+                    via_routers(&self.fproxy, network, "no FProxy configured", page, opts).await
                 }
                 Source::Magnet(_) => Err(unavailable(
                     network,
@@ -391,9 +388,9 @@ impl Gateway {
         tokio::time::timeout(timeout, connect).await.map_err(|_| FetchError::Timeout(timeout))?
     }
 
-    /// The Hyphanet node's FProxy, if one is configured.
+    /// The best Hyphanet node's FProxy, if one is configured.
     pub fn fproxy(&self) -> Option<&Url> {
-        self.cfg.fproxy.as_ref()
+        self.fproxy.best()
     }
 
     /// New Tor circuits for every site the browser visits from now on.
@@ -426,68 +423,42 @@ impl Gateway {
         Ok(Box::new(stream))
     }
 
-    /// A stream to the Hyphanet node's FProxy, for [`HYPHANET_HOST`] on port
-    /// 80: the node omnid was given is where Hyphanet pages come from, as
+    /// A stream to a Hyphanet node's FProxy, for [`HYPHANET_HOST`] on port
+    /// 80: the nodes omnid was given are where Hyphanet pages come from, as
     /// i2pd is for `.i2p`. Plain HTTP only; an HTTPS attempt is refused.
     async fn fproxy_stream(&self, port: u16) -> Result<BoxStream, FetchError> {
         let network = Network::Hyphanet;
-        let fproxy = self.cfg.fproxy.as_ref().ok_or_else(|| unavailable(network, "no Hyphanet node configured"))?;
         if port != 80 {
             let error = format!("Hyphanet pages are http://{HYPHANET_HOST}/ on port 80, not {port}");
             return Err(FetchError::Transport { network, error: error.into() });
         }
-        let (Some(host), Some(node_port), "http") =
-            (fproxy.host_str(), fproxy.port_or_known_default(), fproxy.scheme())
-        else {
-            return Err(unavailable(network, "the browser reaches a Hyphanet node over http only"));
-        };
-        let host = host.trim_start_matches('[').trim_end_matches(']');
-        let stream = tokio::net::TcpStream::connect((host, node_port)).await.map_err(|_| FetchError::Unavailable {
-            network,
-            reason: format!("nothing is listening on {fproxy}; is the node running?"),
-        })?;
-        Ok(Box::new(stream))
+        self.fproxy
+            .race(routers::STAGGER, |node| async move {
+                if node.scheme() != "http" {
+                    return Err(unavailable(network, "the browser reaches a Hyphanet node over http only"));
+                }
+                Ok(Box::new(routers::connect(network, &node).await?) as BoxStream)
+            })
+            .await
     }
 
-    /// An HTTP CONNECT tunnel through i2pd's HTTP proxy.
+    /// An HTTP CONNECT tunnel through an i2pd HTTP proxy. With several routers,
+    /// the first to open the tunnel wins: one may find the site sooner, or at
+    /// all, when the other cannot.
     async fn i2p_tunnel(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
-        let network = Network::I2p;
-        let proxy = self.cfg.i2p_proxy.as_ref().ok_or_else(|| unavailable(network, "no I2P proxy configured"))?;
-        let (Some(proxy_host), Some(proxy_port)) = (proxy.host_str(), proxy.port_or_known_default()) else {
-            return Err(unavailable(network, "bad I2P proxy URL"));
-        };
-        let mut stream =
-            tokio::net::TcpStream::connect((proxy_host, proxy_port)).await.map_err(|_| FetchError::Unavailable {
-                network,
-                reason: format!("nothing is listening on {proxy}; is the router running?"),
-            })?;
-        let transport = |error: BoxError| FetchError::Transport { network, error };
-        let request = format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n");
-        stream.write_all(request.as_bytes()).await.map_err(|e| transport(e.into()))?;
-        // Read the response head a byte at a time so nothing after it is
-        // consumed: those bytes belong to the tunnel.
-        let mut head = Vec::new();
-        while !head.ends_with(b"\r\n\r\n") {
-            if head.len() > 8 << 10 {
-                return Err(transport("oversized CONNECT response".into()));
-            }
-            head.push(stream.read_u8().await.map_err(|e| transport(e.into()))?);
-        }
-        let status = String::from_utf8_lossy(&head);
-        let status = status.lines().next().unwrap_or_default();
-        if status.split_whitespace().nth(1) != Some("200") {
-            return Err(transport(format!("i2pd refused the tunnel: {status}").into()));
-        }
-        Ok(Box::new(stream))
+        let target = format!("{host}:{port}");
+        self.i2p.race(routers::STAGGER, |proxy| i2p_tunnel(proxy, target.clone())).await
     }
 
     /// FProxy may redirect to its own absolute URL; strip the origin so the
     /// redirect resolves to a key rather than to a loopback clearnet URL.
     fn localize<'a>(&self, current: &Source, location: &'a str) -> &'a str {
-        match (current, &self.cfg.fproxy) {
-            (Source::Hyphanet(_), Some(fproxy)) => {
-                location.strip_prefix(fproxy.as_str().trim_end_matches('/')).unwrap_or(location)
-            }
+        match current {
+            Source::Hyphanet(_) => self
+                .fproxy
+                .urls()
+                .find_map(|node| location.strip_prefix(node.as_str().trim_end_matches('/')))
+                .unwrap_or(location),
             _ => location,
         }
     }
@@ -517,8 +488,8 @@ fn disabled(network: Network) -> RouterStatus {
     RouterStatus { network, state: RouterState::Disabled, detail: "disabled in config".into() }
 }
 
-/// A refused connection to a local router means the router is not running,
-/// which is worth saying plainly instead of as a socket error.
+/// A refused connection to a router means the router is not running, which is
+/// worth saying plainly instead of as a socket error.
 fn router_error(network: Network, router: &Url, error: reqwest::Error) -> FetchError {
     if error.is_connect() {
         FetchError::Unavailable { network, reason: format!("nothing is listening on {router}; is the router running?") }
@@ -527,16 +498,95 @@ fn router_error(network: Network, router: &Url, error: reqwest::Error) -> FetchE
     }
 }
 
-async fn probe(network: Network, router: Option<&Url>, what: &str) -> RouterStatus {
-    let Some(router) = router else {
-        return disabled(network);
-    };
-    let (Some(host), Some(port)) = (router.host_str(), router.port_or_known_default()) else {
-        return RouterStatus { network, state: RouterState::Unreachable, detail: format!("bad {what} URL {router}") };
-    };
-    let connect = tokio::net::TcpStream::connect((host, port));
-    match tokio::time::timeout(Duration::from_secs(1), connect).await {
-        Ok(Ok(_)) => RouterStatus { network, state: RouterState::Ready, detail: format!("{what} at {router}") },
-        _ => RouterStatus { network, state: RouterState::Unreachable, detail: format!("no {what} at {router}") },
+/// Error pages i2pd makes itself when it cannot reach a site; another router
+/// may reach it.
+fn is_gateway_error(status: u16) -> bool {
+    matches!(status, 500 | 502 | 503 | 504)
+}
+
+/// A GET through a network's routers, best first, at the URL `page` gives for
+/// each. The next router is asked when one cannot be reached or answers with a
+/// gateway error; with none doing better, the last answer stands.
+async fn via_routers(
+    routers: &Routers,
+    network: Network,
+    none: &str,
+    page: impl Fn(&Url) -> Result<Url, FetchError>,
+    opts: &FetchOptions,
+) -> Result<http::RawResponse, FetchError> {
+    let mut last = Err(unavailable(network, none));
+    for router in routers.order() {
+        let url = page(&router.url)?;
+        match http::reqwest_get(&router.client, url.as_str(), opts).await {
+            Ok(response) => {
+                router.succeeded();
+                if !is_gateway_error(response.status) {
+                    return Ok(response);
+                }
+                last = Ok(response);
+            }
+            Err(e) => {
+                let error = router_error(network, &router.url, e);
+                if routers::is_unreachable(&error) {
+                    router.failed();
+                }
+                last = Err(error);
+            }
+        }
     }
+    last
+}
+
+/// An HTTP CONNECT tunnel to `target` through the i2pd HTTP proxy at `proxy`.
+async fn i2p_tunnel(proxy: Url, target: String) -> Result<BoxStream, FetchError> {
+    let network = Network::I2p;
+    let mut stream = routers::connect(network, &proxy).await?;
+    let transport = |error: BoxError| FetchError::Transport { network, error };
+    let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.map_err(|e| transport(e.into()))?;
+    // Read the response head a byte at a time so nothing after it is
+    // consumed: those bytes belong to the tunnel.
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") {
+        if head.len() > 8 << 10 {
+            return Err(transport("oversized CONNECT response".into()));
+        }
+        head.push(stream.read_u8().await.map_err(|e| transport(e.into()))?);
+    }
+    let status = String::from_utf8_lossy(&head);
+    let status = status.lines().next().unwrap_or_default();
+    if status.split_whitespace().nth(1) != Some("200") {
+        return Err(transport(format!("i2pd refused the tunnel: {status}").into()));
+    }
+    Ok(Box::new(stream))
+}
+
+/// Each router's state; the network is ready when one of them is. What a
+/// probe finds also decides which router requests go to first.
+async fn probe(routers: &Routers, network: Network, what: &str) -> RouterStatus {
+    let all = routers.all();
+    if all.is_empty() {
+        return disabled(network);
+    }
+    let mut probes = tokio::task::JoinSet::new();
+    for (i, router) in all.iter().enumerate() {
+        let url = router.url.clone();
+        probes.spawn(async move { (i, routers::connect(network, &url).await.is_ok()) });
+    }
+    let mut up = vec![false; all.len()];
+    while let Some(Ok((i, ok))) = probes.join_next().await {
+        up[i] = ok;
+    }
+    let mut details = Vec::new();
+    for (router, ok) in all.iter().zip(&up) {
+        if *ok {
+            router.succeeded();
+            details.push(format!("{what} at {}", router.url));
+        } else {
+            router.failed();
+            details.push(format!("no {what} at {}", router.url));
+        }
+    }
+    let state = if up.contains(&true) { RouterState::Ready } else { RouterState::Unreachable };
+    RouterStatus { network, state, detail: details.join("; ") }
 }

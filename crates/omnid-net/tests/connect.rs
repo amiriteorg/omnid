@@ -47,7 +47,7 @@ async fn fake_i2pd(echo: u16) -> u16 {
 }
 
 fn gateway(cfg: GatewayConfig) -> Gateway {
-    Gateway::new(GatewayConfig { tor_dir: None, fproxy: None, ..cfg }).unwrap()
+    Gateway::new(GatewayConfig { tor_dir: None, fproxies: vec![], ..cfg }).unwrap()
 }
 
 async fn round_trip(stream: &mut omnid_net::BoxStream) -> String {
@@ -90,14 +90,14 @@ async fn tunnels_i2p_through_the_router_proxy() {
     let echo = echo_server().await;
     let i2pd = fake_i2pd(echo).await;
     let tunnelled = gateway(GatewayConfig {
-        i2p_proxy: Some(format!("http://127.0.0.1:{i2pd}").parse().unwrap()),
+        i2p_proxies: vec![format!("http://127.0.0.1:{i2pd}").parse().unwrap()],
         ..GatewayConfig::default()
     });
     let mut stream = tunnelled.connect("Stats.I2P.", 80).await.unwrap();
     assert_eq!(round_trip(&mut stream).await, "ping");
 
     let no_router =
-        gateway(GatewayConfig { i2p_proxy: Some("http://127.0.0.1:9".parse().unwrap()), ..GatewayConfig::default() });
+        gateway(GatewayConfig { i2p_proxies: vec!["http://127.0.0.1:9".parse().unwrap()], ..GatewayConfig::default() });
     let error = no_router.connect("stats.i2p", 80).await.err().expect("refused");
     assert!(error.to_string().contains("is the router running"), "{error}");
 }
@@ -134,7 +134,7 @@ async fn the_browser_reaches_i2p_through_the_router() {
     let echo = echo_server().await;
     let i2pd = fake_i2pd(echo).await;
     let gateway = gateway(GatewayConfig {
-        i2p_proxy: Some(format!("http://127.0.0.1:{i2pd}").parse().unwrap()),
+        i2p_proxies: vec![format!("http://127.0.0.1:{i2pd}").parse().unwrap()],
         ..GatewayConfig::default()
     });
     let mut stream = gateway.connect_browser("stats.i2p", 80, "stats.i2p").await.unwrap();
@@ -144,7 +144,7 @@ async fn the_browser_reaches_i2p_through_the_router() {
 fn with_node(port: u16) -> Gateway {
     Gateway::new(GatewayConfig {
         tor_dir: None,
-        fproxy: Some(format!("http://127.0.0.1:{port}/").parse().unwrap()),
+        fproxies: vec![format!("http://127.0.0.1:{port}/").parse().unwrap()],
         ..GatewayConfig::default()
     })
     .unwrap()

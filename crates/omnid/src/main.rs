@@ -36,12 +36,14 @@ struct Common {
     /// Do not start Tor
     #[arg(long, global = true)]
     no_tor: bool,
-    /// i2pd's HTTP proxy
-    #[arg(long, env = "OMNID_I2P_PROXY", default_value = "http://127.0.0.1:4444", global = true)]
-    i2p_proxy: Url,
-    /// The Hyphanet node's FProxy
-    #[arg(long, env = "OMNID_FPROXY", default_value = "http://127.0.0.1:8888", global = true)]
-    fproxy: Url,
+    /// i2pd's HTTP proxy. Repeat it (or separate with commas) for more
+    /// routers, best first: one that cannot be reached is passed over
+    #[arg(long, env = "OMNID_I2P_PROXY", value_delimiter = ',', default_value = omnid_net::DEFAULT_I2P_PROXY, global = true)]
+    i2p_proxy: Vec<Url>,
+    /// A Hyphanet node's FProxy. Repeat it (or separate with commas) for more
+    /// nodes, best first
+    #[arg(long, env = "OMNID_FPROXY", value_delimiter = ',', default_value = omnid_net::DEFAULT_FPROXY, global = true)]
+    fproxy: Vec<Url>,
     /// Let clearnet fetches reach loopback and private networks
     #[arg(long, global = true)]
     allow_private_addresses: bool,
@@ -335,8 +337,8 @@ fn search(
 fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
     GatewayConfig {
         tor_dir: (!common.no_tor).then(|| data_dir.join("tor")),
-        i2p_proxy: Some(common.i2p_proxy.clone()),
-        fproxy: Some(common.fproxy.clone()),
+        i2p_proxies: common.i2p_proxy.clone(),
+        fproxies: common.fproxy.clone(),
         allow_private_addresses: common.allow_private_addresses,
         clearnet_via_tor: common.clearnet_via_tor,
         ..GatewayConfig::default()

@@ -62,8 +62,8 @@ fn api_with(token: Option<&str>, node: Option<&str>) -> Api {
         gateway: Arc::new(
             Gateway::new(GatewayConfig {
                 tor_dir: None,
-                i2p_proxy: None,
-                fproxy: node.map(|n| n.parse().unwrap()),
+                i2p_proxies: vec![],
+                fproxies: node.into_iter().map(|n| n.parse().unwrap()).collect(),
                 ..GatewayConfig::default()
             })
             .unwrap(),

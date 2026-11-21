@@ -15,9 +15,13 @@
     <string name="crawl_anytime">Crawl on battery and mobile data</string>
     <string name="stop_omnid">Stop OMNId</string>
     <string name="hyphanet_node">Hyphanet node</string>
-    <string name="hyphanet_node_detail">OMNId reaches Hyphanet through a node\'s FProxy. Leave this empty for a node on this phone, or enter one on your own computer, over Tailscale for instance.</string>
+    <string name="hyphanet_node_detail">OMNId reaches Hyphanet through a node\'s FProxy. Leave this empty for a node on this phone, or enter one on your own computer, over Tailscale for instance. A node on this phone stays the fallback.</string>
     <string name="hyphanet_node_hint">http://100.x.y.z:8888</string>
     <string name="hyphanet_node_invalid">That is not a node\'s address: use http://host:port</string>
+    <string name="i2p_router">I2P router</string>
+    <string name="i2p_router_detail">OMNId reaches I2P through a router\'s HTTP proxy. Leave this empty for the i2pd app on this phone, or enter a router on your own computer, over Tailscale for instance. The i2pd app stays the fallback.</string>
+    <string name="i2p_router_hint">http://100.x.y.z:4444</string>
+    <string name="i2p_router_invalid">That is not a router\'s address: use http://host:port</string>
     <string name="save">Save</string>
     <string name="queued">Queued %1$s</string>
     <string name="nothing_to_queue">No onion, magnet or link found in what was shared</string>
@@ -84,7 +88,7 @@
     <string name="browser_error_proxy">OMNId\'s proxy did not answer: OMNId may have stopped. Reopen it from the search page.</string>
     <string name="browser_error_unreachable">Tor or I2P could not reach it: the site may be down or the address wrong. Try again, or use New identity for new circuits.</string>
     <string name="browser_error_no_hyphanet_node">No Hyphanet node answered. OMNId opens Hyphanet pages through a node: set yours under ⋮ → Hyphanet node on the search page, or start it, then reload.</string>
-    <string name="browser_error_no_i2p_router">No I2P router is running on this phone. OMNId reaches .i2p sites through the i2pd app: start its router there, then reload.</string>
+    <string name="browser_error_no_i2p_router">No I2P router answered. OMNId reaches .i2p sites through the i2pd app on this phone, or a router set under ⋮ → I2P router on the search page: start one, then reload.</string>
     <string name="browser_error_security">Its certificate is not valid, so the connection could be intercepted.</string>
     <string name="browser_error_uri">That is not an address OMNId can open.</string>
     <string name="browser_error_https_only">It has no secure version, and plain HTTP over a Tor exit could be read or changed.</string>

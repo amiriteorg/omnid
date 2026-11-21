@@ -64,7 +64,15 @@ Tor starts with the daemon and needs nothing installed. For I2P run i2pd
 network whose router is down are put off rather than failed, and crawled as
 soon as it is back (omnid looks every 30 seconds). `--no-tor`,
 `--i2p-proxy` and `--fproxy` change that; `--clearnet-via-tor` sends
-clearnet traffic through Tor exits. omnid joins the BitTorrent DHT as a
+clearnet traffic through Tor exits. Both take several routers, repeated or
+separated by commas, best first (`--i2p-proxy http://100.x.y.z:4444,http://127.0.0.1:4444`):
+each reaches the whole network, so a request goes to the first that answers.
+One that cannot be reached rests (15 seconds, doubling up to ten minutes) and
+is tried last until it is back; one that answers with a gateway error (5xx,
+as i2pd does when it cannot reach a site) hands the request to the next. The
+browser's and the SOCKS proxy's streams also start on the next router when
+the first has not answered within 3 seconds, and take whichever connects
+first. omnid joins the BitTorrent DHT as a
 read-only node to resolve magnets (`--no-dht` to stay out); `--dht-harvest`
 also indexes info hashes sampled from the whole DHT. Data lives in the platform data
 directory (`--data-dir` to override): the index in `index-v3/`, the crawl
@@ -89,6 +97,16 @@ fcp.allowedHosts=127.0.0.1
 `allowedHostsFullAccess` only takes effect with `publicGatewayMode`. Do not
 put FProxy behind `tailscale serve` or another local proxy: the node would see
 every client as 127.0.0.1 and give each one full access.
+
+An I2P router can run elsewhere in the same way: `--i2p-proxy
+http://<address>:4444` (in the app, ⋮ → I2P router). i2pd's HTTP proxy binds
+one address and has no access list, so keep it on loopback and put a relay that
+admits only your devices' addresses on the private one; Tailscale ties each
+peer's address to its key, so the address is who is connecting. Leave
+`httpproxy.outproxy` unset, so the proxy reaches `.i2p` sites and nothing
+else, and turn off what omnid does not use (`socksproxy`, `sam`, `bob`,
+`i2cp`, `i2pcontrol`). A participating router (no `notransit`) keeps its own
+tunnels healthier than a client-only one.
 
 Search syntax: words (all required, falling back to any word when nothing has
 all of them), `"a phrase"`, `-exclude`, `title:word`, `site:host`,
@@ -141,9 +159,11 @@ missing at every start, so an older install gains new ones without losing its
 index. Magnets are resolved through the DHT on the phone too; the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
 from F-Droid and start its router: its HTTP proxy is on 127.0.0.1:4444, where
 omnid looks, so there is nothing to set up. Until then the I2P row under the
-network strip offers "Get i2pd" or "Open i2pd". For Hyphanet, ⋮ → Hyphanet node
-takes a node elsewhere, such as your computer's over Tailscale (see above);
-empty means one on the phone at 127.0.0.1:8888.
+network strip offers "Get i2pd" or "Open i2pd". ⋮ → I2P router takes a router
+elsewhere, such as your computer's over Tailscale (see above), asked before the
+i2pd app, which stays the fallback. For Hyphanet, ⋮ → Hyphanet node takes a
+node elsewhere in the same way; empty means one on the phone at 127.0.0.1:8888,
+which is also the fallback.
 
 Results open in omnid's own browser, GeckoView (Firefox's engine) in private
 mode: onion and `.i2p` results as well as clearnet ones, typed addresses too,
@@ -336,8 +356,9 @@ The Android app's browser:
   as far as resist-fingerprinting allows. Use Tor Browser where that matters.
   GeckoView must be updated with every Firefox release, which carries its
   security fixes (`android/app/build.gradle.kts`).
-- On the phone, `.i2p` needs the i2pd app with its router running; omnid
-  cannot start it (i2pd offers other apps no way to).
+- On the phone, `.i2p` needs the i2pd app with its router running, or a router
+  elsewhere under ⋮ → I2P router; omnid cannot start the app's router (i2pd
+  offers other apps no way to).
 - GeckoView takes the APK from 24 MB to 103 MB, with native libraries
   compressed in the APK and unpacked on install.
 - Through the SOCKS proxy, `.i2p` requests reach the site with your client's
