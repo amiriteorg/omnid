@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use omnid_core::{FileMeta, IndexedDoc, Network};
 use serde::Serialize;
-use tantivy::collector::{Count, TopDocs};
+use tantivy::collector::{Collector, SegmentCollector, TopDocs};
 use tantivy::directory::MmapDirectory;
 use tantivy::query::{AllQuery, BooleanQuery, Occur, Query, QueryParser, TermQuery};
 use tantivy::schema::{FAST, Field, IndexRecordOption, STORED, STRING, Schema, TextFieldIndexing, TextOptions, Value};
@@ -17,8 +17,8 @@ use tantivy::tokenizer::{
     AsciiFoldingFilter, Language, LowerCaser, RemoveLongFilter, SimpleTokenizer, Stemmer, TextAnalyzer,
 };
 use tantivy::{
-    DateTime, DocId, Index, IndexReader, IndexWriter, ReloadPolicy, Score, Searcher, SegmentReader, TantivyDocument,
-    Term,
+    BitSet, DateTime, DocId, DocSet, Index, IndexReader, IndexWriter, ReloadPolicy, Score, Searcher, SegmentOrdinal,
+    SegmentReader, TERMINATED, TantivyDocument, Term,
 };
 
 pub use tantivy::TantivyError as Error;
@@ -298,28 +298,36 @@ impl SearchIndex {
         let f = self.fields;
         let limit = q.limit.clamp(1, 100);
         let text_query = self.parse(&q.text, conjunction);
+        // Over-fetch so that folding mirrors together still fills the page.
+        let window = (q.offset + limit) * 4;
+        let top_docs = TopDocs::with_limit(window).tweak_score(rank);
 
-        let network_counts = Network::ALL
-            .iter()
-            .map(|network| {
-                let query = self.with_networks(text_query.box_clone(), &[*network]);
-                Ok((*network, searcher.search(&*query, &Count)?))
-            })
-            .collect::<Result<BTreeMap<_, _>>>()?;
-        let query = self.with_networks(text_query, &q.networks);
+        // The text query is the expensive part (phrases check positions in
+        // every candidate), so it runs once: the same pass yields the top
+        // documents and every match, and per-network counts come from
+        // walking each network's postings against the matches.
+        let (top, network_counts) = if q.text.trim().is_empty() {
+            // Matching everything: the network postings alone give the counts.
+            let counts = self.network_counts(searcher, None)?;
+            let top = searcher.search(&*self.with_networks(text_query.box_clone(), &q.networks), &top_docs)?;
+            (top, counts)
+        } else if q.networks.is_empty() {
+            let (top, matched) = searcher.search(&*text_query, &(top_docs, Matched))?;
+            (top, self.network_counts(searcher, Some(&matched))?)
+        } else {
+            let matched = searcher.search(&*text_query, &Matched)?;
+            let filtered = self.with_networks(text_query.box_clone(), &q.networks);
+            (searcher.search(&*filtered, &top_docs)?, self.network_counts(searcher, Some(&matched))?)
+        };
         let total = if q.networks.is_empty() {
             network_counts.values().sum()
         } else {
             q.networks.iter().filter_map(|n| network_counts.get(n)).sum()
         };
 
-        // Over-fetch so that folding mirrors together still fills the page.
-        let window = (q.offset + limit) * 4;
-        let top = searcher.search(&*query, &TopDocs::with_limit(window).tweak_score(rank))?;
-
-        let mut snippets = SnippetGenerator::create(searcher, &*query, f.body)?;
+        let mut snippets = SnippetGenerator::create(searcher, &*text_query, f.body)?;
         snippets.set_max_num_chars(SNIPPET_CHARS);
-        let mut titles = SnippetGenerator::create(searcher, &*query, f.title)?;
+        let mut titles = SnippetGenerator::create(searcher, &*text_query, f.title)?;
         titles.set_max_num_chars(1_000);
 
         let mut hits = Vec::new();
@@ -367,6 +375,34 @@ impl SearchIndex {
         parser.set_field_boost(f.description, 1.5);
         parser.set_field_boost(f.file_names, 1.5);
         parser.parse_query_lenient(text).0
+    }
+
+    /// Documents on each network, among `matched` (one bitset per segment)
+    /// or among all live documents.
+    fn network_counts(&self, searcher: &Searcher, matched: Option<&[BitSet]>) -> Result<BTreeMap<Network, usize>> {
+        let mut counts = BTreeMap::new();
+        for network in Network::ALL {
+            let term = Term::from_field_text(self.fields.network, network.as_str());
+            let mut count = 0;
+            for (ord, segment) in searcher.segment_readers().iter().enumerate() {
+                let Some(mut postings) =
+                    segment.inverted_index(self.fields.network)?.read_postings(&term, IndexRecordOption::Basic)?
+                else {
+                    continue;
+                };
+                let mut doc = postings.doc();
+                while doc != TERMINATED {
+                    let counted = match matched {
+                        Some(matched) => matched[ord].contains(doc),
+                        None => !segment.is_deleted(doc),
+                    };
+                    count += usize::from(counted);
+                    doc = postings.advance();
+                }
+            }
+            counts.insert(network, count);
+        }
+        Ok(counts)
     }
 
     fn with_networks(&self, query: Box<dyn Query>, networks: &[Network]) -> Box<dyn Query> {
@@ -430,6 +466,40 @@ impl SearchIndex {
 
     fn term_query(&self, field: Field, value: &str) -> TermQuery {
         TermQuery::new(Term::from_field_text(field, value), IndexRecordOption::Basic)
+    }
+}
+
+/// Collects every matching live document, one bitset per segment.
+struct Matched;
+
+struct MatchedSegment(BitSet);
+
+impl Collector for Matched {
+    type Fruit = Vec<BitSet>;
+    type Child = MatchedSegment;
+
+    fn for_segment(&self, _: SegmentOrdinal, segment: &SegmentReader) -> Result<MatchedSegment> {
+        Ok(MatchedSegment(BitSet::with_max_value(segment.max_doc())))
+    }
+
+    fn requires_scoring(&self) -> bool {
+        false
+    }
+
+    fn merge_fruits(&self, segments: Vec<BitSet>) -> Result<Vec<BitSet>> {
+        Ok(segments)
+    }
+}
+
+impl SegmentCollector for MatchedSegment {
+    type Fruit = BitSet;
+
+    fn collect(&mut self, doc: DocId, _: Score) {
+        self.0.insert(doc);
+    }
+
+    fn harvest(self) -> BitSet {
+        self.0
     }
 }
 
@@ -574,6 +644,28 @@ mod tests {
         assert_eq!(results.network_counts[&Network::I2p], 2);
         assert_eq!(index.search(&query("network:i2p", &[])).unwrap().total, 2, "query syntax works too");
         assert!(index.search(&query("forum", &[Network::Onion])).unwrap().hits.is_empty());
+    }
+
+    #[test]
+    fn counts_ignore_replaced_and_deleted_documents() {
+        let index = index_of(&[
+            doc("http://a.example/", Network::Clearnet, "forum", "h1"),
+            doc("http://b.i2p/", Network::I2p, "forum", "h2"),
+            doc("http://gone.i2p/", Network::I2p, "forum", "h3"),
+        ]);
+        // Replaced and deleted documents stay in the postings until a merge.
+        index.upsert(&doc("http://a.example/", Network::Clearnet, "forum again", "h1")).unwrap();
+        index.delete("http://gone.i2p/").unwrap();
+        index.commit().unwrap();
+
+        for text in ["forum", ""] {
+            let results = index.search(&query(text, &[])).unwrap();
+            assert_eq!(results.network_counts[&Network::Clearnet], 1, "{text:?}");
+            assert_eq!(results.network_counts[&Network::I2p], 1, "{text:?}");
+            assert_eq!(results.total, 2, "{text:?}");
+            let filtered = index.search(&query(text, &[Network::I2p])).unwrap();
+            assert_eq!((filtered.total, filtered.hits.len()), (1, 1), "{text:?}");
+        }
     }
 
     #[test]
