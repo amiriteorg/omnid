@@ -185,6 +185,9 @@ pub struct Gateway {
     i2p: Routers,
     fproxy: Routers,
     tor: Option<tor::TorTransport>,
+    /// Cancelled by [`Gateway::new_identity`], then replaced: the browser's
+    /// streams opened before it end with it ([`Gateway::identity`]).
+    identity: std::sync::Mutex<tokio_util::sync::CancellationToken>,
 }
 
 /// The TLS every connection omnid makes uses: Mozilla's roots (webpki-roots), checked by rustls
@@ -243,7 +246,7 @@ impl Gateway {
             Some(dir) => Some(tor::TorTransport::new(dir, &cfg.user_agent)?),
             None => None,
         };
-        Ok(Self { clearnet: clearnet.build()?, i2p, fproxy, tor, cfg })
+        Ok(Self { clearnet: clearnet.build()?, i2p, fproxy, tor, cfg, identity: Default::default() })
     }
 
     pub async fn fetch(&self, source: &Source, opts: &FetchOptions) -> Result<Page, FetchError> {
@@ -444,11 +447,21 @@ impl Gateway {
         self.fproxy.best()
     }
 
-    /// New Tor circuits for every site the browser visits from now on.
+    /// New Tor circuits for every site the browser visits from now on, and
+    /// the end of the streams it opened before: a page reopened soon after
+    /// must not come back on a kept-alive connection over the old circuits.
     pub fn new_identity(&self) {
         if let Some(tor) = &self.tor {
             tor.new_identity();
         }
+        let old = std::mem::take(&mut *self.identity.lock().expect("identity lock poisoned"));
+        old.cancel();
+    }
+
+    /// The browser's current identity: cancelled when [`Gateway::new_identity`]
+    /// replaces it, so streams opened under it can end then.
+    pub fn identity(&self) -> tokio_util::sync::CancellationToken {
+        self.identity.lock().expect("identity lock poisoned").clone()
     }
 
     /// A direct TCP connection, refusing non-public addresses unless allowed;
