@@ -34,6 +34,9 @@
   tailnet (an address in that range on a tunnel interface): carrier-grade NAT uses the same range,
   and with Tailscale off on mobile data, plain HTTP to the router could reach another subscriber's
   device. Requests go to the next router instead, and the status says why.
+- The browser's downloads send its own Accept, Accept-Language and Sec-GPC.
+- The app and README say what the i2pd app's defaults (1-hop tunnels, one lasting I2P address)
+  mean, and what to change.
 
 ## 0.1.3 (2026-11-21)
 
