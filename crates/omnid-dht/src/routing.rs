@@ -147,6 +147,70 @@ mod tests {
     }
 
     #[test]
+    fn every_prefix_length_has_its_own_bucket() {
+        // What a splitting table ends up with: a full far half never crowds
+        // out the nodes nearest our ID, which lookups for it need.
+        let now = Instant::now();
+        let mut table = RoutingTable::new([0; 20]);
+        let mut port = 1;
+        for prefix in 0..40 {
+            for tail in 1..=K as u8 + 3 {
+                table.heard_from(node(id_at(prefix, tail), port), now);
+                port += 1;
+            }
+        }
+        assert_eq!(table.len(), 40 * K, "each bucket holds K, the rest are turned away");
+        let nearest = table.closest(&[0; 20], K);
+        assert!(nearest.iter().all(|n| bucket_index(&[0; 20], &n.id) == Some(39)), "{nearest:?}");
+    }
+
+    #[test]
+    fn a_stale_node_that_stops_answering_makes_room() {
+        // The upkeep's cycle: list who went quiet, ping them, and let a
+        // newcomer take the place of one that does not answer.
+        let start = Instant::now();
+        let later = start + std::time::Duration::from_secs(1000);
+        let mut table = RoutingTable::new([0; 20]);
+        let members: Vec<NodeInfo> = (0..K as u8).map(|i| node(id_at(0, i + 1), 1000 + u16::from(i))).collect();
+        for member in &members {
+            table.heard_from(*member, start);
+        }
+        for member in &members[1..] {
+            table.heard_from(*member, later);
+        }
+        assert_eq!(table.stale(later, K), vec![members[0]], "answering again refreshes a node");
+
+        let newcomer = node(id_at(0, 100), 2000);
+        table.heard_from(newcomer, later);
+        assert!(!table.nodes().any(|n| n == newcomer), "quiet is not dead");
+        table.failed(members[0].addr);
+        table.heard_from(newcomer, later);
+        assert!(table.nodes().any(|n| n == newcomer));
+        assert!(!table.nodes().any(|n| n == members[0]));
+        assert_eq!(table.len(), K);
+        assert!(table.stale(later, K).is_empty());
+    }
+
+    #[test]
+    fn answering_again_clears_a_failure() {
+        let now = Instant::now();
+        let mut table = RoutingTable::new([0; 20]);
+        let members: Vec<NodeInfo> = (0..K as u8).map(|i| node(id_at(0, i + 1), 1000 + u16::from(i))).collect();
+        for member in &members {
+            table.heard_from(*member, now);
+        }
+        table.failed(members[3].addr);
+        table.heard_from(members[3], now);
+        let newcomer = node(id_at(0, 100), 2000);
+        table.heard_from(newcomer, now);
+        assert!(!table.nodes().any(|n| n == newcomer), "no member is failing any more");
+        table.failed(members[3].addr);
+        assert_eq!(table.len(), K, "one failure since the last answer is not enough to drop it");
+        table.failed(SocketAddrV4::new([9, 9, 9, 9].into(), 1));
+        assert_eq!(table.len(), K, "failures of unknown addresses change nothing");
+    }
+
+    #[test]
     fn drops_nodes_after_repeated_failures() {
         let mut table = RoutingTable::new([0; 20]);
         let n = node(id_at(3, 0), 6881);

@@ -410,3 +410,153 @@ mod tests {
         assert_eq!(dec(b"l4294967296:xe"), Err(DecodeError::Eof));
     }
 }
+
+/// Properties over generated input. What this module decodes comes off the
+/// network, so no input may panic it, nor the parsers built on it.
+#[cfg(test)]
+mod properties {
+    use std::collections::BTreeMap;
+
+    use proptest::collection::{btree_map, vec};
+    use proptest::prelude::*;
+    use proptest::sample::{Index, select};
+
+    use super::*;
+
+    /// An owned value, which [`Tree::view`] lends out as a [`Value`].
+    #[derive(Debug, Clone)]
+    enum Tree {
+        Int(i64),
+        Bytes(Vec<u8>),
+        List(Vec<Tree>),
+        Dict(BTreeMap<Vec<u8>, Tree>),
+    }
+
+    impl Tree {
+        fn view(&self) -> Value<'_> {
+            match self {
+                Tree::Int(n) => Value::Int(*n),
+                Tree::Bytes(b) => Value::Bytes(b),
+                Tree::List(items) => Value::List(items.iter().map(Tree::view).collect()),
+                // In key order, as decoded dicts are kept.
+                Tree::Dict(entries) => Value::Dict(entries.iter().map(|(k, v)| (k.as_slice(), v.view())).collect()),
+            }
+        }
+
+        /// Containers around the innermost value, as `Limits::depth` counts.
+        fn depth(&self) -> usize {
+            match self {
+                Tree::Int(_) | Tree::Bytes(_) => 0,
+                Tree::List(items) => 1 + items.iter().map(Tree::depth).max().unwrap_or(0),
+                Tree::Dict(entries) => 1 + entries.values().map(Tree::depth).max().unwrap_or(0),
+            }
+        }
+
+        /// Values and dict keys, as `Limits::values` counts.
+        fn count(&self) -> usize {
+            match self {
+                Tree::Int(_) | Tree::Bytes(_) => 1,
+                Tree::List(items) => 1 + items.iter().map(Tree::count).sum::<usize>(),
+                Tree::Dict(entries) => 1 + entries.values().map(|v| 1 + v.count()).sum::<usize>(),
+            }
+        }
+    }
+
+    fn tree() -> impl Strategy<Value = Tree> {
+        let leaf = prop_oneof![any::<i64>().prop_map(Tree::Int), vec(any::<u8>(), 0..24).prop_map(Tree::Bytes)];
+        leaf.prop_recursive(10, 256, 8, |inner| {
+            prop_oneof![
+                vec(inner.clone(), 0..8).prop_map(Tree::List),
+                btree_map(vec(any::<u8>(), 0..8), inner, 0..8).prop_map(Tree::Dict),
+            ]
+        })
+    }
+
+    /// Mostly digits and bencode's punctuation, which get the decoder
+    /// further than uniformly random bytes do.
+    fn bencode_like() -> impl Strategy<Value = Vec<u8>> {
+        vec(prop_oneof![3 => select(b"0123456789:ilde-".to_vec()), 1 => any::<u8>()], 0..512)
+    }
+
+    /// A valid encoding with a few bytes changed, inserted or removed, or cut short.
+    fn damaged() -> impl Strategy<Value = Vec<u8>> {
+        (tree(), vec((any::<Index>(), any::<u8>(), 0..4u8), 1..6)).prop_map(|(tree, edits)| {
+            let mut bytes = encode(&tree.view());
+            for (at, byte, edit) in edits {
+                let len = bytes.len();
+                match edit {
+                    0 if len > 0 => bytes[at.index(len)] = byte,
+                    1 => bytes.insert(at.index(len + 1), byte),
+                    2 if len > 0 => drop(bytes.remove(at.index(len))),
+                    _ => bytes.truncate(at.index(len + 1)),
+                }
+            }
+            bytes
+        })
+    }
+
+    fn decode_everything(input: &[u8]) {
+        for limits in [Limits::KRPC, Limits::PEER, Limits::INFO, Limits { depth: 2, values: 8 }] {
+            if let Ok((_, used)) = decode_prefix(input, limits) {
+                assert!(used <= input.len());
+            }
+            let _ = decode(input, limits);
+        }
+        let _ = crate::krpc::decode(input);
+        let _ = crate::meta::parse_info(input);
+        let _ = crate::peer::parse_extended_handshake(input);
+        let _ = crate::peer::parse_metadata_message(input);
+    }
+
+    proptest! {
+        #[test]
+        fn arbitrary_bytes_never_panic(input in vec(any::<u8>(), 0..1024)) {
+            decode_everything(&input);
+        }
+
+        #[test]
+        fn bencode_like_bytes_never_panic(input in bencode_like()) {
+            decode_everything(&input);
+        }
+
+        #[test]
+        fn damaged_encodings_never_panic(input in damaged()) {
+            decode_everything(&input);
+        }
+
+        /// Decoding succeeds exactly when the value fits the limits, and
+        /// then gives back what was encoded. The limits are drawn within two
+        /// of what the value needs, so every case tests the boundary.
+        #[test]
+        fn round_trips_within_limits(
+            tree in tree(),
+            depth_slack in -2i64..=2,
+            values_slack in -2i64..=2,
+            trailing in vec(any::<u8>(), 1..8),
+        ) {
+            let value = tree.view();
+            let encoded = encode(&value);
+            let depth = (tree.depth() as i64 + depth_slack).max(0) as usize;
+            let values = (tree.count() as i64 + values_slack).max(0) as usize;
+            let within = tree.depth() <= depth && tree.count() <= values;
+            match decode(&encoded, Limits { depth, values }) {
+                Ok(decoded) => {
+                    prop_assert!(within, "decoded past its limits: depth {}, {} values", tree.depth(), tree.count());
+                    prop_assert_eq!(&decoded, &value);
+                }
+                Err(e) => {
+                    prop_assert!(!within, "{}", e);
+                    prop_assert!(matches!(e, DecodeError::TooDeep(_) | DecodeError::TooManyValues(_)), "{}", e);
+                }
+            }
+
+            // What follows a value is left unread and counted.
+            let mut padded = encoded.clone();
+            padded.extend_from_slice(&trailing);
+            let unlimited = Limits { depth: usize::MAX, values: usize::MAX };
+            let (prefix, used) = decode_prefix(&padded, unlimited).unwrap();
+            prop_assert_eq!((&prefix, used), (&value, encoded.len()));
+            prop_assert_eq!(decode(&padded, unlimited), Err(DecodeError::Trailing(trailing.len())));
+        }
+    }
+}

@@ -297,6 +297,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn refuses_private_and_low_port_addresses() {
+        let addr = |s: &str| s.parse::<SocketAddrV4>().unwrap();
+        let cfg = DhtConfig { bind: "127.0.0.1:0".parse().unwrap(), ..DhtConfig::default() };
+        let core = Core::bind(cfg.clone(), false).await.unwrap();
+        for a in ["10.1.2.3:6881", "127.0.0.1:6881", "192.168.0.10:51413", "100.64.1.1:6881", "1.2.3.4:0"] {
+            assert!(!core.usable_node(addr(a)) && !core.usable_peer(addr(a)), "{a}");
+        }
+        assert!(core.usable_node(addr("1.2.3.4:53")), "nodes may listen on low ports");
+        for a in ["1.2.3.4:80", "1.2.3.4:443", "1.2.3.4:1023"] {
+            assert!(!core.usable_peer(addr(a)), "{a}: peers on low ports are skipped");
+        }
+        assert!(core.usable_peer(addr("1.2.3.4:1024")));
+
+        // Answers from private addresses and from the routers stay out of the table.
+        core.heard_from(NodeInfo { id: [1; 20], addr: addr("192.168.1.5:6881") });
+        core.set_routers(&[addr("1.2.3.4:6881")]);
+        core.heard_from(NodeInfo { id: [2; 20], addr: addr("1.2.3.4:6881") });
+        assert_eq!(core.table_len(), 0);
+        core.heard_from(NodeInfo { id: [3; 20], addr: addr("5.6.7.8:6881") });
+        assert_eq!(core.table_len(), 1);
+
+        // The test switch admits private addresses, never low peer ports.
+        let lab = Core::bind(cfg, true).await.unwrap();
+        assert!(lab.usable_node(addr("127.0.0.1:6881")) && lab.usable_peer(addr("127.0.0.1:6881")));
+        assert!(!lab.usable_peer(addr("127.0.0.1:80")) && !lab.usable_node(addr("127.0.0.1:0")));
+    }
+
+    #[tokio::test]
     async fn pacer_spaces_queries() {
         let pacer = Pacer::new(10);
         let start = Instant::now();
