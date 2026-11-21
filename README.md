@@ -307,23 +307,27 @@ A new level reloads every open tab.
 - **Downloads** (`omnid download`, and the app's browser) fetch a file in
   byte ranges over several connections at once (`--connections`, default
   4, at most 16). Over Tor each connection gets circuits of its own, so the
-  download runs at what several circuits carry together. The first request
-  asks for `bytes=0-`; when the server answers with a length (206), the first
-  connection keeps reading from the start, the rest of the file is split
-  among the others, and a connection that finishes takes half of the largest
-  part still left, so a slow circuit does not hold the download. A
-  connection that fails or sends nothing for 30 seconds is dropped and the
-  rest of its part goes to a new one on new circuits (up to 4 times in a
-  row without progress, then the download fails). Every later answer must be the
-  same file: the same length, and `If-Range` with the first answer's ETag or
-  date, so a file that changes meanwhile fails the download instead of
-  being spliced from two versions. A file under 2 MiB comes on one
-  connection, and a server without ranges in one stream that cannot resume. The name is the server's
-  (`Content-Disposition`) or the URL's, made safe: one path component, no
-  control characters, no leading dot, at most 200 bytes. `--max-bytes`
-  (default 16 GiB) refuses a larger file before anything is written. The
-  file goes into a hidden `.part` file beside the target and is renamed when
-  complete; an existing file is kept unless `--force`.
+  download runs at what several circuits carry together; the browser's
+  downloads never go direct, and their first connection stays on the
+  site's circuits. The first request asks for `bytes=0-`; when the server
+  answers with a length (206), the first connection keeps reading from the
+  start, the rest of the file is split among the others, and a connection
+  that finishes takes half of the largest part still left, so a slow
+  circuit does not hold the download. A connection that fails or sends
+  nothing for 30 seconds is dropped and the rest of its part goes to a new
+  one on new circuits (up to 4 times in a row without progress, then the
+  download fails). Every later answer must be the same file: the same
+  length, and `If-Range` with the first answer's ETag or date, so a file
+  that changes meanwhile fails the download instead of being spliced from
+  two versions. A file under 2 MiB comes on one connection, and a server
+  without ranges in one stream, which cannot resume. The name is the
+  server's (`Content-Disposition`) or the URL's, made safe: one path
+  component, no control characters, no leading dot, at most 200 bytes.
+  `--max-bytes` (default 16 GiB) refuses a larger file before anything is
+  written. The file goes into a hidden `.part` file beside the target and
+  is renamed when complete. An existing file is kept unless `--force`: an
+  `-o` file name is checked before the download, a name the server gives
+  only once it is known, at the end.
 - **Index format is versioned** by directory name (`index-v3`). A schema
   change builds a new index rather than misreading an old one; the daemon
   copies the previous version's pages into it on first start, then removes

@@ -356,7 +356,8 @@ impl Job<'_> {
             url,
             bytes,
             ranged,
-            connections: self.peak.load(Ordering::Relaxed),
+            // The first answer's counts even when nothing else did (an empty file).
+            connections: self.peak.load(Ordering::Relaxed).max(1),
             retries: self.progress.retries(),
             content_type,
             filename,

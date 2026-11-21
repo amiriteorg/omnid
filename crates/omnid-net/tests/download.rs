@@ -542,8 +542,38 @@ async fn an_empty_file_is_empty() {
     let (_, addr) = serve(Behaviour::default(), 0).await;
     let run = download(addr, "/file", "empty", options()).await;
     let download = run.result.unwrap();
-    assert_eq!(download.bytes, 0);
+    assert_eq!((download.bytes, download.connections), (0, 1));
     assert!(run.bytes.is_empty());
+}
+
+/// As the app runs one: on a task of its own, with another thread reading
+/// the progress meanwhile.
+#[tokio::test(flavor = "multi_thread")]
+async fn runs_on_a_task_of_its_own_while_another_thread_watches() {
+    let (server, addr) = serve(Behaviour { pace: Some(4 << 10), ..Behaviour::default() }, LEN).await;
+    let gateway = Arc::new(gateway());
+    let url = Url::parse(&format!("http://{addr}/file")).unwrap();
+    let (path, file) = output("spawned");
+    let progress = Arc::new(Progress::default());
+    let watched = progress.clone();
+    let watcher = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        while seen.last() != Some(&(LEN as u64)) {
+            seen.push(watched.done());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        seen
+    });
+    let task = tokio::spawn({
+        let progress = progress.clone();
+        async move { gateway.download(&url, &file, &options(), &progress, &CancellationToken::new()).await }
+    });
+    let download = task.await.unwrap().unwrap();
+    let seen = watcher.join().unwrap();
+    assert_eq!(download.bytes, LEN as u64);
+    assert!(seen.windows(2).all(|w| w[0] <= w[1]) && seen.len() > 2, "{seen:?}");
+    assert!(std::fs::read(&path).unwrap() == server.files[0]);
+    std::fs::remove_file(path).unwrap();
 }
 
 #[tokio::test]
