@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use arti_client::config::{BoolOrAuto, TorClientConfigBuilder};
 use arti_client::{BootstrapBehavior, DataStream, StreamPrefs, TorClient};
@@ -8,15 +10,53 @@ use tokio_rustls::TlsConnector;
 use tor_rtcompat::PreferredRuntime;
 use url::Url;
 
-use crate::http::{self, RawResponse};
+use crate::http::{self, RawResponse, Sender};
 use crate::{BoxError, FetchOptions, RouterState, RouterStatus};
 
 /// Tor through arti, running inside the daemon: no separate Tor process.
+/// Keep-alive connections are dropped after this long idle; servers close
+/// theirs after a minute or more.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+/// A site is fetched one page at a time, so one spare is plenty.
+const MAX_IDLE_PER_SITE: usize = 2;
+
 pub(crate) struct TorTransport {
     client: Arc<TorClient<PreferredRuntime>>,
     prefs: StreamPrefs,
     tls: TlsConnector,
     user_agent: String,
+    pool: Pool,
+}
+
+/// Idle keep-alive connections by `scheme://host:port`. Reusing one skips
+/// opening a Tor stream (a round trip through the circuit) and, for HTTPS,
+/// the TLS handshake.
+#[derive(Default)]
+struct Pool(Mutex<HashMap<String, Vec<(Sender, Instant)>>>);
+
+impl Pool {
+    fn take(&self, key: &str) -> Option<Sender> {
+        let mut idle = self.0.lock().expect("pool lock poisoned");
+        let senders = idle.get_mut(key)?;
+        while let Some((sender, since)) = senders.pop() {
+            if since.elapsed() < IDLE_TIMEOUT && sender.is_ready() {
+                return Some(sender);
+            }
+        }
+        None
+    }
+
+    fn put(&self, key: String, sender: Sender) {
+        let mut idle = self.0.lock().expect("pool lock poisoned");
+        idle.retain(|_, senders| {
+            senders.retain(|(sender, since)| since.elapsed() < IDLE_TIMEOUT && !sender.is_closed());
+            !senders.is_empty()
+        });
+        let senders = idle.entry(key).or_default();
+        if senders.len() < MAX_IDLE_PER_SITE {
+            senders.push((sender, Instant::now()));
+        }
+    }
 }
 
 impl TorTransport {
@@ -39,7 +79,7 @@ impl TorTransport {
 
         let mut prefs = StreamPrefs::new();
         prefs.connect_to_onion_services(BoolOrAuto::Explicit(true));
-        Ok(Self { client, prefs, tls: tls_connector()?, user_agent: user_agent.to_owned() })
+        Ok(Self { client, prefs, tls: tls_connector()?, user_agent: user_agent.to_owned(), pool: Pool::default() })
     }
 
     pub(crate) fn status(&self) -> RouterStatus {
@@ -73,13 +113,32 @@ impl TorTransport {
     pub(crate) async fn get(&self, url: &Url, opts: &FetchOptions) -> Result<RawResponse, BoxError> {
         let host = url.host_str().ok_or("URL has no host")?;
         let port = url.port_or_known_default().ok_or("URL has no port")?;
+        let key = format!("{}://{host}:{port}", url.scheme());
+        if let Some(mut sender) = self.pool.take(&key) {
+            // GET is idempotent: if the server closed the idle connection in
+            // the meantime, the request is retried once on a fresh one.
+            if let Ok((response, reusable)) = http::get(&mut sender, url, &self.user_agent, opts).await {
+                if reusable {
+                    self.pool.put(key, sender);
+                }
+                return Ok(response);
+            }
+        }
+        let mut sender = self.connect(url.scheme(), host, port).await?;
+        let (response, reusable) = http::get(&mut sender, url, &self.user_agent, opts).await?;
+        if reusable {
+            self.pool.put(key, sender);
+        }
+        Ok(response)
+    }
+
+    async fn connect(&self, scheme: &str, host: &str, port: u16) -> Result<Sender, BoxError> {
         let stream = self.stream(host, port).await?;
-        if url.scheme() == "https" {
+        if scheme == "https" {
             let name = ServerName::try_from(host.to_owned())?;
-            let stream = self.tls.connect(name, stream).await?;
-            http::http1_get(stream, url, &self.user_agent, opts).await
+            http::handshake(self.tls.connect(name, stream).await?).await
         } else {
-            http::http1_get(stream, url, &self.user_agent, opts).await
+            http::handshake(stream).await
         }
     }
 }

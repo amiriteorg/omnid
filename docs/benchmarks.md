@@ -47,3 +47,20 @@ network for the facet counts, once for the hits. Removing the counts alone
 took phrases to 32 ms. Now the text query runs once, collecting the top
 documents and a bitset of all matches together, and each network's count
 comes from walking its postings against that bitset.
+
+## Sequential onion fetches over Tor
+
+    cargo run --release -p omnid-net --example bench_tor -- 3
+
+Six pages each from the Tor Project's onion (HTTP) and the BBC's (HTTPS),
+fetched one after another three times (18 fetches per site per run), after
+the bootstrap. Live network: Tor latency varies minute to minute, so the
+old and new binaries were run alternately (base, pooled, base, pooled) on
+the same warm Tor state.
+
+| Site | p50 ms, no reuse | p50 ms, keep-alive | min ms, no reuse | min ms, keep-alive |
+|---|---|---|---|---|
+| Tor Project, HTTP | 617, 525 | 315, 154 | 348, 367 | 163, 76 |
+| BBC, HTTPS | 1,128, 873 | 444, 521 | 581, 526 | 144, 284 |
+
+p95 (1.3–4.2 s) is network jitter in both and does not separate them.

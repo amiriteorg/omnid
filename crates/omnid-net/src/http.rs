@@ -64,56 +64,88 @@ pub(crate) async fn reqwest_get(
     Ok(raw)
 }
 
-/// A single HTTP/1.1 GET over an already-open stream (a Tor circuit, or TLS
-/// on top of one).
-pub(crate) async fn http1_get<S>(
-    stream: S,
-    url: &Url,
-    user_agent: &str,
-    opts: &FetchOptions,
-) -> Result<RawResponse, BoxError>
+/// An HTTP/1.1 connection over an already-open stream (a Tor stream, or TLS
+/// on one). It stays open as long as the sender lives.
+pub(crate) type Sender = hyper::client::conn::http1::SendRequest<Empty<Bytes>>;
+
+/// A redirect's or an error page's body is read and dropped, up to this, so
+/// the connection can carry the next request.
+const MAX_DRAIN: usize = 64 << 10;
+
+pub(crate) async fn handshake<S>(stream: S) -> Result<Sender, BoxError>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
-    let connection = tokio::spawn(connection);
-    let result = async {
-        let host = url.host_str().ok_or("URL has no host")?;
-        let authority = match url.port() {
-            Some(port) => format!("{host}:{port}"),
-            None => host.to_owned(),
-        };
-        let request = http::Request::get(&url[url::Position::BeforePath..url::Position::AfterQuery])
-            .header(HOST, authority)
-            .header(USER_AGENT, user_agent)
-            .header(ACCEPT, ACCEPT_VALUE)
-            // Tor bandwidth is the bottleneck; text compresses 4-10x.
-            .header(ACCEPT_ENCODING, "gzip, deflate")
-            .header(CONNECTION, "close")
-            .body(Empty::<Bytes>::new())?;
-        let response = sender.send_request(request).await?;
-        let mut raw = RawResponse::from_head(response.status().as_u16(), response.headers());
-        let encoding = header(response.headers(), CONTENT_ENCODING);
-        if raw.wants_body(opts) {
-            let mut body = response.into_body();
-            let mut buf = BytesMut::new();
-            while let Some(frame) = body.frame().await {
-                if let Ok(data) = frame?.into_data()
-                    && push_capped(&mut buf, &data, opts.max_bytes)
-                {
-                    raw.truncated = true;
+    let (sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;
+    tokio::spawn(async move {
+        let _closed = connection.await;
+    });
+    Ok(sender)
+}
+
+/// A GET on an open connection. Also says whether the connection can carry
+/// another request: the response was read to its end and the server did not
+/// ask to close.
+pub(crate) async fn get(
+    sender: &mut Sender,
+    url: &Url,
+    user_agent: &str,
+    opts: &FetchOptions,
+) -> Result<(RawResponse, bool), BoxError> {
+    let host = url.host_str().ok_or("URL has no host")?;
+    let authority = match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    };
+    let request = http::Request::get(&url[url::Position::BeforePath..url::Position::AfterQuery])
+        .header(HOST, authority)
+        .header(USER_AGENT, user_agent)
+        .header(ACCEPT, ACCEPT_VALUE)
+        // Tor bandwidth is the bottleneck; text compresses 4-10x.
+        .header(ACCEPT_ENCODING, "gzip, deflate")
+        .body(Empty::<Bytes>::new())?;
+    sender.ready().await?;
+    let response = sender.send_request(request).await?;
+    let mut raw = RawResponse::from_head(response.status().as_u16(), response.headers());
+    let encoding = header(response.headers(), CONTENT_ENCODING);
+    let close = header(response.headers(), CONNECTION).is_some_and(|c| c.eq_ignore_ascii_case("close"));
+    let mut body = response.into_body();
+    let mut complete = false;
+    if raw.wants_body(opts) {
+        let mut buf = BytesMut::new();
+        loop {
+            let Some(frame) = body.frame().await else {
+                complete = true;
+                break;
+            };
+            if let Ok(data) = frame?.into_data()
+                && push_capped(&mut buf, &data, opts.max_bytes)
+            {
+                raw.truncated = true;
+                break;
+            }
+        }
+        let (body, truncated) = decode(encoding.as_deref(), buf.freeze(), raw.truncated, opts.max_bytes)?;
+        raw.body = Some(body);
+        raw.truncated = truncated;
+    } else if is_redirect(raw.status) || raw.status >= 400 {
+        // Small bodies only, and never a refused content type's: that one
+        // must not be downloaded, so its connection is dropped instead.
+        let mut drained = 0;
+        loop {
+            let Some(frame) = body.frame().await else {
+                complete = true;
+                break;
+            };
+            if let Ok(data) = frame?.into_data() {
+                drained += data.len();
+                if drained > MAX_DRAIN {
                     break;
                 }
             }
-            let (body, truncated) = decode(encoding.as_deref(), buf.freeze(), raw.truncated, opts.max_bytes)?;
-            raw.body = Some(body);
-            raw.truncated = truncated;
         }
-        Ok::<_, BoxError>(raw)
     }
-    .await;
-    connection.abort();
-    result
+    Ok((raw, complete && !close))
 }
 
 /// Undoes `Content-Encoding`, never producing more than `max` bytes, so a
@@ -207,6 +239,70 @@ mod tests {
         let (body, truncated) = decode(Some("gzip"), half, true, 1 << 20).unwrap();
         assert!(truncated && !body.is_empty() && text.starts_with(&body));
         assert!(decode(Some("gzip"), compressed.slice(..10), false, 1 << 20).is_err());
+    }
+
+    /// Serves pages that report the client's port, so a test can tell
+    /// whether two requests shared a connection.
+    async fn port_echo_server() -> std::net::SocketAddr {
+        use axum::extract::ConnectInfo;
+        use axum::http::header;
+        use axum::response::{Html, IntoResponse};
+        use axum::routing::get;
+
+        let port = |ConnectInfo(peer): ConnectInfo<std::net::SocketAddr>| async move { Html(peer.port().to_string()) };
+        let app = axum::Router::new()
+            .route("/page", get(port))
+            .route("/big", get(|| async { Html("x".repeat(10_000)) }))
+            .route(
+                "/moved",
+                get(|| async { (axum::http::StatusCode::MOVED_PERMANENTLY, [(header::LOCATION, "/page")], "moved") }),
+            )
+            .route(
+                "/image",
+                get(|| async { ([(header::CONTENT_TYPE, "image/png")], vec![0u8; 10_000]).into_response() }),
+            )
+            .route("/close", get(|| async { ([(header::CONNECTION, "close")], Html("bye")) }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap()
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn reuses_a_connection_only_when_the_response_was_read_to_its_end() {
+        let addr = port_echo_server().await;
+        let url = |path: &str| Url::parse(&format!("http://{addr}{path}")).unwrap();
+        let opts = FetchOptions {
+            max_bytes: 1_000,
+            accept: |ct| ct.is_some_and(|ct| ct.starts_with("text/")),
+            max_redirects: 0,
+        };
+        let connect = || async { handshake(tokio::net::TcpStream::connect(addr).await.unwrap()).await.unwrap() };
+        async fn fetch(sender: &mut Sender, url: Url, opts: &FetchOptions) -> (RawResponse, bool) {
+            get(sender, &url, "test", opts).await.unwrap()
+        }
+
+        let mut sender = connect().await;
+        let (first, reusable) = fetch(&mut sender, url("/page"), &opts).await;
+        assert!(reusable);
+        let (redirect, reusable) = fetch(&mut sender, url("/moved"), &opts).await;
+        assert_eq!((redirect.status, reusable), (301, true), "a redirect's small body is drained");
+        let (second, reusable) = fetch(&mut sender, url("/page"), &opts).await;
+        assert!(reusable);
+        assert_eq!(first.body, second.body, "same client port: the connection was reused");
+
+        let (big, reusable) = fetch(&mut sender, url("/big"), &opts).await;
+        assert!(big.truncated && !reusable, "unread bytes are left on a truncated connection");
+
+        let mut sender = connect().await;
+        let (image, reusable) = fetch(&mut sender, url("/image"), &opts).await;
+        assert!(image.body.is_none() && !reusable, "a refused body is not downloaded, so not drained");
+
+        let mut sender = connect().await;
+        let (_, reusable) = fetch(&mut sender, url("/close"), &opts).await;
+        assert!(!reusable, "the server asked to close");
     }
 
     #[test]
