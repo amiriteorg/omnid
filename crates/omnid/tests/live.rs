@@ -29,6 +29,7 @@ async fn live_socks_proxy_opens_onions_through_the_daemon() {
         browser_proxy: None,
         dht: None,
         dht_harvest: false,
+        abuse_blocklist: false,
     })
     .await
     .unwrap();
@@ -109,6 +110,7 @@ async fn live_browser_proxy_goes_only_through_tor() {
         browser_proxy: Some("live-secret".into()),
         dht: None,
         dht_harvest: false,
+        abuse_blocklist: false,
     })
     .await
     .unwrap();

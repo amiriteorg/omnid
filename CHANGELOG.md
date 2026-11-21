@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- The crawler goes wide before deep. Links within a site no longer use up the hops from a seed:
+  `--max-depth` (now 5) counts sites, `--max-site-depth` (4) pages within a site, and
+  `--max-site-pages` (500) caps any one site; sites take turns in the queue. The phone crawls 4
+  sites out, 3 pages into each, at most 150 pages a site. `crawl.sqlite`'s `pages` table gains
+  `site` and `site_depth`, added to older stores on open.
+- Default seeds on Tor, I2P and Hyphanet, used for a new store; the app adds any it is missing at
+  every start.
+- Ahmia's list of onion services reported for abuse is kept in the safety gate, refreshed daily
+  over Tor (`--no-blocklist` to leave it out).
+- Directory pages give up to 20,000 links instead of 500.
 - The app's browser has tabs (up to 16) and a tab list, in a task of its own: a result opens in a
   new tab, Back at its first page returns to the search page, and the search page's toolbar shows
   the open tabs. Long-press a link to open it in a new or background tab or copy it.

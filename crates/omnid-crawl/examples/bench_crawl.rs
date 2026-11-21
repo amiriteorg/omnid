@@ -93,9 +93,14 @@ async fn round(base: &str) -> (u64, Duration) {
     };
     let crawler = Crawler::new(Arc::new(gateway), index, Arc::new(Safety::default()), store, cfg);
     let (jobs, rx) = tokio::sync::mpsc::channel(1);
-    jobs.send(Job { source: Source::parse(&format!("{base}p/0")).unwrap(), depth: 0, trust: SEED_TRUST })
-        .await
-        .unwrap();
+    jobs.send(Job {
+        source: Source::parse(&format!("{base}p/0")).unwrap(),
+        depth: 0,
+        site_depth: 0,
+        trust: SEED_TRUST,
+    })
+    .await
+    .unwrap();
     drop(jobs);
     let started = Instant::now();
     let stats = crawler.run(rx, CancellationToken::new()).await;
