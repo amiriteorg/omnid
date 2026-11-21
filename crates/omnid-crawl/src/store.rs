@@ -3,6 +3,7 @@
 //! only a working set pulled from here, so memory stays flat however many
 //! addresses are known.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
@@ -34,7 +35,11 @@ CREATE TABLE IF NOT EXISTS pages (
     liveness   REAL    NOT NULL DEFAULT 0,
     last_visit INTEGER,
     -- A magnet's display name, which its canonical address leaves out.
-    name       TEXT
+    name       TEXT,
+    -- Source::site_key: the host, or a Hyphanet key without its path.
+    site       TEXT,
+    -- Hops within the site from the page the crawl entered it by.
+    site_depth INTEGER NOT NULL DEFAULT 0
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS pages_due ON pages (state, depth, next_visit);
 ";
@@ -67,13 +72,15 @@ impl CrawlStore {
         Self::init(Connection::open_in_memory()?)
     }
 
-    fn init(db: Connection) -> rusqlite::Result<Self> {
+    fn init(mut db: Connection) -> rusqlite::Result<Self> {
         // WAL lets readers and the single writer proceed together; NORMAL
         // sync is durable across crashes of this process, which is the case
         // that matters.
         db.query_row("PRAGMA journal_mode = WAL", [], |_| Ok(()))?;
         db.pragma_update(None, "synchronous", "NORMAL")?;
         db.execute_batch(SCHEMA)?;
+        add_sites(&mut db)?;
+        db.execute_batch("CREATE INDEX IF NOT EXISTS pages_site ON pages (site)")?;
         // Jobs that were queued when the process stopped never finished.
         db.execute("UPDATE pages SET state = ?1 WHERE state = ?2", params![IDLE, QUEUED])?;
         Ok(Self { db: Mutex::new(db) })
@@ -86,15 +93,48 @@ impl CrawlStore {
     /// Adds addresses not seen before, due now. Known ones are left alone.
     /// Returns how many were new.
     pub fn discover(&self, jobs: &[Job], now: i64) -> rusqlite::Result<usize> {
+        self.discover_within(jobs, now, usize::MAX)
+    }
+
+    /// [`discover`](Self::discover), keeping at most `per_site` addresses
+    /// for any one site, so one big site cannot fill the crawl.
+    pub fn discover_within(&self, jobs: &[Job], now: i64, per_site: usize) -> rusqlite::Result<usize> {
         let mut db = self.db();
         let tx = db.transaction()?;
         let mut added = 0;
         {
             let mut insert = tx.prepare_cached(
-                "INSERT OR IGNORE INTO pages (url, depth, trust, next_visit, name) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT OR IGNORE INTO pages (url, depth, site_depth, site, trust, next_visit, name)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
+            let mut count = tx.prepare_cached("SELECT COUNT(*) FROM pages WHERE site = ?1")?;
+            let mut known: HashMap<String, usize> = HashMap::new();
             for job in jobs {
-                added += insert.execute(params![job.source.to_string(), job.depth, job.trust, now, name(job)])?;
+                let site = job.source.site_key();
+                if per_site != usize::MAX {
+                    let n = match known.get(&site) {
+                        Some(n) => *n,
+                        None => count.query_row([&site], |r| r.get::<_, i64>(0))? as usize,
+                    };
+                    if n >= per_site {
+                        known.insert(site, n);
+                        continue;
+                    }
+                    known.insert(site.clone(), n);
+                }
+                let new = insert.execute(params![
+                    job.source.to_string(),
+                    job.depth,
+                    job.site_depth,
+                    site,
+                    job.trust,
+                    now,
+                    name(job)
+                ])?;
+                if let Some(n) = known.get_mut(&job.source.site_key()) {
+                    *n += new;
+                }
+                added += new;
             }
         }
         tx.commit()?;
@@ -109,16 +149,27 @@ impl CrawlStore {
         let tx = db.transaction()?;
         {
             let mut upsert = tx.prepare_cached(
-                "INSERT INTO pages (url, depth, trust, next_visit, name) VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO pages (url, depth, site_depth, site, trust, next_visit, name)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT (url) DO UPDATE SET
                      next_visit = MIN(next_visit, excluded.next_visit),
                      depth = MIN(depth, excluded.depth),
+                     site_depth = MIN(site_depth, excluded.site_depth),
+                     site = COALESCE(site, excluded.site),
                      trust = MAX(trust, excluded.trust),
                      name = COALESCE(name, excluded.name)
                  WHERE state != 2",
             )?;
             for job in jobs {
-                upsert.execute(params![job.source.to_string(), job.depth, job.trust, now, name(job)])?;
+                upsert.execute(params![
+                    job.source.to_string(),
+                    job.depth,
+                    job.site_depth,
+                    job.source.site_key(),
+                    job.trust,
+                    now,
+                    name(job)
+                ])?;
             }
         }
         tx.commit()
@@ -134,35 +185,39 @@ impl CrawlStore {
         Ok(claimed == 1)
     }
 
-    /// Up to `limit` addresses due by `now`, shallowest first, marked queued
-    /// so they are not handed out twice.
+    /// Up to `limit` addresses due by `now`, marked queued so they are not
+    /// handed out twice. Sites take turns: each site's shallowest page, then
+    /// each one's next, so one big site cannot fill the working set.
     pub fn take_due(&self, now: i64, limit: usize) -> rusqlite::Result<Vec<Job>> {
         if limit == 0 {
             return Ok(vec![]);
         }
         let mut db = self.db();
         let tx = db.transaction()?;
-        type Row = (String, u32, f32, Option<String>);
+        type Row = (String, u32, u32, f32, Option<String>);
         let rows: Vec<Row> = {
             let mut due = tx.prepare_cached(
-                "SELECT url, depth, trust, name FROM pages WHERE state = 0 AND next_visit <= ?1
-                 ORDER BY depth, next_visit LIMIT ?2",
+                "SELECT url, depth, site_depth, trust, name FROM (
+                     SELECT url, depth, site_depth, trust, name, next_visit,
+                            ROW_NUMBER() OVER (PARTITION BY site ORDER BY site_depth, depth, next_visit) AS turn
+                     FROM pages WHERE state = 0 AND next_visit <= ?1)
+                 ORDER BY turn, depth, site_depth, next_visit LIMIT ?2",
             )?;
-            due.query_map(params![now, limit as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            due.query_map(params![now, limit as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
                 .collect::<rusqlite::Result<_>>()?
         };
         let mut jobs = Vec::with_capacity(rows.len());
         {
             let mut mark = tx.prepare_cached("UPDATE pages SET state = 1 WHERE url = ?1")?;
             let mut forget = tx.prepare_cached("DELETE FROM pages WHERE url = ?1")?;
-            for (url, depth, trust, name) in rows {
+            for (url, depth, site_depth, trust, name) in rows {
                 match Source::parse(&url) {
                     Ok(mut source) => {
                         if let Source::Magnet(magnet) = &mut source {
                             magnet.name = magnet.name.take().or(name);
                         }
                         mark.execute([&url])?;
-                        jobs.push(Job { source, depth, trust });
+                        jobs.push(Job { source, depth, site_depth, trust });
                     }
                     // Written by an older, laxer parser.
                     Err(_) => {
@@ -227,6 +282,30 @@ impl CrawlStore {
     }
 }
 
+/// Gives a store from before sites were recorded its `site` and
+/// `site_depth` columns, and each row its site.
+fn add_sites(db: &mut Connection) -> rusqlite::Result<()> {
+    if db.prepare("SELECT 1 FROM pragma_table_info('pages') WHERE name = 'site'")?.exists([])? {
+        return Ok(());
+    }
+    let tx = db.transaction()?;
+    tx.execute_batch(
+        "ALTER TABLE pages ADD COLUMN site TEXT;
+         ALTER TABLE pages ADD COLUMN site_depth INTEGER NOT NULL DEFAULT 0;",
+    )?;
+    let urls: Vec<String> =
+        tx.prepare("SELECT url FROM pages")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    {
+        let mut set = tx.prepare("UPDATE pages SET site = ?2 WHERE url = ?1")?;
+        for url in &urls {
+            if let Ok(source) = Source::parse(url) {
+                set.execute(params![url, source.site_key()])?;
+            }
+        }
+    }
+    tx.commit()
+}
+
 fn name(job: &Job) -> Option<&str> {
     match &job.source {
         Source::Magnet(magnet) => magnet.name.as_deref(),
@@ -254,11 +333,54 @@ mod tests {
     use super::*;
 
     fn job(url: &str, depth: u32, trust: f32) -> Job {
-        Job { source: Source::parse(url).unwrap(), depth, trust }
+        Job { source: Source::parse(url).unwrap(), depth, site_depth: 0, trust }
     }
 
     fn urls(jobs: &[Job]) -> Vec<String> {
         jobs.iter().map(|j| j.source.to_string()).collect()
+    }
+
+    #[test]
+    fn keeps_one_site_from_filling_the_store() {
+        let store = CrawlStore::in_memory().unwrap();
+        let pages: Vec<_> = (0..10).map(|i| job(&format!("http://big.example/{i}"), 1, 0.5)).collect();
+        assert_eq!(store.discover_within(&pages, 0, 4).unwrap(), 4, "four pages a site");
+        let more = [job("http://big.example/more", 1, 0.5), job("http://small.example/", 1, 0.5)];
+        assert_eq!(store.discover_within(&more, 0, 4).unwrap(), 1, "the big site is full, the other is not");
+        // Seeds and addresses people ask for are not held to it.
+        store.schedule(&[job("http://big.example/asked-for", 0, 0.9)], 0).unwrap();
+        assert_eq!(store.known().unwrap(), 6);
+    }
+
+    #[test]
+    fn takes_turns_between_sites() {
+        let store = CrawlStore::in_memory().unwrap();
+        let big: Vec<_> = (0..5).map(|i| job(&format!("http://big.example/{i}"), 0, 0.5)).collect();
+        store.discover(&big, 0).unwrap();
+        store.discover(&[job("http://a.example/", 2, 0.5), job("http://b.example/", 2, 0.5)], 0).unwrap();
+        let due = urls(&store.take_due(10, 3).unwrap());
+        assert_eq!(due.len(), 3);
+        assert_eq!(due.iter().filter(|u| u.contains("big.example")).count(), 1, "one page a site per turn: {due:?}");
+    }
+
+    #[test]
+    fn records_sites_in_an_older_store() {
+        // A store from before sites were recorded gains the columns, and its
+        // rows their sites.
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE pages (url TEXT PRIMARY KEY, depth INTEGER NOT NULL, trust REAL NOT NULL,
+                 state INTEGER NOT NULL DEFAULT 0, next_visit INTEGER NOT NULL, visits INTEGER NOT NULL DEFAULT 0,
+                 failures INTEGER NOT NULL DEFAULT 0, liveness REAL NOT NULL DEFAULT 0, last_visit INTEGER,
+                 name TEXT) WITHOUT ROWID;
+             INSERT INTO pages (url, depth, trust, next_visit) VALUES ('http://old.example/a', 1, 0.5, 0);",
+        )
+        .unwrap();
+        let store = CrawlStore::init(db).unwrap();
+        let site: String = store.db().query_row("SELECT site FROM pages", [], |r| r.get(0)).unwrap();
+        assert_eq!(site, "old.example");
+        let due = store.take_due(0, 5).unwrap();
+        assert_eq!((due.len(), due[0].site_depth), (1, 0));
     }
 
     #[test]

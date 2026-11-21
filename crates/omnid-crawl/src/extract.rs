@@ -19,7 +19,9 @@ const MAX_TITLE_BYTES: usize = 300;
 const MAX_DESCRIPTION_BYTES: usize = 500;
 const FALLBACK_DESCRIPTION_BYTES: usize = 280;
 const MAX_KEYWORDS: usize = 32;
-const MAX_LINKS: usize = 500;
+/// Directory pages list thousands of sites (Ahmia's onion list, 12,154 in
+/// November 2026); the page-size cap bounds this too.
+const MAX_LINKS: usize = 20_000;
 /// Elements whose text is not shown to a reader.
 const INVISIBLE: [&str; 5] = ["script", "style", "noscript", "template", "svg"];
 

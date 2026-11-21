@@ -169,7 +169,7 @@ async fn run(dir: &Path) {
     let (jobs, rx) = tokio::sync::mpsc::channel(pages.len().max(1));
     for path in pages.keys() {
         let source = Source::parse(&format!("{base}{path}")).unwrap();
-        jobs.try_send(Job { source, depth: 0, trust: SEED_TRUST }).unwrap();
+        jobs.try_send(Job { source, depth: 0, site_depth: 0, trust: SEED_TRUST }).unwrap();
     }
     drop(jobs);
     let stats = crawler.run(rx, CancellationToken::new()).await;

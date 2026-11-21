@@ -51,7 +51,7 @@ $B fetch https://example.com/              # one fetch, routed by network
 $B fetch http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/
 $B fetch 'magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10'   # Sintel: name, files, peers
 $B crawl --max-pages 50 https://example.com/   # crawl until nothing is due, then exit
-$B crawl                                   # resume whatever the store has due
+$B crawl                                   # resume whatever the store has due (a new store: the default seeds)
 $B search "tor browser" -n onion
 $B serve --seeds seeds.txt                 # daemon + http://127.0.0.1:7171
 $B serve --socks 127.0.0.1:7172            # ...plus a SOCKS5 proxy
@@ -136,11 +136,9 @@ Every update must be signed with the same key, so back the keystore up. The app 
 same daemon in a foreground service, shows its search page in a WebView, and
 crawls only on a charger and an unmetered network unless "Crawl on battery
 and mobile data" is on. Share an onion, magnet or link to the app to crawl
-it. A new install seeds itself with the Tor Project's and the BBC's onion
-services, and with I2P's hubs (the I2P Project, I2P Planet and the reg.i2p,
-inr.i2p and stats.i2p registries), which wait until an I2P router runs; from
-them the crawler follows links across I2P. Magnets are resolved through the
-DHT on the phone too; the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
+it. The app starts from the default seeds (below), and adds any it is
+missing at every start, so an older install gains new ones without losing its
+index. Magnets are resolved through the DHT on the phone too; the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
 from F-Droid and start its router: its HTTP proxy is on 127.0.0.1:4444, where
 omnid looks, so there is nothing to set up. Until then the I2P row under the
 network strip offers "Get i2pd" or "Open i2pd". For Hyphanet, ⋮ → Hyphanet node
@@ -188,9 +186,23 @@ gives every site new circuits. GeckoView makes the APK much larger; see
 - **Mirror folding.** `content_hash` is BLAKE3 over the page's normalized
   visible text, so copies that differ only in markup or link targets share
   it. Matching is exact; near-duplicates need a similarity hash later.
+- **Wide before deep.** Depth is counted twice: `--max-depth` (default 5)
+  is how many sites the crawl goes from a seed, a link to another site being
+  one hop and links within a site none, and `--max-site-depth` (default 4) is
+  how many links deep it goes into each site from the page it entered by.
+  `--max-site-pages` (default 500) caps the addresses kept per site, so one
+  big site cannot fill the crawl, and sites take turns in the queue, each
+  one's shallowest page first. The phone uses 4, 3 and 150.
+- **Default seeds** for a new store given none: services' own onion sites
+  (the Tor Project, the BBC, ProPublica, the Internet Archive, SecureDrop,
+  Riseup, Proton, Mullvad, Qubes, Whonix, Kicksecure) and Ahmia's list of
+  onion services; I2P's project site, news, forum, registries and the
+  notbob.i2p and isitup.i2p directories; and the Hyphanet node's default
+  bookmarks, Clean Spider and the Index of Indexes among them
+  (`omnid::DEFAULT_SEEDS`). A network's seeds wait while its router is down.
 - **Politeness.** Per network: clearnet 32 concurrent with 1 s per site,
   onion 16 with 5 s, I2P 4 with 5 s, Hyphanet 2 with 2 s (the phone uses
-  6/6/2/1). One request per site at a time. robots.txt is honored and fetched
+  6/8/3/2). One request per site at a time. robots.txt is honored and fetched
   over the same network as the page.
 - **Link following.** Overlay and magnet links are always harvested.
   Clearnet links are followed only from clearnet pages, and by default only
@@ -221,6 +233,11 @@ gives every site new circuits. GeckoView makes the APK much larger; see
 - **Denylist** (`--denylist`): hostnames (subdomains included), Hyphanet keys,
   magnets, or MD5 hex digests of hostnames, the form published blocklists use.
   Denied sites are never fetched and links to them are never queued.
+- **Ahmia's abuse blocklist**, the onion services reported to Ahmia for
+  abuse (about 60,000, as MD5 digests), is kept in the denylist: the last copy
+  from the data directory at start, then fetched over Tor from Ahmia's onion
+  site and refreshed daily; a list of fewer than 1,000 entries is taken for a
+  broken answer and the held one kept. `--no-blocklist` leaves it out.
 - **Blocked terms** (`--blocked-terms`): a matching page is not indexed, its
   links are not followed, it is never revisited, and it is removed from the
   index if it was there before the list changed.

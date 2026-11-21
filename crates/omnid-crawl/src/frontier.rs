@@ -45,8 +45,11 @@ impl Politeness {
 #[derive(Debug, Clone)]
 pub struct Job {
     pub source: Source,
-    /// Hops from a seed.
+    /// Sites from a seed: a link to another site is a hop, a link within one
+    /// is not.
     pub depth: u32,
+    /// Hops within the site from the page the crawl entered it by.
+    pub site_depth: u32,
     /// Provenance, copied into the indexed document.
     pub trust: f32,
 }
@@ -156,7 +159,7 @@ mod tests {
     use super::*;
 
     fn job(url: &str) -> Job {
-        Job { source: Source::parse(url).unwrap(), depth: 0, trust: 0.5 }
+        Job { source: Source::parse(url).unwrap(), depth: 0, site_depth: 0, trust: 0.5 }
     }
 
     fn frontier(concurrency: usize, delay: Duration) -> Frontier {

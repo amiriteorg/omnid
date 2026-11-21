@@ -17,7 +17,7 @@ use omnid_crawl::{
 };
 use omnid_dht::{Dht, DhtConfig};
 use omnid_index::{SCHEMA_VERSION, SearchIndex};
-use omnid_net::{Gateway, GatewayConfig, RouterState};
+use omnid_net::{FetchOptions, Gateway, GatewayConfig, RouterState};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -48,6 +48,118 @@ pub struct DaemonConfig {
     /// in torrents nobody linked to, whatever they are; the safety gate's
     /// blocked terms are checked against their names and files.
     pub dht_harvest: bool,
+    /// Keeps Ahmia's list of onion services reported for abuse in the safety
+    /// gate: the last copy from the data directory at once, then fetched
+    /// over Tor and refreshed daily.
+    pub abuse_blocklist: bool,
+}
+
+/// Starter addresses on each overlay network, for a new index: services'
+/// own onion sites and Ahmia's list of onion services (which leaves out
+/// those reported for abuse), I2P's hubs and directories, and the Hyphanet
+/// project's default bookmarks, its indexes of freesites among them. Each
+/// answered on 2026-11-21. A network's seeds wait while its router is down.
+pub const DEFAULT_SEEDS: &[&str] = &[
+    // Tor: the Tor Project, the press, privacy tools and their makers.
+    "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/",
+    "https://www.bbcweb3hytmzhn5d532owbu6oqadra5z3ar726vq5kgwwn6aucdccrad.onion/",
+    "http://p53lf57qovyuvwsc6xnrppyply3vtqm7l6pcobkmyqsiofyeznfu5uqd.onion/",
+    "http://archivep75mbjunhxc6x4j5mwjmomyxb573v42baldlqu56ruil2oiad.onion/",
+    "http://sdolvtfhatvsysc6l34d65ymdwxcujausv7k5jk4cy5ttzhjoi6fzvyd.onion/",
+    "http://vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion/",
+    "http://protonmailrmez3lotccipshtkleegetolb73fuirgj7r4o4vfu7ozyd.onion/",
+    "http://o54hon2e2vj6c7m3aqqu6uyece65by3vgoxxhlqlsvkmacw6a7m7kiad.onion/",
+    "http://qubesosfasa4zl44o4tws22di6kepyzfeqv3tg4e3ztknltfxqrymdad.onion/",
+    "http://dds6qkxpwdeubwucdiaord2xgbbeyds25rbsgr73tbfpqpt4a6vjwsyd.onion/",
+    "http://w5j6stm77zs6652pgsij4awcjeel3eco7kvipheu6mtr623eyyehj4yd.onion/",
+    // Ahmia, a search engine for onion services, and its list of them.
+    "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/",
+    "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/onions/",
+    // I2P: the project, its news, forum and registries, and directories.
+    "http://i2p-projekt.i2p/",
+    "http://planet.i2p/",
+    "http://zzz.i2p/",
+    "http://i2pforum.i2p/",
+    "http://reg.i2p/",
+    "http://inr.i2p/",
+    "http://stats.i2p/",
+    "http://notbob.i2p/",
+    "http://isitup.i2p/",
+    // Hyphanet: the node's default bookmarks, Clean Spider (an index of
+    // freesites) and the Index of Indexes among them.
+    "freenet:USK@62H8KFSZWMyQ2MQgwvNhEYJ2m3SQl696PfsVfWQ-HQo,cJrPvdNz4AnrHJQXNteDV7k3YnAVY-MClt84gwH2qEo,AQACAAE/freenet-first-steps/24/",
+    "freenet:USK@5ijbfKSJ4kPZTRDzq363CHteEUiSZjrO-E36vbHvnIU,ZEZqPXeuYiyokY2r0wkhJr5cy7KBH9omkuWDqSC6PLs,AQACAAE/clean-spider/547/",
+    "freenet:USK@t-YmshUm43nS16QFieoZMfBdfieb9Opy0a2aMWsoH8o,7NqDX88r1R4SC~elmpW4SuKbnAOka~MKUuBufUWa2xQ,AQACAAE/jFniki.Index/21/",
+    "freenet:USK@0iU87PXyodL2nm6kCpmYntsteViIbMwlJE~wlqIVvZ0,nenxGvjXDElX5RIZxMvwSnOtRzUKJYjoXEDgkhY6Ljw,AQACAAE/freenetproject-mirror/519/",
+    "freenet:USK@t5zaONbYd5DvGNNSokVnDCdrIEytn9U5SSD~pYF0RTE,guWyS9aCMcywU5PFBrKsMiXs7LzwKfQlGSRi17fpffc,AQACAAE/fsng/58/",
+    "freenet:USK@8r-uSRcJPkAr-3v3YJR16OCx~lyV2XOKsiG4MOQQBMM,P42IgNemestUdaI7T6z3Og6P-Hi7g9U~e37R3kWGVj8,AQACAAE/freesite-HOWTO/4/",
+];
+
+/// [`DEFAULT_SEEDS`] as crawl jobs.
+pub fn default_seeds() -> Vec<Job> {
+    DEFAULT_SEEDS
+        .iter()
+        .filter_map(|s| Source::parse(s).ok())
+        .map(|source| Job { source, depth: 0, site_depth: 0, trust: SEED_TRUST })
+        .collect()
+}
+
+/// Ahmia's list of onion services reported for abuse, as MD5 digests of
+/// their hostnames, from its own onion site.
+const AHMIA_BLOCKLIST: &str = "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/blacklist/banned/";
+const BLOCKLIST_FILE: &str = "ahmia-banned.txt";
+/// A list shorter than this is a broken answer, not a list: keep the one held.
+const MIN_BLOCKLIST: usize = 1_000;
+const BLOCKLIST_REFRESH: Duration = Duration::from_secs(24 * 60 * 60);
+const BLOCKLIST_RETRY: Duration = Duration::from_secs(30 * 60);
+
+/// Puts the last copy of Ahmia's blocklist from `data_dir` into the safety
+/// gate. Returns how many sites it holds.
+pub fn load_blocklist(safety: &Safety, data_dir: &Path) -> usize {
+    match std::fs::read_to_string(data_dir.join(BLOCKLIST_FILE)) {
+        Ok(list) => safety.set_published(&list),
+        Err(_) => 0,
+    }
+}
+
+/// Fetches Ahmia's blocklist over Tor, puts it into the safety gate and
+/// keeps a copy in `data_dir`. Returns how many sites it holds.
+pub async fn refresh_blocklist(gateway: &Gateway, safety: &Safety, data_dir: &Path) -> Result<usize> {
+    let source = Source::parse(AHMIA_BLOCKLIST)?;
+    let opts = FetchOptions {
+        max_bytes: 16 << 20,
+        accept: |content_type| content_type.is_some_and(|t| t.starts_with("text/plain")),
+        ..FetchOptions::default()
+    };
+    let page = gateway.fetch(&source, &opts).await.map_err(|e| anyhow!("{e}"))?;
+    anyhow::ensure!(page.status == 200 && !page.truncated, "Ahmia answered {} for its blocklist", page.status);
+    let list = String::from_utf8_lossy(page.body.as_deref().unwrap_or_default()).into_owned();
+    let digests = list.lines().filter(|l| l.trim().len() == 32).count();
+    anyhow::ensure!(digests >= MIN_BLOCKLIST, "Ahmia's blocklist had {digests} entries; keeping the one held");
+    let held = safety.set_published(&list);
+    std::fs::write(data_dir.join(BLOCKLIST_FILE), &list).context("saving the blocklist")?;
+    Ok(held)
+}
+
+/// Keeps the blocklist current: refreshed daily, retried half-hourly when
+/// Ahmia cannot be reached.
+async fn keep_blocklist(gateway: Arc<Gateway>, safety: Arc<Safety>, data_dir: PathBuf, shutdown: CancellationToken) {
+    loop {
+        let wait = match refresh_blocklist(&gateway, &safety, &data_dir).await {
+            Ok(sites) => {
+                tracing::info!(sites, "abuse blocklist refreshed from Ahmia");
+                BLOCKLIST_REFRESH
+            }
+            Err(e) => {
+                tracing::warn!("abuse blocklist: {e:#}; trying again in 30 minutes");
+                BLOCKLIST_RETRY
+            }
+        };
+        tokio::select! {
+            _ = shutdown.cancelled() => return,
+            _ = tokio::time::sleep(wait) => {}
+        }
+    }
 }
 
 /// A running daemon: routers, crawler and the local API.
@@ -70,6 +182,10 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
     let index = Arc::new(open_index(&cfg.data_dir)?);
     let store = Arc::new(open_store(&cfg.data_dir)?);
     let safety = Arc::new(cfg.safety);
+    if cfg.abuse_blocklist {
+        let held = load_blocklist(&safety, &cfg.data_dir);
+        tracing::info!(sites = held, "abuse blocklist loaded from the last copy");
+    }
     tracing::info!(denylist = safety.denylist_len(), blocked_terms = safety.blocked_terms_len(), "safety gate loaded");
 
     let dht = match cfg.dht {
@@ -95,6 +211,9 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
         tokio::spawn(harvest(dht.clone(), store.clone(), shutdown.clone()));
     }
     tokio::spawn(watch_routers(gateway.clone(), store, shutdown.clone()));
+    if cfg.abuse_blocklist {
+        tokio::spawn(keep_blocklist(gateway.clone(), safety.clone(), cfg.data_dir.clone(), shutdown.clone()));
+    }
     let seeder = jobs.clone();
     tokio::spawn(async move {
         for job in cfg.seeds {
@@ -233,6 +352,7 @@ async fn harvest(dht: Dht, store: Arc<CrawlStore>, shutdown: CancellationToken) 
             .map(|info_hash| Job {
                 source: Source::Magnet(Magnet { info_hash, name: None }),
                 depth: 0,
+                site_depth: 0,
                 trust: HARVESTED_TRUST,
             })
             .collect();
@@ -290,7 +410,7 @@ pub fn read_seeds(path: &Path) -> Result<Vec<Job>> {
         .filter(|(_, line)| !line.is_empty())
         .map(|(n, line)| {
             let source = Source::parse(line).with_context(|| format!("{}:{n}", path.display()))?;
-            Ok(Job { source, depth: 0, trust: SEED_TRUST })
+            Ok(Job { source, depth: 0, site_depth: 0, trust: SEED_TRUST })
         })
         .collect()
 }
@@ -298,6 +418,32 @@ pub fn read_seeds(path: &Path) -> Result<Vec<Job>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn starts_somewhere_on_every_overlay_network() {
+        let seeds = default_seeds();
+        assert_eq!(seeds.len(), DEFAULT_SEEDS.len(), "every seed parses");
+        for network in [Network::Onion, Network::I2p, Network::Hyphanet] {
+            assert!(seeds.iter().any(|j| j.source.network() == network), "{network} has seeds");
+        }
+        assert!(!seeds.iter().any(|j| j.source.network() == Network::Clearnet), "overlay sites only");
+        // Added once: a store that has them gains nothing more.
+        let store = CrawlStore::in_memory().unwrap();
+        assert_eq!(store.discover(&seeds, 0).unwrap(), seeds.len());
+        assert_eq!(store.discover(&default_seeds(), 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn loads_the_last_copy_of_the_blocklist() {
+        let dir = std::env::temp_dir().join(format!("omnid-blocklist-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let safety = Safety::default();
+        assert_eq!(load_blocklist(&safety, &dir), 0, "no copy yet");
+        let list: String = (0..MIN_BLOCKLIST).map(|i| format!("{i:032x}\n")).collect();
+        std::fs::write(dir.join(BLOCKLIST_FILE), &list).unwrap();
+        assert_eq!(load_blocklist(&safety, &dir), MIN_BLOCKLIST);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     fn page(url: &str) -> omnid_core::IndexedDoc {
         omnid_core::IndexedDoc {

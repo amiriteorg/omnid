@@ -193,7 +193,7 @@ async fn submit(State(state): State<AppState>, Json(submission): Json<Submission
     let network = source.network();
     state
         .jobs
-        .try_send(Job { source, depth: 0, trust: DISCOVERED_TRUST })
+        .try_send(Job { source, depth: 0, site_depth: 0, trust: DISCOVERED_TRUST })
         .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "the crawl queue is full; try again shortly".into()))?;
     Ok((StatusCode::ACCEPTED, Json(json!({ "accepted": accepted, "network": network }))).into_response())
 }
