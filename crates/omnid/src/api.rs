@@ -7,7 +7,7 @@ use std::time::Instant;
 use axum::extract::{Query, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use omnid_core::{Network, Source};
@@ -21,7 +21,7 @@ use tokio::sync::mpsc;
 
 /// Crawled titles and descriptions are attacker-controlled; the page renders
 /// them as text, and this policy is the second line of defence.
-const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; \
+const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; \
                    base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const TOKEN_COOKIE: &str = "omnid_token";
 
@@ -40,9 +40,10 @@ pub struct AppState {
 /// every user on a shared machine; the token keeps them out.
 pub fn router(state: AppState, listen: SocketAddr, token: Option<String>) -> Router {
     let mut router = Router::new()
-        .route("/", get(|| asset("text/html; charset=utf-8", include_str!("ui/index.html"))))
-        .route("/app.js", get(|| asset("text/javascript; charset=utf-8", include_str!("ui/app.js"))))
-        .route("/app.css", get(|| asset("text/css; charset=utf-8", include_str!("ui/app.css"))))
+        .route("/", get(|| asset("text/html; charset=utf-8", include_bytes!("ui/index.html"))))
+        .route("/app.js", get(|| asset("text/javascript; charset=utf-8", include_bytes!("ui/app.js"))))
+        .route("/app.css", get(|| asset("text/css; charset=utf-8", include_bytes!("ui/app.css"))))
+        .route("/icon.png", get(|| asset("image/png", include_bytes!("ui/icon.png"))))
         .route("/api/search", get(search))
         .route("/api/submit", post(submit))
         .route("/api/status", get(status))
@@ -92,8 +93,8 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |diff, (x, y)| diff | (x ^ y)) == 0
 }
 
-async fn asset(content_type: &'static str, body: &'static str) -> Response {
-    let mut response = Html(body).into_response();
+async fn asset(content_type: &'static str, body: &'static [u8]) -> Response {
+    let mut response = body.into_response();
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CSP));

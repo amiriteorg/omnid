@@ -208,13 +208,16 @@ async fn reports_status_for_every_network() {
 #[tokio::test]
 async fn serves_the_page_with_a_strict_policy() {
     let api = api(None);
-    for (path, content_type) in [("/", "text/html"), ("/app.js", "text/javascript"), ("/app.css", "text/css")] {
+    let pages =
+        [("/", "text/html"), ("/app.js", "text/javascript"), ("/app.css", "text/css"), ("/icon.png", "image/png")];
+    for (path, content_type) in pages {
         let response = api.router.clone().oneshot(get(path).body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK, "{path}");
         let headers = response.headers();
         assert!(headers[header::CONTENT_TYPE].to_str().unwrap().starts_with(content_type), "{path}");
         let csp = headers[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
         assert!(csp.contains("default-src 'none'") && csp.contains("script-src 'self'"), "{csp}");
+        assert!(csp.contains("img-src 'self';"), "the page's own icon, and no other image: {csp}");
         assert_eq!(headers[header::REFERRER_POLICY], "no-referrer");
     }
 }
