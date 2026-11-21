@@ -64,3 +64,31 @@ the same warm Tor state.
 | BBC, HTTPS | 1,128, 873 | 444, 521 | 581, 526 | 144, 284 |
 
 p95 (1.3–4.2 s) is network jitter in both and does not separate them.
+
+## DHT metadata
+
+    cargo run --release -p omnid-dht --example bench_metadata -- 5           # one shared Dht, warmed 30 s
+    cargo run --release -p omnid-dht --example bench_metadata -- 5 --fresh   # a new Dht per call, bootstrap included
+
+Sintel, Big Buck Bunny and Tears of Steel (CC-BY Blender films), one call at
+a time, against the live DHT. Builds alternated (A, B, A, B) because swarm
+and routing conditions drift; N = 10 calls per torrent per side.
+
+Pipelining (ask peers while the get_peers lookup still runs), median of all
+30 calls: shared 4.08 -> 2.97 s, fresh 8.11 -> 6.42 s. Per-torrent tables
+and raw times are in the commit message of "Ask peers for metadata while the
+get_peers lookup is still running".
+
+Ending the post-metadata peer count after 1 s without a new peer (cap still
+2 s), shared:
+
+| Torrent | median s, 2 s count | median s, quiet 1 s | raw, quiet 1 s |
+|---|---|---|---|
+| Sintel | 3.23 | 2.74 | 2.91 2.66 2.87 10.72 2.81 2.54 2.40 3.78 1.97 2.13 |
+| Big Buck Bunny | 6.44 | 3.14 | 7.30 2.41 2.82 2.47 2.40 7.59 11.43 16.15 3.46 1.51 |
+| Tears of Steel | 2.43 | 2.08 | 2.05 1.61 2.22 1.69 1.54 2.37 2.10 1.71 2.44 3.00 |
+| all 30 | 3.03 (mean 5.30) | 2.46 (mean 3.77) | |
+
+Big Buck Bunny's tail is dead peers (5 s connect, 10 s read timeouts), as
+in the baseline, so its median moves with whichever peers the DHT returns.
+Median peer counts did not drop (Sintel 274/344 -> 269/347).

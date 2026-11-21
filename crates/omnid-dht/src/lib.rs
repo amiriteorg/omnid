@@ -47,6 +47,11 @@ const LOOKUP_TIME: Duration = Duration::from_secs(30);
 /// How long a metadata lookup goes on counting peers once the metadata is
 /// in, unless it finishes sooner. See [`TorrentMeta::peers`].
 const COUNT_TIME: Duration = Duration::from_secs(2);
+/// ...and it stops sooner once no new peer has come for this long. A lookup
+/// step stops waiting on a slow node after a second, so a quiet second means
+/// the lookup is only waiting out timeouts; most of the count's time used to
+/// go on that.
+const COUNT_QUIET: Duration = Duration::from_secs(1);
 /// How long a lookup waits for the DHT to become ready.
 const READY_WAIT: Duration = Duration::from_secs(15);
 /// The longest one peer gets to deliver the metadata.
@@ -111,9 +116,9 @@ pub struct TorrentMeta {
     pub total_size: u64,
     pub piece_length: u64,
     pub private: bool,
-    /// Peers found by the lookup: a lower bound on the swarm's size. The
-    /// lookup counts until it finishes, or for two seconds after the
-    /// metadata arrived if it has not finished by then.
+    /// Peers found by the lookup: a lower bound on the swarm's size. After
+    /// the metadata arrives the lookup goes on counting until it finishes,
+    /// until a second passes without a new peer, or for two seconds at most.
     pub peers: usize,
 }
 
@@ -235,7 +240,8 @@ impl Dht {
     /// Runs the lookup as a task of its own and asks each peer it finds for
     /// the metadata as soon as it is found, up to `max_peer_connections` at
     /// once. The first verified info dict closes the other connections; the
-    /// lookup then counts peers for up to [`COUNT_TIME`] more and is stopped.
+    /// lookup then counts peers until none has come for [`COUNT_QUIET`], for
+    /// at most [`COUNT_TIME`], and is stopped.
     async fn fetch_metadata(
         &self,
         info_hash: [u8; 20],
@@ -321,13 +327,17 @@ impl Dht {
             "dht: got metadata"
         );
         let counted_by = (Instant::now() + COUNT_TIME).min(deadline);
+        let mut quiet_from = Instant::now() + COUNT_QUIET;
         while searching {
             tokio::select! {
                 peer = found.recv() => match peer {
-                    Some(_) => peers += 1,
+                    Some(_) => {
+                        peers += 1;
+                        quiet_from = Instant::now() + COUNT_QUIET;
+                    }
                     None => searching = false,
                 },
-                _ = tokio::time::sleep_until(counted_by.into()) => break,
+                _ = tokio::time::sleep_until(quiet_from.min(counted_by).into()) => break,
             }
         }
         meta.peers = peers;
