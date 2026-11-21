@@ -301,15 +301,25 @@ A new level reloads every open tab.
   blog and micronews; the BBC, ProPublica, Bellingcat, Amnesty International,
   the Internet Archive, SecureDrop, Riseup, Systemli, Nos oignons, Proton,
   Mullvad, Privacy Guides, Qubes, Whonix and its forum, Kicksecure, Cwtch,
-  OnionShare, F-Droid and Bitcoin Core) and Ahmia's list of onion services;
-  I2P's project site, wiki, news, forum, registries, the notbob.i2p and
-  isitup.i2p directories, the Russian community's wiki, I2P+, I2P's Git forge
-  and Postman's mail service; and the Hyphanet node's default bookmarks,
-  Clean Spider and the Index of Indexes among them, with the Freenet
-  Documentation Wiki, Sone and Publish! (`omnid::DEFAULT_SEEDS`).
+  OnionShare and its documentation, F-Droid, Bitcoin Core, the Tor
+  specifications, Tor research and Snowflake, MetaGer, FragDenStaat, the
+  Monero documentation, Wasabi Wallet, AirVPN and Njalla) and Ahmia's list of
+  onion services; I2P's project site, wiki, news, forum, registries, the
+  notbob.i2p and isitup.i2p directories, the Russian community's wiki, I2P+,
+  I2P's Git forge and Postman's mail service, with Let's Decentralize, the
+  discuss.i2p forum, Shadow Wiki, the Anthrill wiki, The Cypherpunk Handbook,
+  the I2P Learning Lab, the sites of i2pd's maintainers acetone and R4SAS, the
+  I2P plugin repository, Free Software Fans, OS3, ArchWorks, EasyGPG, Xeres,
+  Kestrel, Revuo Monero and Programthink's blog; and the Hyphanet node's
+  default bookmarks, Clean Spider and the Index of Indexes among them, with
+  the Freenet Documentation Wiki, Sone, Publish!, Bob's Safe Closed Index, the
+  Freenet Information Portal, the Freenet Applications FreeSite, the Frost FAQ,
+  the Unofficial Guide to FMS, Bombe's flog and jSite, Arne Babenhauserheide's
+  site, Sharesite, FLIP and dgof (`omnid::DEFAULT_SEEDS`).
   An onion site on Ahmia's blocklist is not made a seed (five older seeds are
-  on it wrongly; see Safety), and every eepsite is in the address book a new
-  i2pd starts with. A network's seeds wait while its router is down.
+  on it wrongly; see Safety). An eepsite is named when the address book a new
+  i2pd starts with has the name, and otherwise given by its b32 address, which
+  any router resolves. A network's seeds wait while its router is down.
 - **Politeness.** Per network: clearnet 32 concurrent with 1 s per site,
   onion 16 with 5 s, I2P 4 with 5 s, Hyphanet 2 with 2 s (the phone uses
   6/8/3/2). One request per site at a time. robots.txt is honored and fetched
