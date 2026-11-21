@@ -72,6 +72,10 @@ h1 { margin: 0; font-size: 1.25rem; letter-spacing: 0.02em; }
 #networks label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
 
 #summary { margin: 1rem 0 0.5rem; font-size: 0.85rem; color: var(--muted); }
+.count { font-variant-numeric: tabular-nums; opacity: 0.8; }
+mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+#more { display: block; margin: 1rem auto 0; padding: 0.4rem 1.2rem; font-size: 0.85rem; }
+#more[hidden], #pause[hidden] { display: none; }
 
 #results { margin: 0; padding: 0; list-style: none; }
 .hit { padding: 0.9rem 0; border-top: 1px solid var(--border); }
@@ -111,4 +115,5 @@ details ul { margin: 0.3rem 0 0; padding-left: 1.2rem; }
 footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 #submit { display: flex; gap: 0.5rem; }
 #submit button { padding: 0 1rem; font-size: 0.9rem; color: var(--text); }
-#submit-result, #crawl { margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+#submit-result, .crawl-line { margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+#pause { margin-left: 0.5rem; }

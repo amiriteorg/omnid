@@ -1,8 +1,6 @@
 //! omnid: one daemon for Tor, I2P, Hyphanet, magnets and the clearnet, with
 //! one search index over all of them.
 
-mod api;
-
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,9 +8,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Args, Parser, Subcommand};
+use omnid::DaemonConfig;
 use omnid_core::{Network, Source};
 use omnid_crawl::{CrawlConfig, Crawler, Job, SEED_TRUST, Safety, extract, is_indexable_type};
-use omnid_index::{SCHEMA_VERSION, SearchIndex, SearchQuery};
+use omnid_index::{SearchIndex, SearchQuery};
 use omnid_net::{FetchOptions, Gateway, GatewayConfig};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -76,6 +75,12 @@ enum Command {
 struct ServeArgs {
     #[arg(long, env = "OMNID_LISTEN", default_value = "127.0.0.1:7171")]
     listen: SocketAddr,
+    /// Require this token on every API request (bearer or `omnid_token` cookie)
+    #[arg(long, env = "OMNID_API_TOKEN", hide_env_values = true)]
+    api_token: Option<String>,
+    /// Start with crawling paused; resume with POST /api/crawl
+    #[arg(long)]
+    paused: bool,
     #[command(flatten)]
     crawl: CrawlOptions,
 }
@@ -129,49 +134,41 @@ async fn main() -> Result<()> {
 }
 
 async fn serve(common: &Common, data_dir: &Path, args: ServeArgs) -> Result<()> {
-    let gateway = Arc::new(gateway(common, data_dir)?);
-    let index = Arc::new(open_index(data_dir)?);
-    let (crawler, safety, seeds) = crawler(&args.crawl, gateway.clone(), index.clone())?;
-    let stats = crawler.stats();
-    let (jobs, rx) = mpsc::channel(1024);
-    let shutdown = CancellationToken::new();
-    let crawl = tokio::spawn(crawler.run(rx, shutdown.clone()));
-    for job in seeds {
-        jobs.send(job).await.context("crawler stopped")?;
-    }
-
-    let listener =
-        tokio::net::TcpListener::bind(args.listen).await.with_context(|| format!("binding {}", args.listen))?;
-    if !args.listen.ip().is_loopback() {
-        tracing::warn!("the API is reachable beyond this machine and has no authentication");
-    }
-    tracing::info!("omnid {} listening on http://{}", env!("CARGO_PKG_VERSION"), args.listen);
-    let state = api::AppState { gateway, index, stats, jobs, safety };
-    let stop = shutdown.clone();
-    axum::serve(listener, api::router(state, args.listen))
-        .with_graceful_shutdown(async move {
-            terminated().await;
-            stop.cancel();
-        })
-        .await?;
-
-    shutdown.cancel();
-    let stats = crawl.await?;
+    let daemon = omnid::start(DaemonConfig {
+        data_dir: data_dir.to_owned(),
+        listen: args.listen,
+        gateway: gateway_config(common, data_dir),
+        crawl: crawl_config(&args.crawl),
+        safety: safety(&args.crawl)?,
+        seeds: seeds(&args.crawl)?,
+        api_token: args.api_token,
+        start_paused: args.paused,
+    })
+    .await?;
+    let stop = daemon.shutdown_token();
+    tokio::spawn(async move {
+        terminated().await;
+        stop.cancel();
+    });
+    let stats = daemon.wait().await?;
     tracing::info!(?stats, "stopped");
     Ok(())
 }
 
 async fn crawl(common: &Common, data_dir: &Path, args: CrawlArgs) -> Result<()> {
-    let gateway = Arc::new(gateway(common, data_dir)?);
-    let index = Arc::new(open_index(data_dir)?);
-    let (crawler, _, mut seeds) = crawler(&args.crawl, gateway, index)?;
+    let gateway =
+        Arc::new(Gateway::new(gateway_config(common, data_dir)).map_err(|e| anyhow!("starting the gateway: {e}"))?);
+    let index = Arc::new(omnid::open_index(data_dir)?);
+    let store = Arc::new(omnid::open_store(data_dir)?);
+    let mut seeds = seeds(&args.crawl)?;
     for address in &args.addresses {
         let source = Source::parse(address).with_context(|| format!("seed `{address}`"))?;
         seeds.push(Job { source, depth: 0, trust: SEED_TRUST });
     }
-    anyhow::ensure!(!seeds.is_empty(), "nothing to crawl: pass addresses or --seeds");
+    let crawler = Crawler::new(gateway, index, Arc::new(safety(&args.crawl)?), store, crawl_config(&args.crawl));
 
-    let (jobs, rx) = mpsc::channel(seeds.len());
+    // With no seeds this resumes whatever the store has due.
+    let (jobs, rx) = mpsc::channel(seeds.len().max(1));
     for job in seeds {
         jobs.try_send(job).expect("channel is sized for the seeds");
     }
@@ -183,13 +180,13 @@ async fn crawl(common: &Common, data_dir: &Path, args: CrawlArgs) -> Result<()> 
         terminated().await;
         stop.cancel();
     });
-    let stats = crawler.stats();
+    let control = crawler.control();
     let progress = tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(15));
         tick.tick().await;
         loop {
             tick.tick().await;
-            tracing::info!(stats = ?stats.snapshot(), "crawling");
+            tracing::info!(stats = ?control.stats(), "crawling");
         }
     });
     let stats = crawler.run(rx, shutdown).await;
@@ -200,7 +197,7 @@ async fn crawl(common: &Common, data_dir: &Path, args: CrawlArgs) -> Result<()> 
 
 async fn fetch(common: &Common, data_dir: &Path, address: &str) -> Result<()> {
     let source = Source::parse(address)?;
-    let gateway = gateway(common, data_dir)?;
+    let gateway = Gateway::new(gateway_config(common, data_dir)).map_err(|e| anyhow!("starting the gateway: {e}"))?;
     // The same content-type gate as the crawler: media is never downloaded.
     let opts = FetchOptions { accept: is_indexable_type, ..FetchOptions::default() };
     let page = gateway.fetch(&source, &opts).await?;
@@ -225,18 +222,27 @@ async fn fetch(common: &Common, data_dir: &Path, address: &str) -> Result<()> {
 }
 
 fn search(data_dir: &Path, text: String, networks: Vec<Network>, limit: usize, json: bool) -> Result<()> {
-    let dir = index_dir(data_dir);
+    let dir = omnid::index_dir(data_dir);
     let index = SearchIndex::open_read_only(&dir)
         .with_context(|| format!("opening {}; run `omnid crawl` or `omnid serve` first", dir.display()))?;
-    let hits = index.search(&SearchQuery { text, networks, limit })?;
+    let results = index.search(&SearchQuery { text, networks, offset: 0, limit })?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&hits)?);
+        println!("{}", serde_json::to_string_pretty(&results)?);
         return Ok(());
     }
-    if hits.is_empty() {
+    if results.hits.is_empty() {
         println!("no results");
+        return Ok(());
     }
-    for hit in hits {
+    let counts: Vec<_> =
+        results.network_counts.iter().filter(|(_, n)| **n > 0).map(|(net, n)| format!("{net} {n}")).collect();
+    println!(
+        "{} results ({}){}\n",
+        results.total,
+        counts.join(", "),
+        if results.relaxed { ", matching any word" } else { "" }
+    );
+    for hit in results.hits {
         println!("{}", hit.title);
         if !hit.description.is_empty() {
             println!("  {}", hit.description);
@@ -249,59 +255,31 @@ fn search(data_dir: &Path, text: String, networks: Vec<Network>, limit: usize, j
     Ok(())
 }
 
-fn gateway(common: &Common, data_dir: &Path) -> Result<Gateway> {
-    Gateway::new(GatewayConfig {
+fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
+    GatewayConfig {
         tor_dir: (!common.no_tor).then(|| data_dir.join("tor")),
         i2p_proxy: Some(common.i2p_proxy.clone()),
         fproxy: Some(common.fproxy.clone()),
         allow_private_addresses: common.allow_private_addresses,
         ..GatewayConfig::default()
-    })
-    .map_err(|e| anyhow!("starting the gateway: {e}"))
+    }
 }
 
-fn index_dir(data_dir: &Path) -> PathBuf {
-    data_dir.join(format!("index-v{SCHEMA_VERSION}"))
-}
-
-fn open_index(data_dir: &Path) -> Result<SearchIndex> {
-    let dir = index_dir(data_dir);
-    SearchIndex::open(&dir).with_context(|| format!("opening {} (is `omnid serve` already running?)", dir.display()))
-}
-
-fn crawler(
-    opts: &CrawlOptions,
-    gateway: Arc<Gateway>,
-    index: Arc<SearchIndex>,
-) -> Result<(Crawler, Arc<Safety>, Vec<Job>)> {
-    let safety = Arc::new(
-        Safety::load(opts.denylist.as_deref(), opts.blocked_terms.as_deref()).context("loading safety lists")?,
-    );
-    tracing::info!(denylist = safety.denylist_len(), blocked_terms = safety.blocked_terms_len(), "safety gate loaded");
-    let seeds = match &opts.seeds {
-        Some(path) => read_seeds(path)?,
-        None => vec![],
-    };
-    let cfg = CrawlConfig {
+fn crawl_config(opts: &CrawlOptions) -> CrawlConfig {
+    CrawlConfig {
         max_depth: opts.max_depth,
         max_pages: opts.max_pages,
         clearnet_same_site_only: !opts.follow_offsite,
         ..CrawlConfig::default()
-    };
-    Ok((Crawler::new(gateway, index, safety.clone(), cfg), safety, seeds))
+    }
 }
 
-fn read_seeds(path: &Path) -> Result<Vec<Job>> {
-    let list = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    list.lines()
-        .enumerate()
-        .map(|(n, line)| (n + 1, line.split('#').next().unwrap_or_default().trim()))
-        .filter(|(_, line)| !line.is_empty())
-        .map(|(n, line)| {
-            let source = Source::parse(line).with_context(|| format!("{}:{n}", path.display()))?;
-            Ok(Job { source, depth: 0, trust: SEED_TRUST })
-        })
-        .collect()
+fn safety(opts: &CrawlOptions) -> Result<Safety> {
+    Safety::load(opts.denylist.as_deref(), opts.blocked_terms.as_deref()).context("loading safety lists")
+}
+
+fn seeds(opts: &CrawlOptions) -> Result<Vec<Job>> {
+    opts.seeds.as_deref().map(omnid::read_seeds).transpose().map(Option::unwrap_or_default)
 }
 
 /// Ctrl-C, or SIGTERM from a service manager.

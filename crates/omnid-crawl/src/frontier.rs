@@ -1,7 +1,9 @@
-//! The crawl frontier: per-network queues with politeness.
+//! The crawl frontier: the working set of jobs pulled from the crawl store,
+//! in per-network queues with politeness.
 //!
 //! Each network has a concurrency limit, each site gets one request at a
 //! time, and a site cools down for `site_delay` after each request finishes.
+//! Deduplication happens in the store, which hands each address out once.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
@@ -55,7 +57,6 @@ pub(crate) struct Frontier {
     inflight: HashMap<Network, usize>,
     busy_sites: HashSet<String>,
     next_allowed: HashMap<String, Instant>,
-    seen: HashSet<String>,
     /// Round-robin start, so one busy network does not starve the others.
     cursor: usize,
     capacity: usize,
@@ -69,16 +70,15 @@ impl Frontier {
             inflight: HashMap::new(),
             busy_sites: HashSet::new(),
             next_allowed: HashMap::new(),
-            seen: HashSet::new(),
             cursor: 0,
             capacity,
         }
     }
 
-    /// Queues a job unless its address was queued before or the frontier is
-    /// full. Returns whether it was queued.
+    /// Queues a job unless the frontier is full. Returns whether it was
+    /// queued.
     pub(crate) fn push(&mut self, job: Job) -> bool {
-        if self.queued() >= self.capacity || !self.seen.insert(job.source.to_string()) {
+        if self.queued() >= self.capacity {
             return false;
         }
         self.queues.entry(job.source.network()).or_default().push_back(job);
@@ -132,6 +132,10 @@ impl Frontier {
         self.queues.values().map(VecDeque::len).sum()
     }
 
+    pub(crate) fn room(&self) -> usize {
+        self.capacity.saturating_sub(self.queued())
+    }
+
     pub(crate) fn inflight(&self) -> usize {
         self.inflight.values().sum()
     }
@@ -152,14 +156,6 @@ mod tests {
     fn frontier(concurrency: usize, delay: Duration) -> Frontier {
         let politeness = Network::ALL.iter().map(|n| (*n, Politeness { concurrency, site_delay: delay })).collect();
         Frontier::new(politeness, 100)
-    }
-
-    #[test]
-    fn deduplicates_addresses() {
-        let mut f = frontier(4, Duration::ZERO);
-        assert!(f.push(job("http://a.example/")));
-        assert!(!f.push(job("http://a.example/#fragment")), "same canonical address");
-        assert_eq!(f.queued(), 1);
     }
 
     #[test]

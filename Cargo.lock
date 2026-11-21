@@ -3046,6 +3046,7 @@ dependencies = [
  "omnid-core",
  "omnid-index",
  "omnid-net",
+ "rusqlite",
  "serde",
  "tempfile",
  "texting_robots",

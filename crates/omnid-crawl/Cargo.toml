@@ -16,6 +16,7 @@ blake3.workspace = true
 encoding_rs.workspace = true
 html5ever.workspace = true
 md-5.workspace = true
+rusqlite.workspace = true
 serde.workspace = true
 texting_robots.workspace = true
 tokio.workspace = true

@@ -16,18 +16,19 @@
 
   <main>
     <form id="search" role="search">
-      <input id="q" type="search" placeholder="Search every network" autocomplete="off" autofocus aria-label="Search">
+      <input id="q" type="search" placeholder="Search every network: words, &quot;a phrase&quot;, -exclude, site:host" autocomplete="off" autofocus aria-label="Search">
       <fieldset id="networks">
         <legend>Networks</legend>
-        <label><input type="checkbox" value="clearnet" checked> clearnet</label>
-        <label><input type="checkbox" value="onion" checked> onion</label>
-        <label><input type="checkbox" value="i2p" checked> i2p</label>
-        <label><input type="checkbox" value="hyphanet" checked> hyphanet</label>
-        <label><input type="checkbox" value="magnet" checked> magnet</label>
+        <label><input type="checkbox" value="clearnet" checked> clearnet <span class="count" data-network="clearnet"></span></label>
+        <label><input type="checkbox" value="onion" checked> onion <span class="count" data-network="onion"></span></label>
+        <label><input type="checkbox" value="i2p" checked> i2p <span class="count" data-network="i2p"></span></label>
+        <label><input type="checkbox" value="hyphanet" checked> hyphanet <span class="count" data-network="hyphanet"></span></label>
+        <label><input type="checkbox" value="magnet" checked> magnet <span class="count" data-network="magnet"></span></label>
       </fieldset>
     </form>
     <p id="summary" aria-live="polite"></p>
     <ol id="results"></ol>
+    <button id="more" type="button" hidden>More results</button>
   </main>
 
   <footer>
@@ -36,7 +37,7 @@
       <button>Crawl</button>
     </form>
     <p id="submit-result" aria-live="polite"></p>
-    <p id="crawl"></p>
+    <p class="crawl-line"><span id="crawl"></span> <button id="pause" type="button" hidden></button></p>
   </footer>
 </body>
 </html>

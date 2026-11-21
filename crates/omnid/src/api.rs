@@ -11,8 +11,8 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use omnid_core::{Network, Source};
-use omnid_crawl::{CrawlStats, DISCOVERED_TRUST, Job, Safety, Verdict};
-use omnid_index::{SearchHit, SearchIndex, SearchQuery};
+use omnid_crawl::{CrawlControl, DISCOVERED_TRUST, Job, Safety, Verdict};
+use omnid_index::{SearchIndex, SearchQuery, SearchResults};
 use omnid_net::Gateway;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,30 +22,37 @@ use tokio::sync::mpsc;
 /// them as text, and this policy is the second line of defence.
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; \
                    base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const TOKEN_COOKIE: &str = "omnid_token";
 
 #[derive(Clone)]
 pub struct AppState {
     pub gateway: Arc<Gateway>,
     pub index: Arc<SearchIndex>,
-    pub stats: Arc<CrawlStats>,
+    pub control: Arc<CrawlControl>,
     pub jobs: mpsc::Sender<Job>,
     pub safety: Arc<Safety>,
 }
 
-pub fn router(state: AppState, listen: SocketAddr) -> Router {
-    let router = Router::new()
+/// `token`, when set, is required on every request as a bearer token or the
+/// `omnid_token` cookie. Loopback is reachable by every app on a phone and
+/// every user on a shared machine; the token keeps them out.
+pub fn router(state: AppState, listen: SocketAddr, token: Option<String>) -> Router {
+    let mut router = Router::new()
         .route("/", get(|| asset("text/html; charset=utf-8", include_str!("ui/index.html"))))
         .route("/app.js", get(|| asset("text/javascript; charset=utf-8", include_str!("ui/app.js"))))
         .route("/app.css", get(|| asset("text/css; charset=utf-8", include_str!("ui/app.css"))))
         .route("/api/search", get(search))
         .route("/api/submit", post(submit))
         .route("/api/status", get(status))
+        .route("/api/crawl", post(crawl))
         .with_state(state);
-    if listen.ip().is_loopback() {
-        router.layer(middleware::from_fn_with_state(listen.port(), loopback_host_only))
-    } else {
-        router
+    if let Some(token) = token {
+        router = router.layer(middleware::from_fn_with_state(Arc::<str>::from(token), require_token));
     }
+    if listen.ip().is_loopback() {
+        router = router.layer(middleware::from_fn_with_state(listen.port(), loopback_host_only));
+    }
+    router
 }
 
 /// Any web page can make the browser send requests to 127.0.0.1. Requiring a
@@ -60,6 +67,27 @@ async fn loopback_host_only(State(port): State<u16>, request: Request, next: Nex
     } else {
         ApiError(StatusCode::FORBIDDEN, "requests must be addressed to localhost".into()).into_response()
     }
+}
+
+async fn require_token(State(token): State<Arc<str>>, request: Request, next: Next) -> Response {
+    let headers = request.headers();
+    let bearer =
+        headers.get(header::AUTHORIZATION).and_then(|h| h.to_str().ok()).and_then(|h| h.strip_prefix("Bearer "));
+    let cookie = headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .flat_map(|h| h.split(';'))
+        .find_map(|c| c.trim().strip_prefix(TOKEN_COOKIE)?.strip_prefix('='));
+    if bearer.or(cookie).is_some_and(|given| constant_time_eq(given.as_bytes(), token.as_bytes())) {
+        next.run(request).await
+    } else {
+        ApiError(StatusCode::UNAUTHORIZED, "missing or wrong API token".into()).into_response()
+    }
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |diff, (x, y)| diff | (x ^ y)) == 0
 }
 
 async fn asset(content_type: &'static str, body: &'static str) -> Response {
@@ -78,13 +106,16 @@ struct SearchParams {
     /// Comma-separated network names.
     #[serde(default)]
     network: String,
+    #[serde(default)]
+    offset: usize,
     limit: Option<usize>,
 }
 
 #[derive(Serialize)]
 struct SearchResponse {
     took_ms: u64,
-    hits: Vec<SearchHit>,
+    #[serde(flatten)]
+    results: SearchResults,
 }
 
 async fn search(
@@ -98,14 +129,14 @@ async fn search(
         .map(str::parse)
         .collect::<Result<Vec<Network>, _>>()
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
-    let query = SearchQuery { text: params.q, networks, limit: params.limit.unwrap_or(20) };
+    let query = SearchQuery { text: params.q, networks, offset: params.offset, limit: params.limit.unwrap_or(20) };
     let started = Instant::now();
     let index = state.index.clone();
-    let hits = tokio::task::spawn_blocking(move || index.search(&query))
+    let results = tokio::task::spawn_blocking(move || index.search(&query))
         .await
         .map_err(ApiError::internal)?
         .map_err(ApiError::internal)?;
-    Ok(Json(SearchResponse { took_ms: started.elapsed().as_millis() as u64, hits }))
+    Ok(Json(SearchResponse { took_ms: started.elapsed().as_millis() as u64, results }))
 }
 
 #[derive(Deserialize)]
@@ -113,8 +144,7 @@ struct Submission {
     url: String,
 }
 
-/// Queues an address for crawling. Already-crawled addresses are accepted
-/// and ignored.
+/// Queues an address for crawling now, even if it is already known.
 async fn submit(State(state): State<AppState>, Json(submission): Json<Submission>) -> Result<Response, ApiError> {
     let source = Source::parse(&submission.url).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
     if state.safety.check_source(&source) != Verdict::Allow {
@@ -129,12 +159,23 @@ async fn submit(State(state): State<AppState>, Json(submission): Json<Submission
     Ok((StatusCode::ACCEPTED, Json(json!({ "accepted": accepted, "network": network }))).into_response())
 }
 
+#[derive(Deserialize)]
+struct CrawlState {
+    paused: bool,
+}
+
+async fn crawl(State(state): State<AppState>, Json(desired): Json<CrawlState>) -> Json<serde_json::Value> {
+    state.control.set_paused(desired.paused);
+    Json(json!({ "crawl": state.control.stats() }))
+}
+
 async fn status(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "routers": state.gateway.status().await,
         "index": { "documents": state.index.num_docs() },
-        "crawl": state.stats.snapshot(),
+        "crawl": state.control.stats(),
+        "pause_reason": state.control.pause_reason(),
     }))
 }
 
@@ -150,5 +191,17 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (self.0, Json(json!({ "error": self.1 }))).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compares_tokens_by_value() {
+        assert!(constant_time_eq(b"secret-token", b"secret-token"));
+        assert!(!constant_time_eq(b"secret-token", b"secret-tokem"));
+        assert!(!constant_time_eq(b"short", b"longer"));
     }
 }

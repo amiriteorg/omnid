@@ -1,10 +1,12 @@
 "use strict";
 
 // Everything shown here came from crawled pages. It is only ever inserted as
-// text (append/textContent), never as markup.
+// text (append/textContent), never as markup; matches are marked by wrapping
+// text nodes in <mark>.
 
 const $ = (id) => document.getElementById(id);
 const ALL_NETWORKS = 5;
+const PAGE = 20;
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -16,6 +18,10 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+function marked(spans) {
+  return spans.map((s) => (s.mark ? el("mark", {}, s.text) : document.createTextNode(s.text)));
+}
+
 function date(secs) {
   return secs ? new Date(secs * 1000).toISOString().slice(0, 10) : "?";
 }
@@ -25,6 +31,10 @@ function size(bytes) {
   let i = 0;
   while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
   return `${bytes.toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
 // Only clearnet URLs and magnets get a link. Opening an onion or .i2p
@@ -47,30 +57,36 @@ function routeItem(route) {
 }
 
 function hitItem(hit) {
-  const routes = hit.routes.length;
   const files = hit.files.length
     ? el("details", {},
-        el("summary", {}, `${hit.files.length} file${hit.files.length === 1 ? "" : "s"}`),
+        el("summary", {}, `${plural(hit.files.length, "file")}, ${size(hit.files.reduce((n, f) => n + f.size, 0))}`),
         el("ul", {}, ...hit.files.map((f) => el("li", {}, `${f.path} (${size(f.size)})`))))
     : null;
+  const title = hit.title_spans.length ? marked(hit.title_spans) : [hit.routes[0]?.url || "(untitled)"];
+  const snippet = hit.snippet.some((s) => s.text) ? el("p", { class: "desc" }, ...marked(hit.snippet)) : null;
   return el("li", { class: "hit" },
-    el("h2", {}, hit.title || hit.routes[0]?.url || "(untitled)"),
-    hit.description ? el("p", { class: "desc" }, hit.description) : null,
+    el("h2", {}, ...title),
+    snippet,
     el("ul", { class: "routes" }, ...hit.routes.map(routeItem)),
     files,
     el("p", { class: "meta" },
-      `${routes} route${routes === 1 ? "" : "s"} · first seen ${date(hit.first_seen)} · last seen ${date(hit.last_seen)}`));
+      `${plural(hit.routes.length, "route")} · first seen ${date(hit.first_seen)} · last seen ${date(hit.last_seen)}`));
 }
 
 let inflight;
-async function search() {
+let shown = 0;
+let total = 0;
+
+async function search({ append = false } = {}) {
   const checked = [...document.querySelectorAll("#networks input:checked")].map((i) => i.value);
   if (!checked.length) {
     $("summary").textContent = "Pick at least one network.";
     $("results").replaceChildren();
+    $("more").hidden = true;
     return;
   }
-  const params = new URLSearchParams({ q: $("q").value.trim(), limit: "30" });
+  const offset = append ? shown : 0;
+  const params = new URLSearchParams({ q: $("q").value.trim(), limit: String(PAGE), offset: String(offset) });
   if (checked.length < ALL_NETWORKS) params.set("network", checked.join(","));
 
   inflight?.abort();
@@ -79,9 +95,22 @@ async function search() {
     const response = await fetch(`/api/search?${params}`, { signal: inflight.signal });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || response.statusText);
-    const n = body.hits.length;
-    $("summary").textContent = `${n} result${n === 1 ? "" : "s"} in ${body.took_ms} ms`;
-    $("results").replaceChildren(...body.hits.map(hitItem));
+
+    const items = body.hits.map(hitItem);
+    if (append) $("results").append(...items);
+    else $("results").replaceChildren(...items);
+    shown = offset + body.hits.length;
+    total = body.total;
+
+    for (const count of document.querySelectorAll(".count")) {
+      const n = body.network_counts[count.dataset.network] ?? 0;
+      count.textContent = n ? `(${n})` : "";
+    }
+    const relaxed = body.relaxed ? " No page has every word; showing pages with any of them." : "";
+    $("summary").textContent = `${plural(total, "page")} in ${body.took_ms} ms.${relaxed}`;
+    // Mirrors fold together, so `total` counts addresses, not results; a
+    // short page means the end.
+    $("more").hidden = body.hits.length < PAGE;
   } catch (error) {
     if (error.name !== "AbortError") $("summary").textContent = `Search failed: ${error.message}`;
   }
@@ -93,9 +122,14 @@ async function refreshStatus() {
     $("routers").replaceChildren(...status.routers.map((r) =>
       el("li", { class: `router ${r.state}`, title: `${r.state}: ${r.detail}` }, el("span", { class: "dot" }), r.network)));
     const c = status.crawl;
+    const state = c.paused ? `paused${status.pause_reason ? ` (${status.pause_reason})` : ""}` : "crawling";
     $("crawl").textContent =
-      `${status.index.documents} documents · fetched ${c.fetched} · indexed ${c.indexed} · ` +
-      `queued ${c.queued} · in flight ${c.inflight} · failed ${c.failed} · blocked ${c.blocked}`;
+      `${status.index.documents} documents · ${c.known} known · ${state} · fetched ${c.fetched} · ` +
+      `indexed ${c.indexed} · in flight ${c.inflight} · failed ${c.failed} · blocked ${c.blocked}`;
+    const pause = $("pause");
+    pause.hidden = false;
+    pause.textContent = c.paused ? "Resume" : "Pause";
+    pause.dataset.paused = String(c.paused);
   } catch {
     $("routers").replaceChildren(el("li", { class: "router" }, el("span", { class: "dot" }), "daemon unreachable"));
   }
@@ -106,10 +140,21 @@ $("q").addEventListener("input", () => {
   clearTimeout(debounce);
   debounce = setTimeout(search, 200);
 });
-$("networks").addEventListener("change", search);
+$("networks").addEventListener("change", () => search());
 $("search").addEventListener("submit", (event) => {
   event.preventDefault();
   search();
+});
+$("more").addEventListener("click", () => search({ append: true }));
+
+$("pause").addEventListener("click", async () => {
+  const paused = $("pause").dataset.paused !== "true";
+  await fetch("/api/crawl", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ paused }),
+  });
+  refreshStatus();
 });
 
 $("submit").addEventListener("submit", async (event) => {
