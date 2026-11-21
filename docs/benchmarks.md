@@ -75,9 +75,9 @@ a time, against the live DHT. Builds alternated (A, B, A, B) because swarm
 and routing conditions drift; N = 10 calls per torrent per side.
 
 Pipelining (ask peers while the get_peers lookup still runs), median of all
-30 calls: shared 4.08 -> 2.97 s, fresh 8.11 -> 6.42 s. Per-torrent tables
-and raw times are in the commit message of "Ask peers for metadata while the
-get_peers lookup is still running".
+30 calls: shared 4.08 -> 2.97 s, fresh 8.11 -> 6.42 s. Per-torrent medians
+are in the commit message of "Ask peers for metadata while the get_peers
+lookup is still running".
 
 Ending the post-metadata peer count after 1 s without a new peer (cap still
 2 s), shared:
