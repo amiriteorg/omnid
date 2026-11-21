@@ -58,19 +58,22 @@ async fn live_socks_proxy_opens_onions_through_the_daemon() {
 /// response, or the proxy's refusal as `Err(reply code)`.
 async fn get_via(proxy: SocketAddr, user: &str, password: &str, host: &str) -> Result<String, u8> {
     let mut socks = tokio::net::TcpStream::connect(proxy).await.unwrap();
-    let mut request = vec![5, 1, 2, 1, user.len() as u8];
-    request.extend_from_slice(user.as_bytes());
-    request.push(password.len() as u8);
-    request.extend_from_slice(password.as_bytes());
-    request.extend_from_slice(&[5, 1, 0, 3, host.len() as u8]);
-    request.extend_from_slice(host.as_bytes());
-    request.extend_from_slice(&80u16.to_be_bytes());
-    socks.write_all(&request).await.unwrap();
+    let mut greeting = vec![5, 1, 2, 1, user.len() as u8];
+    greeting.extend_from_slice(user.as_bytes());
+    greeting.push(password.len() as u8);
+    greeting.extend_from_slice(password.as_bytes());
+    socks.write_all(&greeting).await.unwrap();
+    // The answer before the request, as browsers do: the proxy hangs up on a
+    // wrong password, and bytes it never read would turn that into a reset.
     let mut auth = [0u8; 4];
     socks.read_exact(&mut auth).await.unwrap();
     if auth[3] != 0 {
         return Err(auth[3]);
     }
+    let mut request = vec![5, 1, 0, 3, host.len() as u8];
+    request.extend_from_slice(host.as_bytes());
+    request.extend_from_slice(&80u16.to_be_bytes());
+    socks.write_all(&request).await.unwrap();
     let mut reply = [0u8; 10];
     socks.read_exact(&mut reply).await.unwrap();
     if reply[1] != 0 {

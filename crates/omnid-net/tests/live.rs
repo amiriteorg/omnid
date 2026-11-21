@@ -145,6 +145,29 @@ async fn live_i2p_tunnels_raw_streams_through_i2pd() {
 }
 
 #[tokio::test]
+#[ignore = "live: needs i2pd (scripts/live-routers.sh up)"]
+async fn live_browser_reaches_eepsites_through_i2pd() {
+    // The browser's route: .i2p through i2pd, with Tor off to show it needs
+    // nothing else.
+    require_router(4444, "i2pd");
+    let gateway = Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap();
+    let mut last = String::new();
+    for _ in 0..3 {
+        match gateway.connect_browser("reg.i2p", 80, "reg.i2p").await {
+            Ok(mut stream) => {
+                last = status_line(&mut stream, "reg.i2p", I2P_USER_AGENT).await;
+                if last.starts_with("HTTP/1.1 200") {
+                    return;
+                }
+            }
+            Err(e) => last = e.to_string(),
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+    panic!("reg.i2p through the browser's route: {last}");
+}
+
+#[tokio::test]
 #[ignore = "live: needs a Hyphanet node (scripts/live-routers.sh up)"]
 async fn live_hyphanet_follows_newer_editions() {
     require_router(8888, "Hyphanet's FProxy");

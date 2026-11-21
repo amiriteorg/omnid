@@ -176,7 +176,8 @@ stop() { # DIR PIDFILE NAME
 
 case "${1:-}" in
   up) start_i2pd; start_hyphanet ;;
-  test) cd "$ROOT" && cargo test --workspace -- --ignored --test-threads=4 ;;
+  # --no-fail-fast: one failing network must not hide the others' results.
+  test) cd "$ROOT" && cargo test --workspace --no-fail-fast -- --ignored --test-threads=4 ;;
   down) stop "$LIVE/i2pd" i2pd.pid i2pd; stop "$LIVE/hyphanet" java.pid Hyphanet ;;
   all)
     trap '"$0" down' EXIT
