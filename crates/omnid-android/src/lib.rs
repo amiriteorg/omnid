@@ -118,7 +118,8 @@ pub fn stop() {
         return;
     };
     daemon.shutdown();
-    match runtime.block_on(tokio::time::timeout(Duration::from_secs(15), daemon.wait())) {
+    // The timer is made inside the runtime: the caller's thread has none.
+    match runtime.block_on(async { tokio::time::timeout(Duration::from_secs(15), daemon.wait()).await }) {
         Ok(Ok(stats)) => tracing::info!(?stats, "stopped"),
         Ok(Err(e)) => tracing::error!("stopping: {e:#}"),
         Err(_) => tracing::warn!("timed out waiting for the crawl to stop"),
@@ -300,39 +301,41 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn starts_pauses_and_stops() {
+    /// A restart (a new Hyphanet node, Retry) stops a daemon whose Tor and
+    /// DHT are running; on the phone a panic there kills the app.
+    #[test]
+    #[ignore = "live: reaches Tor and the DHT"]
+    fn live_stops_with_tor_and_the_dht_running() {
+        let dir = std::env::temp_dir().join(format!("omnid-android-live-{}", std::process::id()));
+        start_with(&dir, "token", "", true).unwrap();
+        std::thread::sleep(Duration::from_secs(20));
+        stop();
+        let again = start_with(&dir, "token", "", true).unwrap();
+        assert_ne!(again, 0, "and starts again after");
+        stop();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// On a plain thread with no Tokio runtime around it, as the app's
+    /// native-call thread is.
+    #[test]
+    fn starts_pauses_and_stops() {
         let dir = std::env::temp_dir().join(format!("omnid-android-test-{}", std::process::id()));
-        // start() and stop() block on their own runtime, so run them off
-        // this one.
-        let started = {
-            let dir = dir.clone();
-            tokio::task::spawn_blocking(move || {
-                // Without Tor or the DHT, so the test stays off the network.
-                // A node elsewhere that does not answer: the status says where omnid looked.
-                let first = start_with(&dir, "token", "http://127.0.0.1:9", false).unwrap();
-                assert_eq!(start_with(&dir, "token", "", false).unwrap(), first, "a second start reuses the daemon");
-                assert_ne!(browser_proxy_port(), 0, "the browser's proxy is up");
-                new_identity();
-                first
-            })
-            .await
-            .unwrap()
-        };
+        // Without Tor or the DHT, so the test stays off the network. A node
+        // elsewhere that does not answer: the status says where omnid looked.
+        let started = start_with(&dir, "token", "http://127.0.0.1:9", false).unwrap();
         assert_ne!(started, 0);
-        let body = tokio::task::spawn_blocking(move || {
-            set_paused(true, "waiting for a charger");
-            let mut stream = std::net::TcpStream::connect(("127.0.0.1", started)).unwrap();
-            use std::io::{Read, Write};
-            write!(stream, "GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{started}\r\nAuthorization: Bearer token\r\nConnection: close\r\n\r\n").unwrap();
-            let mut body = String::new();
-            stream.read_to_string(&mut body).unwrap();
-            stop();
-            assert_eq!(browser_proxy_port(), 0, "and down again");
-            body
-        })
-        .await
-        .unwrap();
+        assert_eq!(start_with(&dir, "token", "", false).unwrap(), started, "a second start reuses the daemon");
+        assert_ne!(browser_proxy_port(), 0, "the browser's proxy is up");
+        new_identity();
+        set_paused(true, "waiting for a charger");
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", started)).unwrap();
+        use std::io::{Read, Write};
+        write!(stream, "GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{started}\r\nAuthorization: Bearer token\r\nConnection: close\r\n\r\n").unwrap();
+        let mut body = String::new();
+        stream.read_to_string(&mut body).unwrap();
+        stop();
+        assert_eq!(browser_proxy_port(), 0, "and down again");
         assert!(body.starts_with("HTTP/1.1 200"), "{body}");
         assert!(body.contains("waiting for a charger"), "{body}");
         assert!(body.contains("no FProxy at http://127.0.0.1:9/"), "{body}");
