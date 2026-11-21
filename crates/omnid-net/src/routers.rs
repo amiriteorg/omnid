@@ -167,8 +167,26 @@ pub(crate) fn is_unreachable(error: &FetchError) -> bool {
     matches!(error, FetchError::Unavailable { .. } | FetchError::Timeout(_))
 }
 
+/// Whether this device may ask the router at `router` now: one at a tailnet
+/// address only while this device is on a tailnet itself ([`crate::tailnet`]),
+/// since outside one the address may be another machine's, and what goes to a
+/// router is plain HTTP.
+pub(crate) fn askable(network: Network, router: &Url) -> Result<(), FetchError> {
+    if crate::tailnet::needs_tailnet(router) && !crate::tailnet::on_tailnet() {
+        return Err(FetchError::Unavailable {
+            network,
+            reason: format!(
+                "{router} is on a tailnet this device is not on now (is Tailscale on?); not asking it, in case \
+                 another machine holds the address"
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// A TCP connection to a router, given up after [`CONNECT_TIMEOUT`].
 pub(crate) async fn connect(network: Network, router: &Url) -> Result<tokio::net::TcpStream, FetchError> {
+    askable(network, router)?;
     let kind = if network == Network::Hyphanet { "node" } else { "router" };
     let unavailable =
         |what: &str| FetchError::Unavailable { network, reason: format!("{what} {router}; is the {kind} running?") };

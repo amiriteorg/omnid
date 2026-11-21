@@ -30,6 +30,10 @@
   - Proxy clients' host names are checked before they reach a router.
   - The search page and Settings follow Allow screenshots; download notifications keep the file
     name off the lock screen; the search page's fields keep the keyboard from learning.
+- A router or node at a Tailscale address (100.64.0.0/10) is asked only while this device is on a
+  tailnet (an address in that range on a tunnel interface): carrier-grade NAT uses the same range,
+  and with Tailscale off on mobile data, plain HTTP to the router could reach another subscriber's
+  device. Requests go to the next router instead, and the status says why.
 
 ## 0.1.3 (2026-11-21)
 

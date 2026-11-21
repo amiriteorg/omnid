@@ -114,7 +114,11 @@ put FProxy behind `tailscale serve` or another local proxy: the node would see
 every client as 127.0.0.1 and give each one full access.
 
 An I2P router can run elsewhere in the same way: `--i2p-proxy
-http://<address>:4444` (in the app, ⋮ → Settings → I2P router). i2pd's HTTP proxy binds
+http://<address>:4444` (in the app, ⋮ → Settings → I2P router). A router or
+node at a Tailscale address (100.64.0.0/10) is asked only while this machine
+has such an address on a tunnel interface: the range is also carrier-grade
+NAT's, and with Tailscale off, plain HTTP to it could reach another
+subscriber's device. i2pd's HTTP proxy binds
 one address and has no access list, so keep it on loopback and put a relay that
 admits only your devices' addresses on the private one; Tailscale ties each
 peer's address to its key, so the address is who is connecting. Leave

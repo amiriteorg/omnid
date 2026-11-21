@@ -19,6 +19,7 @@ mod download;
 mod guard;
 mod http;
 mod routers;
+mod tailnet;
 mod tor;
 
 use std::net::{IpAddr, SocketAddr};
@@ -580,6 +581,11 @@ async fn via_routers(
 ) -> Result<http::RawResponse, FetchError> {
     let mut last = Err(unavailable(network, none));
     for router in routers.order() {
+        if let Err(error) = routers::askable(network, &router.url) {
+            router.failed();
+            last = Err(error);
+            continue;
+        }
         let url = page(&router.url)?;
         match http::reqwest_get(&router.client, url.as_str(), opts).await {
             Ok(response) => {
@@ -648,7 +654,8 @@ async fn probe(routers: &Routers, network: Network, what: &str) -> RouterStatus 
             details.push(format!("{what} at {}", router.url));
         } else {
             router.failed();
-            details.push(format!("no {what} at {}", router.url));
+            let why = if routers::askable(network, &router.url).is_err() { " (not on its tailnet now)" } else { "" };
+            details.push(format!("no {what} at {}{why}", router.url));
         }
     }
     let state = if up.contains(&true) { RouterState::Ready } else { RouterState::Unreachable };
