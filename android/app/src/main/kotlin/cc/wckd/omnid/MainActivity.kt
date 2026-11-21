@@ -84,7 +84,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         drawnWith = Appearance.chosen(this)
         restorePage = savedInstanceState?.getString(KEY_PAGE)
-        web = WebView(this).apply {
+        Appearance.applyScreenshots(this)
+        web = PrivateWebView(this).apply {
             // The page draws its own; the platform's grey bar would sit on top of it.
             isVerticalScrollBarEnabled = false
             settings.javaScriptEnabled = true
@@ -204,6 +205,7 @@ class MainActivity : Activity() {
     /** Back from installing or starting i2pd, say so. */
     override fun onResume() {
         super.onResume()
+        Appearance.applyScreenshots(this)
         if (Appearance.chosen(this) != drawnWith) {
             recreate()
             return
@@ -455,5 +457,17 @@ class MainActivity : Activity() {
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, intent.dataString ?: intent.`package`.orEmpty(), Toast.LENGTH_LONG).show()
         }
+    }
+}
+
+/**
+ * The search page's WebView, whose text fields the keyboard must not learn from: what is searched
+ * for here stays out of its suggestions and anything it syncs.
+ */
+internal class PrivateWebView(context: android.content.Context) : WebView(context) {
+    override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? {
+        val connection = super.onCreateInputConnection(outAttrs)
+        outAttrs.imeOptions = outAttrs.imeOptions or android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        return connection
     }
 }

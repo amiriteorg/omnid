@@ -39,6 +39,10 @@ internal enum class SecurityLevel {
                 "javascript.options.ion" to !safer,
                 "javascript.options.baselinejit" to !safer,
                 "javascript.options.wasm" to !safer,
+                // Tor Browser's Safer also turns off the native regular-expression engine
+                // and Graphite font shaping: both JIT-like attack surface.
+                "javascript.options.native_regexp" to !safer,
+                "gfx.font_rendering.graphite.enabled" to !safer,
                 "mathml.disabled" to safer,
                 "gfx.font_rendering.opentype_svg.enabled" to !safer,
                 // 1: audible media waits for a tap; 5: all media does.

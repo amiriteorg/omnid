@@ -107,6 +107,7 @@ class SettingsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        Appearance.applyScreenshots(this)
         if (Appearance.chosen(this) != drawnWith) recreate()
     }
 
@@ -135,7 +136,9 @@ class SettingsActivity : Activity() {
         divider()
         toggle(R.string.settings_images, R.string.settings_images_about, Settings.IMAGES, default = true)
         divider()
-        toggle(R.string.browser_allow_screenshots, R.string.settings_screenshots_about, Settings.SCREENSHOTS, default = false)
+        toggle(R.string.browser_allow_screenshots, R.string.settings_screenshots_about, Settings.SCREENSHOTS, default = false) {
+            Appearance.applyScreenshots(this)
+        }
         divider()
         choice(R.string.settings_download_connections, connectionsName(Downloads.connections(prefs.getInt(Downloads.CONNECTIONS, Downloads.DEFAULT_CONNECTIONS)))) {
             askConnections()

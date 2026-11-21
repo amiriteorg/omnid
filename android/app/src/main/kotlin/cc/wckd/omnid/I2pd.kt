@@ -2,7 +2,6 @@ package cc.wckd.omnid
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 
 /**
  * The i2pd app (PurpleI2P, on F-Droid), which runs an I2P router on the phone. Its HTTP proxy
@@ -16,7 +15,11 @@ internal object I2pd {
 
     fun isInstalled(context: Context): Boolean = context.packageManager.getLaunchIntentForPackage(PACKAGE) != null
 
-    /** i2pd, where its router starts, or its F-Droid page when it is not installed. */
+    /**
+     * i2pd, where its router starts, or its F-Droid page when it is not installed, in OMNId's own
+     * browser: the phone's would fetch it directly.
+     */
     fun intent(context: Context): Intent =
-        context.packageManager.getLaunchIntentForPackage(PACKAGE) ?: Intent(Intent.ACTION_VIEW, Uri.parse(LISTING))
+        context.packageManager.getLaunchIntentForPackage(PACKAGE)
+            ?: Intent(context, BrowserActivity::class.java).putExtra(BrowserActivity.EXTRA_URL, LISTING)
 }

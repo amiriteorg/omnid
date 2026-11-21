@@ -27,7 +27,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
-import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
@@ -983,13 +982,7 @@ class BrowserActivity : Activity() {
     private fun screenshotsAllowed() = prefs().getBoolean(Settings.SCREENSHOTS, false)
 
     /** Off by default: screenshots and the recent-apps thumbnail would keep what was on screen. */
-    private fun applyScreenshotSetting() {
-        if (screenshotsAllowed()) {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        } else {
-            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        }
-    }
+    private fun applyScreenshotSetting() = Appearance.applyScreenshots(this)
 
     private fun dp(value: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
