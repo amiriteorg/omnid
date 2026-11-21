@@ -1,2 +1,4 @@
 /target
 /data
+.agents/evidence/
+.worktrees/
