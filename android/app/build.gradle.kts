@@ -17,8 +17,8 @@ android {
         applicationId = "cc.wckd.omnid"
         minSdk = 29
         targetSdk = 37
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
         // The Rust library is built for arm64 only (phones and Apple-silicon
         // emulators); see build-rust.sh.
         ndk {

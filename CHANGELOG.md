@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 (2026-11-21)
 
 - `omnid download <address> [-o PATH] [--connections N] [--max-bytes N] [--force]`: a file in
   byte ranges over several connections at once (4 by default, up to 16), each on Tor circuits of
