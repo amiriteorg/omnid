@@ -21,13 +21,22 @@ use omnid_core::{Network, Source};
 use omnid_crawl::{CrawlConfig, Job, Politeness, SEED_TRUST, Safety};
 use omnid_net::GatewayConfig;
 
-/// Crawled on first launch so a new install has something to search.
-/// Well-known services that publish onion mirrors of their own sites.
+/// Crawled on first launch so a new install has something to search:
+/// well-known services that publish onion mirrors of their own sites, and
+/// I2P's own hubs, from which the crawl reaches the rest of I2P.
 const FIRST_RUN_SEEDS: &[&str] = &[
     // The Tor Project
     "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/",
     // BBC News
     "https://www.bbcweb3hytmzhn5d532owbu6oqadra5z3ar726vq5kgwwn6aucdccrad.onion/",
+    // I2P, crawled once the phone has a router (the i2pd app) and deferred
+    // until then: the I2P Project, I2P Planet (news from eepsites across I2P)
+    // and three name registries, which list the sites registered on it.
+    "http://i2p-projekt.i2p/",
+    "http://planet.i2p/",
+    "http://reg.i2p/",
+    "http://inr.i2p/",
+    "http://stats.i2p/",
 ];
 
 static RUNNING: Mutex<Option<Running>> = Mutex::new(None);
@@ -285,8 +294,10 @@ mod tests {
     #[test]
     fn first_run_seeds_parse() {
         for seed in FIRST_RUN_SEEDS {
-            assert_eq!(Source::parse(seed).unwrap().network(), Network::Onion, "{seed}");
+            let network = Source::parse(seed).unwrap().network();
+            assert!(matches!(network, Network::Onion | Network::I2p), "{seed}: overlay sites only");
         }
+        assert!(FIRST_RUN_SEEDS.iter().any(|s| s.contains(".i2p")), "I2P has seeds of its own");
     }
 
     #[test]
