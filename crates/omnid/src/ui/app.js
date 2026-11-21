@@ -6,27 +6,59 @@
 
 const $ = (id) => document.getElementById(id);
 
-// Inside the Android app the window already has a title bar.
-if (new URLSearchParams(location.search).has("embedded")) document.documentElement.classList.add("embedded");
+// Inside the Android app the window has its own title bar, and omnid's
+// browser opens onion and .i2p addresses over Tor and I2P.
+const EMBEDDED = new URLSearchParams(location.search).has("embedded");
+if (EMBEDDED) document.documentElement.classList.add("embedded");
 const ALL_NETWORKS = 5;
 const PAGE = 20;
+const NETWORK_NAMES = { onion: "Onion", clearnet: "Web", magnet: "Torrent", i2p: "I2P", hyphanet: "Hyphanet" };
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
+    if (value === undefined || value === null || value === false) continue;
     if (key === "class") node.className = value;
     else node.setAttribute(key, value);
   }
-  node.append(...children.filter((c) => c !== null));
+  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
   return node;
 }
 
-function marked(spans) {
-  return spans.map((s) => (s.mark ? el("mark", {}, s.text) : document.createTextNode(s.text)));
+// Drawn icons, one stroke weight. Paths only; nothing from the network.
+const ICONS = {
+  search: ["M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z", "M20 20l-4-4"],
+  x: ["M6 6l12 12", "M18 6L6 18"],
+  copy: ["M9 9h10v11H9z", "M5 15V4h10"],
+  check: ["M5 12.5l4.5 4.5L19 7.5"],
+  lock: ["M6 11h12v9H6z", "M8.5 11V8a3.5 3.5 0 0 1 7 0v3"],
+  unlock: ["M6 11h12v9H6z", "M8.5 11V8a3.5 3.5 0 0 1 6.8-1.2"],
+  magnet: ["M6 4v8a6 6 0 0 0 12 0V4", "M6 8h4", "M14 8h4"],
+  plus: ["M12 5v14", "M5 12h14"],
+  pause: ["M9 6v12", "M15 6v12"],
+  play: ["M8 5.5v13l10-6.5z"],
+  arrow: ["M7 17L17 7", "M9 7h8v8"],
+  chevron: ["M6 9l6 6 6-6"],
+};
+
+function icon(name) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "icon");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of ICONS[name]) {
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
 }
 
-function date(secs) {
-  return secs ? new Date(secs * 1000).toISOString().slice(0, 10) : "?";
+for (const slot of document.querySelectorAll("[data-icon]")) slot.append(icon(slot.dataset.icon));
+
+function marked(spans) {
+  return spans.map((s) => (s.mark ? el("mark", {}, s.text) : document.createTextNode(s.text)));
 }
 
 function size(bytes) {
@@ -36,8 +68,8 @@ function size(bytes) {
   return `${bytes.toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
-function plural(n, word) {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+function plural(n, one, many = `${one}s`) {
+  return `${n.toLocaleString()} ${n === 1 ? one : many}`;
 }
 
 // "Turkmen" for `tk`, named in the reader's own language where the browser can.
@@ -50,121 +82,412 @@ const languageName = (() => {
   }
 })();
 
+const dayFormat = new Intl.DateTimeFormat(navigator.languages, { day: "numeric", month: "short" });
+const yearFormat = new Intl.DateTimeFormat(navigator.languages, { day: "numeric", month: "short", year: "numeric" });
+
+function day(secs) {
+  if (!secs) return "";
+  const date = new Date(secs * 1000);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return "today";
+  return (date.getFullYear() === today.getFullYear() ? dayFormat : yearFormat).format(date);
+}
+
 // Clearnet URLs and magnets get a link. Opening an onion or .i2p address in
 // an ordinary browser fails at best and leaks a DNS lookup at worst, so there
 // those are shown for copying into the right browser; inside the app, omnid's
 // own browser opens them over Tor or I2P.
-function routeItem(route) {
-  const embedded = document.documentElement.classList.contains("embedded");
+function linkable(route) {
   const web = /^https?:\/\//.test(route.url);
-  const linkable =
-    (web && (route.network === "clearnet" || (embedded && ["onion", "i2p"].includes(route.network)))) ||
+  return (web && (route.network === "clearnet" || (EMBEDDED && ["onion", "i2p"].includes(route.network)))) ||
     (route.network === "magnet" && route.url.startsWith("magnet:?xt=urn:btih:"));
-  const target = linkable
-    ? el("a", { href: route.url, rel: "noreferrer noopener", target: "_blank" }, route.url)
-    : el("code", {}, route.url);
-  const copy = el("button", { type: "button", title: "Copy address" }, "copy");
+}
+
+// The route a title opens: the one that stays inside an overlay network when
+// there is one, then encrypted web, then plain web.
+function primaryRoute(hit) {
+  const rank = (r) => ({ onion: 0, i2p: 1 }[r.network] ?? (r.url.startsWith("https:") ? 2 : 3));
+  return hit.routes.filter((r) => linkable(r) && r.network !== "magnet").sort((a, b) => rank(a) - rank(b))[0];
+}
+
+// Onion hosts are 56 characters of noise: keep both ends, which is what
+// people compare, and the path.
+function shortAddress(url) {
+  const magnet = url.match(/^magnet:\?xt=urn:btih:([0-9a-f]{40})/i);
+  if (magnet) return `btih:${magnet[1].slice(0, 12)}…`;
+  const bare = url.replace(/^[a-z]+:\/\//i, "").replace(/\/$/, "");
+  return bare.replace(/^((?:[a-z0-9-]+\.)*)([a-z2-7]{8})[a-z2-7]{43}([a-z2-7]{5})\.onion/i, "$1$2…$3.onion");
+}
+
+function sealed(route) {
+  return ["onion", "i2p", "hyphanet"].includes(route.network) || route.url.startsWith("https:");
+}
+
+function routeItem(route) {
+  const plainWeb = route.network === "clearnet" && route.url.startsWith("http:");
+  const badge = el("span", { class: `badge net-${route.network}` },
+    route.network === "magnet" ? icon("magnet") : icon(sealed(route) ? "lock" : "unlock"),
+    NETWORK_NAMES[route.network] ?? route.network);
+  const text = shortAddress(route.url);
+  const address = linkable(route)
+    ? el("a", { class: "addr", href: route.url, rel: "noreferrer noopener", target: "_blank", title: route.url }, text)
+    : el("span", { class: "addr", title: route.url }, text);
+  const copy = el("button", { class: "icon-button", type: "button", "aria-label": "Copy address" }, icon("copy"));
   copy.addEventListener("click", async () => {
-    await navigator.clipboard?.writeText(route.url);
-    copy.textContent = "copied";
-    setTimeout(() => (copy.textContent = "copy"), 1200);
+    try {
+      await navigator.clipboard.writeText(route.url);
+      copy.replaceChildren(icon("check"));
+      copy.classList.add("done");
+      copy.setAttribute("aria-label", "Copied");
+      setTimeout(() => {
+        copy.replaceChildren(icon("copy"));
+        copy.classList.remove("done");
+        copy.setAttribute("aria-label", "Copy address");
+      }, 1400);
+    } catch {
+      getSelection()?.selectAllChildren(address);
+    }
   });
-  return el("li", {}, el("span", { class: `net net-${route.network}` }, route.network), target, copy);
+  return el("li", { class: "route" }, badge, address, plainWeb ? el("span", { class: "plain" }, "not encrypted") : null, copy);
 }
 
 function hitItem(hit) {
-  const files = hit.files.length
-    ? el("details", {},
-        el("summary", {}, `${plural(hit.files.length, "file")}, ${size(hit.files.reduce((n, f) => n + f.size, 0))}`),
-        el("ul", {}, ...hit.files.map((f) => el("li", {}, `${f.path} (${size(f.size)})`))))
-    : null;
-  const title = hit.title_spans.length ? marked(hit.title_spans) : [hit.routes[0]?.url || "(untitled)"];
-  // The page's language on its own text, so fonts and screen readers follow it.
   const lang = hit.lang ? { lang: hit.lang } : {};
-  const snippet = hit.snippet.some((s) => s.text) ? el("p", { class: "desc", ...lang }, ...marked(hit.snippet)) : null;
-  const meta = [plural(hit.routes.length, "route"), hit.lang && languageName(hit.lang),
-    `first seen ${date(hit.first_seen)}`, `last seen ${date(hit.last_seen)}`];
-  return el("li", { class: "hit" },
-    el("h2", lang, ...title),
+  const heading = hit.title_spans.length ? marked(hit.title_spans) : [shortAddress(hit.routes[0]?.url || "Untitled")];
+  const primary = primaryRoute(hit);
+  const title = primary
+    ? el("a", { href: primary.url, rel: "noreferrer noopener", target: "_blank" }, ...heading)
+    : el("span", {}, ...heading);
+  const snippet = hit.snippet.some((s) => s.text) ? el("p", { class: "snippet", ...lang }, ...marked(hit.snippet)) : null;
+  const files = hit.files.length
+    ? el("details", { class: "files" },
+        el("summary", {}, `${plural(hit.files.length, "file")} · ${size(hit.files.reduce((n, f) => n + f.size, 0))}`, icon("chevron")),
+        el("ul", {}, ...hit.files.slice(0, 50).map((f) => el("li", {}, `${f.path} · ${size(f.size)}`))))
+    : null;
+  const seen = hit.first_seen === hit.last_seen || day(hit.first_seen) === day(hit.last_seen)
+    ? `seen ${day(hit.last_seen)}`
+    : `seen ${day(hit.first_seen)} – ${day(hit.last_seen)}`;
+  const meta = [hit.lang && languageName(hit.lang), hit.routes.length > 1 && plural(hit.routes.length, "route"), seen];
+  return el("li", { class: "hit", "data-key": hit.content_hash },
+    el("h2", lang, title),
     snippet,
     el("ul", { class: "routes" }, ...hit.routes.map(routeItem)),
     files,
     el("p", { class: "meta" }, meta.filter(Boolean).join(" · ")));
 }
 
+function skeletons() {
+  return [1, 2, 3].map(() => el("li", { class: "skeleton", "aria-hidden": "true" }, el("i"), el("i"), el("i")));
+}
+
+function checkedNetworks() {
+  return [...document.querySelectorAll("#networks input:checked")].map((i) => i.value);
+}
+
+function showCounts(counts) {
+  for (const count of document.querySelectorAll(".chip .count")) {
+    const n = counts[count.dataset.network] ?? 0;
+    count.textContent = n.toLocaleString();
+    count.closest(".chip").classList.toggle("zero", n === 0);
+  }
+}
+
 let inflight;
 let shown = 0;
-let total = 0;
+let hasMore = false;
+let loading = false;
+// "See all" lists every page on the chosen networks, with nothing typed.
+let browsing = false;
+
+// Results replace each other in place: a row that was already showing stays
+// still, and only rows new to the list fade in.
+function swapResults(items) {
+  const before = new Set([...$("results").querySelectorAll(".hit")].map((li) => li.dataset.key));
+  for (const item of items) if (!before.has(item.dataset.key)) item.classList.add("enter");
+  $("results").replaceChildren(...items);
+}
+
+// The search lives in the address too, so a reload, or the app coming back,
+// keeps it.
+function rememberQuery(text) {
+  const params = new URLSearchParams(location.search);
+  if (text) params.set("q", text);
+  else params.delete("q");
+  const query = params.toString().replace(/=(&|$)/g, "$1");
+  history.replaceState(null, "", query ? `?${query}` : location.pathname);
+}
 
 async function search({ append = false } = {}) {
-  const checked = [...document.querySelectorAll("#networks input:checked")].map((i) => i.value);
-  if (!checked.length) {
+  const text = $("q").value.trim();
+  $("clear").hidden = !$("q").value && !browsing;
+  const networks = checkedNetworks();
+  rememberQuery(text);
+  if (!text && !browsing) return explore(networks);
+  $("explore").hidden = true;
+  if (!networks.length) {
     $("summary").textContent = "Pick at least one network.";
     $("results").replaceChildren();
+    hasMore = false;
     $("more").hidden = true;
     return;
   }
   const offset = append ? shown : 0;
-  const params = new URLSearchParams({ q: $("q").value.trim(), limit: String(PAGE), offset: String(offset) });
-  if (checked.length < ALL_NETWORKS) params.set("network", checked.join(","));
+  const params = new URLSearchParams({ q: text, limit: String(PAGE), offset: String(offset) });
+  if (networks.length < ALL_NETWORKS) params.set("network", networks.join(","));
 
   inflight?.abort();
   inflight = new AbortController();
+  loading = true;
+  // Results swap in place; a skeleton only when the index is slow to answer.
+  const slow = append ? null : setTimeout(() => $("results").replaceChildren(...skeletons()), 150);
   try {
     const response = await fetch(`/api/search?${params}`, { signal: inflight.signal });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || response.statusText);
+    clearTimeout(slow);
 
     const items = body.hits.map(hitItem);
-    if (append) $("results").append(...items);
-    else $("results").replaceChildren(...items);
-    shown = offset + body.hits.length;
-    total = body.total;
-
-    for (const count of document.querySelectorAll(".count")) {
-      const n = body.network_counts[count.dataset.network] ?? 0;
-      count.textContent = n ? `(${n})` : "";
+    if (append) {
+      for (const item of items) item.classList.add("enter");
+      $("results").append(...items);
+    } else {
+      swapResults(items);
+      if (!items.length) $("results").append(noResults(text, body.network_counts, networks));
     }
-    const relaxed = body.relaxed ? " No page has every word; showing pages with any of them." : "";
-    $("summary").textContent = `${plural(total, "page")} in ${body.took_ms} ms.${relaxed}`;
+    shown = offset + body.hits.length;
+    showCounts(body.network_counts);
+    const relaxed = body.relaxed ? " · no page has every word, so these have some" : "";
+    if (browsing && !text) {
+      const back = el("button", { type: "button" }, "Back to Explore");
+      back.addEventListener("click", () => {
+        browsing = false;
+        for (const input of document.querySelectorAll("#networks input")) input.checked = true;
+        search();
+      });
+      $("summary").replaceChildren(`${plural(body.total, "page")} on ${networks.map((n) => NETWORK_NAMES[n] ?? n).join(", ")}`, back);
+    } else {
+      $("summary").textContent = body.total ? `${plural(body.total, "result")} · ${body.took_ms} ms${relaxed}` : "";
+    }
     // Mirrors fold together, so `total` counts addresses, not results; a
     // short page means the end.
-    $("more").hidden = body.hits.length < PAGE;
+    hasMore = body.hits.length === PAGE;
+    $("more").hidden = !hasMore || "IntersectionObserver" in window;
   } catch (error) {
-    if (error.name !== "AbortError") $("summary").textContent = `Search failed: ${error.message}`;
+    clearTimeout(slow);
+    if (error.name !== "AbortError") {
+      $("summary").textContent = "";
+      $("results").replaceChildren(el("li", { class: "empty" },
+        el("h2", {}, "Search did not go through"),
+        el("p", {}, `omnid did not answer (${error.message}). It may be restarting; try again in a moment.`)));
+    }
+  } finally {
+    loading = false;
   }
 }
+
+function noResults(text, counts, networks) {
+  const elsewhere = Object.entries(counts).filter(([network, n]) => n > 0 && !networks.includes(network));
+  const tips = el("p", {}, "Try fewer or different words, or a site:host filter.");
+  const item = el("li", { class: "empty" }, el("h2", {}, `Nothing matches “${text}”`), tips);
+  for (const [network, n] of elsewhere) {
+    const button = el("button", { class: "button small", type: "button" },
+      `Show ${plural(n, "result")} in ${NETWORK_NAMES[network] ?? network}`);
+    button.addEventListener("click", () => {
+      document.querySelector(`#networks input[value="${network}"]`).checked = true;
+      search();
+    });
+    item.append(button);
+  }
+  return item;
+}
+
+// With nothing typed: the best of each network in the index, so there is
+// always somewhere to go.
+async function explore(networks) {
+  inflight?.abort();
+  inflight = new AbortController();
+  $("results").replaceChildren();
+  $("summary").textContent = "";
+  hasMore = false;
+  $("more").hidden = true;
+  try {
+    const all = await (await fetch("/api/search?q=&limit=1", { signal: inflight.signal })).json();
+    showCounts(all.network_counts);
+    const order = ["onion", "clearnet", "magnet", "i2p", "hyphanet"];
+    const present = order.filter((n) => networks.includes(n) && (all.network_counts[n] ?? 0) > 0);
+    const groups = await Promise.all(present.map(async (network) => {
+      const params = new URLSearchParams({ q: "", limit: "5", network });
+      const body = await (await fetch(`/api/search?${params}`, { signal: inflight.signal })).json();
+      return exploreGroup(network, all.network_counts[network], body.hits);
+    }));
+    const indexed = Object.values(all.network_counts).reduce((a, b) => a + b, 0);
+    $("explore-lists").replaceChildren(...(groups.length ? groups : [indexed ? filteredOut() : emptyIndex()]));
+    $("explore").hidden = false;
+  } catch (error) {
+    if (error.name !== "AbortError") $("summary").textContent = `omnid did not answer (${error.message}).`;
+  }
+}
+
+const GROUP_TITLES = { onion: "Onion sites", clearnet: "On the web", magnet: "Torrents", i2p: "I2P sites", hyphanet: "Hyphanet sites" };
+
+function exploreGroup(network, count, hits) {
+  const all = el("button", { type: "button" }, "See all");
+  all.addEventListener("click", () => {
+    browsing = true;
+    for (const input of document.querySelectorAll("#networks input")) input.checked = input.value === network;
+    search();
+    scrollTo({ top: 0 });
+  });
+  const sites = hits.map((hit) => {
+    // The group's own network first: a mirror listed under the web shows its web address.
+    const primary = hit.routes.find((r) => r.network === network) ?? primaryRoute(hit) ?? hit.routes[0];
+    const name = hit.title || shortAddress(primary.url);
+    const body = [el("span", { class: "dot" }), el("b", {}, name), el("small", {}, shortAddress(primary.url))];
+    const row = linkable(primary)
+      ? el("a", { href: primary.url, rel: "noreferrer noopener", target: "_blank" }, ...body)
+      : el("div", { title: primary.url }, ...body);
+    return el("li", { class: `site net-${network}` }, row);
+  });
+  return el("div", { class: "explore-group" },
+    el("div", { class: "explore-head" }, el("h2", {}, GROUP_TITLES[network] ?? network), el("span", { class: "count" }, count.toLocaleString()), all),
+    el("ul", { class: "site-list" }, ...sites));
+}
+
+// Pages exist, but not on the networks the chips leave on.
+function filteredOut() {
+  const all = el("button", { class: "button small", type: "button" }, "Search every network");
+  all.addEventListener("click", () => {
+    for (const input of document.querySelectorAll("#networks input")) input.checked = true;
+    search();
+  });
+  return el("div", { class: "empty" },
+    el("h2", {}, "Nothing on the networks you picked"),
+    el("p", {}, "Your index has pages on other networks. Turn their chips back on to see them."),
+    all);
+}
+
+function emptyIndex() {
+  return el("div", { class: "empty" },
+    el("h2", {}, "Your index is empty so far"),
+    el("p", {}, "omnid fills it by crawling: it starts from a few well-known onion sites and follows their links. Add an address below to start somewhere else."));
+}
+
+// The trust strip: each network's state in plain words.
+const ROUTERS = [
+  { network: "onion", name: "Tor" },
+  { network: "magnet", name: "Torrents" },
+  { network: "i2p", name: "I2P" },
+  { network: "hyphanet", name: "Hyphanet" },
+  { network: "clearnet", name: "Web", panelOnly: true },
+];
+
+const STATE_WORDS = { ready: "Ready", starting: "Connecting", unreachable: "Not running", disabled: "Off", unsupported: "Not available" };
+
+function explain(network, router) {
+  const state = router?.state ?? "disabled";
+  const detail = router?.detail ?? "";
+  switch (network) {
+    case "onion":
+      if (state === "ready") return "Onion sites, and every page you open in omnid's browser, go through Tor, built into omnid.";
+      if (state === "starting") return `Connecting to Tor (${detail}). Onion sites open once it is ready.`;
+      return "Tor is off, so onion sites cannot be reached.";
+    case "magnet":
+      if (state === "ready") return `Finds torrent names and file lists from the BitTorrent network (${detail.replace(/^DHT, /, "")}). Files themselves are never downloaded.`;
+      if (state === "starting") return "Joining the BitTorrent network to look up torrents.";
+      return "Torrent lookups are off.";
+    case "i2p":
+      if (state === "ready") return `.i2p sites go through the I2P router (${detail}).`;
+      return "Reaching .i2p sites needs an I2P router, such as the i2pd app, running on this device.";
+    case "hyphanet":
+      if (state === "ready") return `Hyphanet sites go through the Hyphanet node (${detail}).`;
+      return "Hyphanet sites need a Hyphanet node running on this device.";
+    case "clearnet":
+      return EMBEDDED
+        ? "omnid's crawler reads web pages directly from this device. Pages you open in its browser go through Tor."
+        : "omnid's crawler reads web pages directly from this device.";
+  }
+  return detail;
+}
+
+let statusTimer;
 
 async function refreshStatus() {
   try {
     const status = await (await fetch("/api/status")).json();
-    $("routers").replaceChildren(...status.routers.map((r) =>
-      el("li", { class: `router ${r.state}`, title: `${r.state}: ${r.detail}` }, el("span", { class: "dot" }), r.network)));
+    const byNetwork = Object.fromEntries(status.routers.map((r) => [r.network, r]));
+    const strip = ROUTERS.filter((r) => !r.panelOnly);
+    $("trust-routers").replaceChildren(...strip.map(({ network, name }) =>
+      el("span", { class: `trust-router ${byNetwork[network]?.state ?? "disabled"}` }, el("span", { class: "state-dot" }), name)));
+    // The dots carry state by colour alone; a screen reader hears it in words.
+    const spoken = strip.map(({ network, name }) => `${name}: ${STATE_WORDS[byNetwork[network]?.state ?? "disabled"]}`);
+    $("trust").setAttribute("aria-label", `${spoken.join(", ")}. ${status.crawl.paused ? "Crawling paused" : "Crawling"}. Show details`);
+    $("router-list").replaceChildren(...ROUTERS.map(({ network, name }) => {
+      const state = byNetwork[network]?.state ?? "disabled";
+      return el("li", { class: state },
+        el("span", { class: "state-dot" }),
+        el("b", {}, name, el("span", {}, STATE_WORDS[state] ?? state)),
+        el("p", {}, explain(network, byNetwork[network])));
+    }));
+
     const c = status.crawl;
-    const state = c.paused ? `paused${status.pause_reason ? ` (${status.pause_reason})` : ""}` : "crawling";
-    $("crawl").textContent =
-      `${status.index.documents} documents · ${c.known} known · ${state} · fetched ${c.fetched} · ` +
-      `indexed ${c.indexed} · in flight ${c.inflight} · failed ${c.failed} · blocked ${c.blocked}`;
+    const reason = status.pause_reason ? `: ${status.pause_reason}` : "";
+    $("trust-crawl").textContent = c.paused ? "Paused" : c.inflight ? "Crawling" : "Idle";
+    $("crawl-detail").textContent =
+      `${c.paused ? `Crawling is paused${reason}.` : c.inflight ? `Crawling, ${plural(c.inflight, "page")} in flight.` : "The crawler is on and waiting for pages to fetch."} ` +
+      `${plural(status.index.documents, "page")} indexed, ${plural(c.known, "address", "addresses")} known.`;
     const pause = $("pause");
     pause.hidden = false;
-    pause.textContent = c.paused ? "Resume" : "Pause";
+    pause.replaceChildren(icon(c.paused ? "play" : "pause"), c.paused ? "Resume" : "Pause");
     pause.dataset.paused = String(c.paused);
   } catch {
-    $("routers").replaceChildren(el("li", { class: "router" }, el("span", { class: "dot" }), "daemon unreachable"));
+    $("trust-routers").replaceChildren(el("span", { class: "trust-router unreachable" }, el("span", { class: "state-dot" }), "omnid is not answering"));
+    $("trust-crawl").textContent = "";
   }
 }
+
+function startStatus() {
+  clearInterval(statusTimer);
+  refreshStatus();
+  statusTimer = setInterval(refreshStatus, 5000);
+}
+
+document.addEventListener("visibilitychange", () => (document.hidden ? clearInterval(statusTimer) : startStatus()));
+
+$("trust").addEventListener("click", () => {
+  const open = $("trust").getAttribute("aria-expanded") !== "true";
+  $("trust").setAttribute("aria-expanded", String(open));
+  $("trust-panel").hidden = !open;
+});
 
 let debounce;
 $("q").addEventListener("input", () => {
   clearTimeout(debounce);
-  debounce = setTimeout(search, 200);
+  debounce = setTimeout(search, 120);
+});
+$("clear").addEventListener("click", () => {
+  $("q").value = "";
+  if (browsing) {
+    browsing = false;
+    for (const input of document.querySelectorAll("#networks input")) input.checked = true;
+  }
+  search();
+  $("q").focus();
 });
 $("networks").addEventListener("change", () => search());
 $("search").addEventListener("submit", (event) => {
   event.preventDefault();
+  clearTimeout(debounce);
   search();
+  $("q").blur();
 });
 $("more").addEventListener("click", () => search({ append: true }));
+
+// The next page loads before the reader reaches the end of this one.
+if ("IntersectionObserver" in window) {
+  new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting) && hasMore && !loading) search({ append: true });
+  }, { rootMargin: "800px 0px" }).observe($("sentinel"));
+}
 
 $("pause").addEventListener("click", async () => {
   const paused = $("pause").dataset.paused !== "true";
@@ -180,6 +503,7 @@ $("submit").addEventListener("submit", async (event) => {
   event.preventDefault();
   const url = $("url").value.trim();
   if (!url) return;
+  const result = $("submit-result");
   try {
     const response = await fetch("/api/submit", {
       method: "POST",
@@ -187,13 +511,18 @@ $("submit").addEventListener("submit", async (event) => {
       body: JSON.stringify({ url }),
     });
     const body = await response.json();
-    $("submit-result").textContent = response.ok ? `Queued ${body.accepted} (${body.network})` : body.error;
+    result.className = `submit-result ${response.ok ? "ok" : "error"}`;
+    result.textContent = response.ok
+      ? `Added. omnid will crawl ${body.accepted} (${NETWORK_NAMES[body.network] ?? body.network}) next.`
+      : body.error;
     if (response.ok) $("url").value = "";
   } catch (error) {
-    $("submit-result").textContent = `Could not reach the daemon: ${error.message}`;
+    result.className = "submit-result error";
+    result.textContent = `omnid did not answer (${error.message}).`;
   }
 });
 
-refreshStatus();
-setInterval(refreshStatus, 5000);
+// /?q=words opens with that search, so a search can be linked to.
+$("q").value = new URLSearchParams(location.search).get("q") ?? "";
+startStatus();
 search();
