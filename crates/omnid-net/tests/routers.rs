@@ -98,3 +98,94 @@ async fn streams_go_to_the_next_router_and_node() {
     let error = gateway.connect_browser("stats.i2p", 80, "stats.i2p").await.err().expect("no router is up");
     assert!(error.to_string().contains("is the router running"), "{error}");
 }
+
+/// Counts the connections a clearnet stand-in accepts, answering each with a
+/// page.
+async fn watched_clearnet_site() -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = hits.clone();
+    let app = axum::Router::new().fallback(get(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        async { Html("<title>seen you</title>") }
+    }));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (port, hits)
+}
+
+/// An i2pd stand-in whose eepsites all redirect to `location`, as an HTTP
+/// proxy (absolute-form GETs) and through CONNECT tunnels alike.
+async fn redirecting_router(location: String) -> Url {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let location = location.clone();
+            tokio::spawn(async move {
+                let mut head = Vec::new();
+                while !head.ends_with(b"\r\n\r\n") {
+                    let Ok(byte) = stream.read_u8().await else { return };
+                    head.push(byte);
+                }
+                if head.starts_with(b"CONNECT ") {
+                    stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+                    head.clear();
+                    while !head.ends_with(b"\r\n\r\n") {
+                        let Ok(byte) = stream.read_u8().await else { return };
+                        head.push(byte);
+                    }
+                }
+                let answer = format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\n\r\n");
+                let _ = stream.write_all(answer.as_bytes()).await;
+            });
+        }
+    });
+    format!("http://{addr}/").parse().unwrap()
+}
+
+#[tokio::test]
+async fn a_redirect_off_an_anonymity_network_is_not_followed_directly() {
+    // The clearnet is direct and may reach loopback: following the redirect
+    // would show the site's author this machine's address.
+    let (port, hits) = watched_clearnet_site().await;
+    let watched = format!("http://127.0.0.1:{port}/who");
+    let router = redirecting_router(watched.clone()).await;
+    let gateway = Gateway::new(GatewayConfig {
+        tor_dir: None,
+        allow_private_addresses: true,
+        i2p_proxies: vec![router],
+        fproxies: vec![],
+        ..GatewayConfig::default()
+    })
+    .unwrap();
+    assert!(gateway.leaves_anonymity(omnid_core::Network::I2p, omnid_core::Network::Clearnet));
+    assert!(!gateway.leaves_anonymity(omnid_core::Network::Clearnet, omnid_core::Network::Clearnet));
+    let page = gateway.fetch(&Source::parse("http://trap.i2p/").unwrap(), &opts()).await.unwrap();
+    assert_eq!(page.status, 302, "the redirect comes back unfollowed");
+    assert_eq!(page.redirect.map(|r| r.to_string()), Some(watched.clone()));
+
+    let file = tempfile_for_test();
+    let error = gateway
+        .download(
+            &"http://trap.i2p/file".parse().unwrap(),
+            &file,
+            &omnid_net::DownloadOptions::default(),
+            &omnid_net::Progress::default(),
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("from an anonymity network to the clearnet"), "{error}");
+    assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0, "nothing reached the watched site");
+
+    // Through Tor exits, the clearnet hides the address: the redirect is fine.
+    let via_tor =
+        Gateway::new(GatewayConfig { tor_dir: None, clearnet_via_tor: true, ..GatewayConfig::default() }).unwrap();
+    assert!(!via_tor.leaves_anonymity(omnid_core::Network::Onion, omnid_core::Network::Clearnet));
+}
+
+fn tempfile_for_test() -> std::fs::File {
+    let path = std::env::temp_dir().join(format!("omnid-redirect-test-{}", std::process::id()));
+    std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(true).open(path).unwrap()
+}
