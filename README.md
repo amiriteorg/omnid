@@ -291,12 +291,19 @@ A new level reloads every open tab.
   big site cannot fill the crawl, and sites take turns in the queue, each
   one's shallowest page first. The phone uses 4, 3 and 150.
 - **Default seeds** for a new store given none: services' own onion sites
-  (the Tor Project, the BBC, ProPublica, the Internet Archive, SecureDrop,
-  Riseup, Proton, Mullvad, Qubes, Whonix, Kicksecure) and Ahmia's list of
-  onion services; I2P's project site, news, forum, registries and the
-  notbob.i2p and isitup.i2p directories; and the Hyphanet node's default
-  bookmarks, Clean Spider and the Index of Indexes among them
-  (`omnid::DEFAULT_SEEDS`). A network's seeds wait while its router is down.
+  (the Tor Project, with its list of its onion services, support and
+  community portals and Tor Metrics; Debian's list of its onion services,
+  blog and micronews; the BBC, ProPublica, Bellingcat, Amnesty International,
+  the Internet Archive, SecureDrop, Riseup, Systemli, Nos oignons, Proton,
+  Mullvad, Privacy Guides, Qubes, Whonix and its forum, Kicksecure, Cwtch,
+  OnionShare, F-Droid and Bitcoin Core) and Ahmia's list of onion services;
+  I2P's project site, wiki, news, forum, registries, the notbob.i2p and
+  isitup.i2p directories, the Russian community's wiki, I2P+, I2P's Git forge
+  and Postman's mail service; and the Hyphanet node's default bookmarks,
+  Clean Spider and the Index of Indexes among them (`omnid::DEFAULT_SEEDS`).
+  An onion site on Ahmia's blocklist is not made a seed (five older seeds are
+  on it wrongly; see Safety), and every eepsite is in the address book a new
+  i2pd starts with. A network's seeds wait while its router is down.
 - **Politeness.** Per network: clearnet 32 concurrent with 1 s per site,
   onion 16 with 5 s, I2P 4 with 5 s, Hyphanet 2 with 2 s (the phone uses
   6/8/3/2). One request per site at a time. robots.txt is honored and fetched
