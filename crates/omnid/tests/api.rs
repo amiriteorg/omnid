@@ -25,6 +25,11 @@ struct Api {
 }
 
 fn api(token: Option<&str>) -> Api {
+    api_with(token, None)
+}
+
+/// With `node`, a Hyphanet node's FProxy.
+fn api_with(token: Option<&str>, node: Option<&str>) -> Api {
     let index = SearchIndex::in_memory().unwrap();
     for (url, network, title, lang) in [
         ("http://forum.example/", Network::Clearnet, "Privacy forum", "en"),
@@ -55,13 +60,18 @@ fn api(token: Option<&str>) -> Api {
     let control = Arc::new(CrawlControl::default());
     let state = AppState {
         gateway: Arc::new(
-            Gateway::new(GatewayConfig { tor_dir: None, i2p_proxy: None, fproxy: None, ..GatewayConfig::default() })
-                .unwrap(),
+            Gateway::new(GatewayConfig {
+                tor_dir: None,
+                i2p_proxy: None,
+                fproxy: node.map(|n| n.parse().unwrap()),
+                ..GatewayConfig::default()
+            })
+            .unwrap(),
         ),
         index: Arc::new(index),
         control: control.clone(),
         jobs,
-        safety: Arc::new(Safety::from_lists("denied.example", "")),
+        safety: Arc::new(Safety::from_lists("denied.example\nCHK@denied,x,y", "")),
         dht: None,
     };
     let listen: SocketAddr = LISTEN.parse().unwrap();
@@ -220,4 +230,25 @@ async fn serves_the_page_with_a_strict_policy() {
         assert!(csp.contains("img-src 'self';"), "the page's own icon, and no other image: {csp}");
         assert_eq!(headers[header::REFERRER_POLICY], "no-referrer");
     }
+}
+
+#[tokio::test]
+async fn sends_hyphanet_keys_to_the_node() {
+    // Outside the app, a Hyphanet result links here and the node's own
+    // FProxy serves the page.
+    let node = api_with(None, Some("http://127.0.0.1:8888/"));
+    let key = "USK@62H8KFSZWMyQ2MQgwvNhEYJ2m3SQl696PfsVfWQ-HQo,cJrPvdNz4AnrHJQXNteDV7k3YnAVY-MClt84gwH2qEo,AQACAAE/freenet-first-steps/24/";
+    let response =
+        node.router.clone().oneshot(get(&format!("/hyphanet/{key}")).body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(response.headers()[header::LOCATION], format!("http://127.0.0.1:8888/{key}").as_str());
+    // Keys only: nothing else is sent on, to the node or anywhere.
+    for path in ["/hyphanet/http:%2F%2Fevil.example/", "/hyphanet//evil.example/x", "/hyphanet/not-a-key"] {
+        let (status, _) = send(&node.router, get(path).body(Body::empty()).unwrap()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
+    }
+    let (status, _) = send(&node.router, get("/hyphanet/CHK@denied,x,y/f").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "the denylist holds");
+    let (status, _) = send(&api(None).router, get(&format!("/hyphanet/{key}")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "no node configured");
 }

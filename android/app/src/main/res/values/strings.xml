@@ -42,6 +42,7 @@
     <string name="browser_error_title">This page did not load</string>
     <string name="browser_error_proxy">omnid\'s proxy did not answer: omnid may have stopped. Reopen it from the search page.</string>
     <string name="browser_error_unreachable">Tor or I2P could not reach it: the site may be down or the address wrong. Try again, or use New identity for new circuits.</string>
+    <string name="browser_error_no_hyphanet_node">No Hyphanet node answered. omnid opens Hyphanet pages through a node: set yours under ⋮ → Hyphanet node on the search page, or start it, then reload.</string>
     <string name="browser_error_no_i2p_router">No I2P router is running on this phone. omnid reaches .i2p sites through the i2pd app: start its router there, then reload.</string>
     <string name="browser_error_security">Its certificate is not valid, so the connection could be intercepted.</string>
     <string name="browser_error_uri">That is not an address omnid can open.</string>

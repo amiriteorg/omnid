@@ -56,6 +56,7 @@ $B search "tor browser" -n onion
 $B serve --seeds seeds.txt                 # daemon + http://127.0.0.1:7171
 $B serve --socks 127.0.0.1:7172            # ...plus a SOCKS5 proxy
 curl --socks5-hostname 127.0.0.1:7172 http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/
+curl --socks5-hostname 127.0.0.1:7172 http://hyphanet/USK@…/   # a freesite, through the Hyphanet node
 ```
 
 Tor starts with the daemon and needs nothing installed. For I2P run i2pd
@@ -99,6 +100,7 @@ all of them), `"a phrase"`, `-exclude`, `title:word`, `site:host`,
 | `POST /api/submit` with `{"url": "…"}` | crawl an address now, even if known |
 | `POST /api/crawl` with `{"paused": true}` | pause or resume crawling |
 | `GET /api/status` | router states, index size, crawl counters, pause reason |
+| `GET /hyphanet/<key>` | a redirect to that Hyphanet key on the node's FProxy (keys only); the search page's Hyphanet links |
 
 `--api-token` (or `OMNID_API_TOKEN`) makes every request need
 `Authorization: Bearer <token>` or the `omnid_token` cookie.
@@ -133,8 +135,10 @@ takes a node elsewhere, such as your computer's over Tailscale (see above);
 empty means one on the phone at 127.0.0.1:8888.
 
 Results open in omnid's own browser, GeckoView (Firefox's engine) in private
-mode: onion and `.i2p` results as well as clearnet ones, typed addresses too.
-Every request goes through the daemon, over Tor (or i2pd for `.i2p`), with
+mode: onion and `.i2p` results as well as clearnet ones, typed addresses too,
+and Hyphanet pages through your node, as `http://hyphanet/USK@…` (a key typed
+into the address bar opens there too). Every request goes through the daemon,
+over Tor (or i2pd for `.i2p`, the Hyphanet node for `hyphanet`), with
 each site on Tor circuits of its own; ⋮ → New identity drops the session and
 gives every site new circuits. GeckoView makes the APK much larger; see
 [Known limitations](#known-limitations).
@@ -244,7 +248,10 @@ The Android app's browser:
 - **Nothing leaves it directly.** A bundled extension sends every request to
   a SOCKS5 listener in the daemon that wants the app's per-start secret, so
   other apps on the phone cannot use it, and that listener only goes through
-  Tor or i2pd, never direct, whatever the crawler is set to. Requests the
+  Tor or i2pd, or to the Hyphanet node you set for the reserved name
+  `hyphanet`, never direct anywhere else, whatever the crawler is set to.
+  A page cannot load anything from I2P or Hyphanet unless it is there itself,
+  so no site can probe whether the phone runs a router or node. Requests the
   extension does not route (Gecko's own) go to port 9 on loopback, which no
   app can listen on, and fail. Names resolve at the exit, never on the phone;
   localhost goes through the proxy too, so pages cannot reach omnid's API.

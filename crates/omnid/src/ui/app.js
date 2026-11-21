@@ -96,17 +96,28 @@ function day(secs) {
 // Clearnet URLs and magnets get a link. Opening an onion or .i2p address in
 // an ordinary browser fails at best and leaks a DNS lookup at worst, so there
 // those are shown for copying into the right browser; inside the app, omnid's
-// own browser opens them over Tor or I2P.
+// own browser opens them over Tor or I2P. Hyphanet pages open through the
+// node either way.
 function linkable(route) {
   const web = /^https?:\/\//.test(route.url);
   return (web && (route.network === "clearnet" || (EMBEDDED && ["onion", "i2p"].includes(route.network)))) ||
+    route.network === "hyphanet" ||
     (route.network === "magnet" && route.url.startsWith("magnet:?xt=urn:btih:"));
+}
+
+// Where a link goes. A Hyphanet key opens in omnid's browser as
+// http://hyphanet/KEY, which the daemon sends to the node; in any other
+// browser, omnid sends it on to the node's own page.
+function href(route) {
+  if (route.network !== "hyphanet") return route.url;
+  const key = route.url.replace(/^(?:freenet|hyphanet):/i, "");
+  return EMBEDDED ? `http://hyphanet/${key}` : `/hyphanet/${key}`;
 }
 
 // The route a title opens: the one that stays inside an overlay network when
 // there is one, then encrypted web, then plain web.
 function primaryRoute(hit) {
-  const rank = (r) => ({ onion: 0, i2p: 1 }[r.network] ?? (r.url.startsWith("https:") ? 2 : 3));
+  const rank = (r) => ({ onion: 0, i2p: 1, hyphanet: 2 }[r.network] ?? (r.url.startsWith("https:") ? 3 : 4));
   return hit.routes.filter((r) => linkable(r) && r.network !== "magnet").sort((a, b) => rank(a) - rank(b))[0];
 }
 
@@ -159,7 +170,7 @@ function routeItem(route) {
     NETWORK_NAMES[route.network] ?? route.network);
   const text = shortAddress(route.url);
   const address = linkable(route)
-    ? el("a", { class: "addr", href: route.url, rel: "noreferrer noopener", target: "_blank", title: route.url }, text)
+    ? el("a", { class: "addr", href: href(route), rel: "noreferrer noopener", target: "_blank", title: route.url }, text)
     : el("span", { class: "addr", title: route.url }, text);
   const copy = el("button", { class: "icon-button", type: "button", "aria-label": "Copy address" }, icon("copy"));
   copy.addEventListener("click", async () => {
@@ -188,7 +199,7 @@ function hitItem(hit) {
     : [untitled(hit.routes[0]?.url || "Untitled")];
   const primary = primaryRoute(hit);
   const title = primary
-    ? el("a", { href: primary.url, rel: "noreferrer noopener", target: "_blank" }, ...heading)
+    ? el("a", { href: href(primary), rel: "noreferrer noopener", target: "_blank" }, ...heading)
     : el("span", {}, ...heading);
   const snippet = hit.snippet.some((s) => s.text) ? el("p", { class: "snippet", ...lang }, ...marked(hit.snippet)) : null;
   const files = hit.files.length
@@ -399,7 +410,7 @@ function exploreGroup(network, count, hits) {
     // An untitled site is named by its address; once is enough.
     const body = [el("span", { class: "dot" }), el("b", {}, name), name === address ? null : el("small", {}, address)];
     const row = linkable(primary)
-      ? el("a", { href: primary.url, rel: "noreferrer noopener", target: "_blank" }, ...body)
+      ? el("a", { href: href(primary), rel: "noreferrer noopener", target: "_blank" }, ...body)
       : el("div", { title: primary.url }, ...body);
     return el("li", { class: `site net-${network}` }, row);
   });

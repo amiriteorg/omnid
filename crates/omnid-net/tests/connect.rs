@@ -1,5 +1,6 @@
 //! Raw streams from `Gateway::connect`, routed by name, against local
-//! stand-ins: an echo server and a fake i2pd CONNECT proxy.
+//! stand-ins: an echo server (also standing in for a Hyphanet node) and a
+//! fake i2pd CONNECT proxy.
 
 use omnid_net::{FetchError, Gateway, GatewayConfig};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -138,4 +139,41 @@ async fn the_browser_reaches_i2p_through_the_router() {
     });
     let mut stream = gateway.connect_browser("stats.i2p", 80, "stats.i2p").await.unwrap();
     assert_eq!(round_trip(&mut stream).await, "ping");
+}
+
+fn with_node(port: u16) -> Gateway {
+    Gateway::new(GatewayConfig {
+        tor_dir: None,
+        fproxy: Some(format!("http://127.0.0.1:{port}/").parse().unwrap()),
+        ..GatewayConfig::default()
+    })
+    .unwrap()
+}
+
+#[tokio::test]
+async fn hyphanet_pages_reach_the_node_and_nothing_else() {
+    // `hyphanet` names the node's FProxy, for the browser and the SOCKS proxy
+    // alike; the stand-in node echoes.
+    let node = echo_server().await;
+    let gateway = with_node(node);
+    let mut stream = gateway.connect_browser("hyphanet", 80, "hyphanet").await.unwrap();
+    assert_eq!(round_trip(&mut stream).await, "ping");
+    let mut stream = gateway.connect("Hyphanet.", 80).await.unwrap();
+    assert_eq!(round_trip(&mut stream).await, "ping");
+    // Only port 80: an HTTPS attempt is refused at once.
+    let error = gateway.connect_browser("hyphanet", 443, "hyphanet").await.err().expect("refused");
+    assert!(matches!(error, FetchError::Transport { .. }), "{error}");
+    // The node's own address is not a way around the rule.
+    let error = gateway.connect_browser("127.0.0.1", node, "127.0.0.1").await.err().expect("refused");
+    assert!(matches!(error, FetchError::Unavailable { .. }), "{error}");
+}
+
+#[tokio::test]
+async fn hyphanet_pages_need_a_node() {
+    let error = gateway(GatewayConfig::default()).connect_browser("hyphanet", 80, "hyphanet").await.err();
+    assert!(matches!(error, Some(FetchError::Unavailable { .. })), "{error:?}");
+    // A node that is not running says so.
+    let closed = TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap().port();
+    let error = with_node(closed).connect_browser("hyphanet", 80, "hyphanet").await.err().expect("refused");
+    assert!(error.to_string().contains("is the node running"), "{error}");
 }

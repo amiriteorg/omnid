@@ -41,8 +41,10 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
 - Only `omnid-net` and `omnid-dht` open network connections. Clearnet connections go through the
   private-address guard unless `allow_private_addresses` is set.
 - The app's browser (GeckoView) reaches the network only through the daemon's browser proxy
-  (`socks::Access::Browser` → `Gateway::connect_browser`: password required, Tor or i2pd, never
-  direct). Its Gecko prefs send anything else to a dead-end port and are read back before a page
+  (`socks::Access::Browser` → `Gateway::connect_browser`: password required, Tor or i2pd, or the
+  configured Hyphanet node for the reserved name `omnid_net::HYPHANET_HOST`; never direct anywhere
+  else). Its extension keeps pages from loading I2P or Hyphanet resources unless they are there
+  themselves. Its Gecko prefs send anything else to a dead-end port and are read back before a page
   loads (`BrowserConfig.critical`); keep both when changing either side. Bump GeckoView with every
   Firefox release: it carries the security fixes.
 - Media is never downloaded: bodies are read only for `is_indexable_type`, checked on headers

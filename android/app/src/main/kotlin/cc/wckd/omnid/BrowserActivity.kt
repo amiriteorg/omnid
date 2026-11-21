@@ -347,6 +347,7 @@ class BrowserActivity : Activity() {
             uri == null || !BrowserConfig.isWebPage(uri.scheme, host) -> Triple("", R.color.muted, true)
             host.endsWith(".onion") -> Triple(getString(R.string.browser_kind_onion), R.color.onion, true)
             host.endsWith(".i2p") -> Triple("I2P", R.color.i2p, true)
+            host == BrowserConfig.HYPHANET_HOST -> Triple("Hyphanet", R.color.hyphanet, true)
             secure == false || uri.scheme == "http" -> Triple(getString(R.string.browser_tor_plain), R.color.warn, false)
             else -> Triple("Tor", R.color.ok, true)
         }
@@ -541,6 +542,8 @@ class BrowserActivity : Activity() {
             when {
                 // omnid's proxy refuses a .i2p site when no I2P router answers.
                 error.code == WebRequestError.ERROR_CONNECTION_REFUSED && BrowserConfig.isI2p(uri) -> R.string.browser_error_no_i2p_router
+                // And a Hyphanet page when no node answers.
+                error.code == WebRequestError.ERROR_CONNECTION_REFUSED && BrowserConfig.isHyphanet(uri) -> R.string.browser_error_no_hyphanet_node
                 // omnid's proxy reports a host Tor or I2P could not reach as an unknown host.
                 error.code == WebRequestError.ERROR_UNKNOWN_HOST -> R.string.browser_error_unreachable
                 error.code == WebRequestError.ERROR_HTTPS_ONLY -> R.string.browser_error_https_only
@@ -559,8 +562,8 @@ class BrowserActivity : Activity() {
             "<p style='margin:0 0 1.25rem'>${escape(reason)}</p>" +
             "<p style='margin:0;word-break:break-all;color:#8690BD;font:12.5px/1.5 monospace'>${escape(uri.orEmpty())}</p>" +
             "<p style='margin:.5rem 0 0;color:#8690BD;font-size:12.5px'>${escape(getString(R.string.browser_error_code, "0x" + Integer.toHexString(error.code)))}</p>" +
-            // A .i2p site over HTTPS: reload it over HTTP with an exception for this site, before
-            // the error is drawn. Gecko gives error pages that call; without it the error shows.
+            // A .i2p site or Hyphanet page over HTTPS: reload it over HTTP with an exception for
+            // this site, before the error is drawn. Gecko gives error pages that call; without it the error shows.
             (if (BrowserConfig.retriesOverHttp(uri)) "<script>if(document.reloadWithHttpsOnlyException){document.body.hidden=true;document.reloadWithHttpsOnlyException()}</script>" else "")
         return "data:text/html;charset=utf-8," + Uri.encode(html)
     }

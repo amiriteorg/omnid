@@ -40,9 +40,34 @@ function site(details) {
   }
 }
 
+// Which overlay network a host is on, if one the browser reaches through a
+// router or node of the owner's own.
+function overlay(host) {
+  if (host.endsWith(".i2p")) return "i2p";
+  if (host === "hyphanet") return "hyphanet";
+  return null;
+}
+
+// A page loads nothing from I2P or Hyphanet unless it is there itself:
+// otherwise any site could learn, by loading an image from one, that this
+// phone runs omnid with a router or node. Following a link there is the
+// person's own choice and is not affected.
+function crossesIntoOverlay(details) {
+  if (details.type === "main_frame") return false;
+  let target;
+  try {
+    target = overlay(new URL(details.url).hostname);
+  } catch {
+    return false;
+  }
+  return target !== null && overlay(site(details)) !== target;
+}
+
 browser.proxy.onRequest.addListener(
   async (details) => {
     const { port, password } = await config();
+    // To Gecko's dead-end port, where it fails like any request this does not route.
+    if (crossesIntoOverlay(details)) return { type: "socks", host: "127.0.0.1", port: 9, proxyDNS: true };
     return { type: "socks", host: "127.0.0.1", port, username: site(details), password, proxyDNS: true };
   },
   { urls: ["<all_urls>"] },

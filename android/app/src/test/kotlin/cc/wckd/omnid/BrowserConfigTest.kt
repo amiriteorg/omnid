@@ -61,6 +61,9 @@ class BrowserConfigTest {
         }
         assertTrue(BrowserConfig.isI2p("http://stats.i2p/"))
         assertFalse(BrowserConfig.isI2p("http://x.onion/"))
+        assertTrue(BrowserConfig.retriesOverHttp("https://hyphanet/USK@abc,def,AQACAAE/site/1/"))
+        assertTrue(BrowserConfig.isHyphanet("http://Hyphanet/CHK@x"))
+        assertFalse(BrowserConfig.isHyphanet("http://hyphanet.example/"))
     }
 
     @Test
@@ -71,6 +74,10 @@ class BrowserConfigTest {
         assertEquals("example.com/a?b=c", BrowserConfig.displayAddress("https://example.com/a?b=c"))
         assertEquals("stats.i2p", BrowserConfig.displayAddress("http://stats.i2p"))
         assertEquals("7j74tcia…lswva.b32.i2p/x", BrowserConfig.displayAddress("http://7j74tciapju2shi3a337dl62zqcuqotha47y32ux4jbqgkzlswva.b32.i2p/x"))
+        assertEquals(
+            "hyphanet/USK@62H8KFSZ…/freenet-first-steps/24",
+            BrowserConfig.displayAddress("http://hyphanet/USK@62H8KFSZWMyQ2MQgwvNhEYJ2m3SQl696PfsVfWQ-HQo,cJrPvdNz4AnrHJQXNteDV7k3YnAVY-MClt84gwH2qEo,AQACAAE/freenet-first-steps/24/"),
+        )
         assertEquals("about:blank", BrowserConfig.displayAddress("about:blank"))
     }
 
@@ -81,6 +88,8 @@ class BrowserConfigTest {
         assertEquals("http://stats.i2p", BrowserConfig.address("stats.i2p"))
         assertEquals("http://x.onion", BrowserConfig.address("http://x.onion"))
         assertEquals("https://example.com:8443", BrowserConfig.address("example.com:8443"))
+        assertEquals("http://hyphanet/USK@abc,def,AQACAAE/site/1/", BrowserConfig.address("freenet:USK@abc,def,AQACAAE/site/1/"))
+        assertEquals("http://hyphanet/CHK@abc,def,AAMC--8/file.pdf", BrowserConfig.address("CHK@abc,def,AAMC--8/file.pdf"))
         for (notAnAddress in listOf("", "tor browser", "localhost", "file:///etc/hosts", "javascript:alert(1)", ".onion")) {
             assertNull(notAnAddress, BrowserConfig.address(notAnAddress))
         }

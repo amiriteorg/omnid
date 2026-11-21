@@ -14,6 +14,7 @@
     <color name="glow">#2F5BE6</color>
     <color name="onion">#6A49DF</color>
     <color name="i2p">#0B7F86</color>
+    <color name="hyphanet">#2A63D6</color>
     <color name="ok">#128A52</color>
     <color name="warn">#9C5D00</color>
 </resources>

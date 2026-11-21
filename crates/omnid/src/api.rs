@@ -4,10 +4,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::extract::{Query, Request, State};
+use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use omnid_core::{Network, Source};
@@ -48,6 +48,7 @@ pub fn router(state: AppState, listen: SocketAddr, token: Option<String>) -> Rou
         .route("/api/submit", post(submit))
         .route("/api/status", get(status))
         .route("/api/crawl", post(crawl))
+        .route("/hyphanet/{*key}", get(hyphanet))
         .with_state(state);
     if let Some(token) = token {
         router = router.layer(middleware::from_fn_with_state(Arc::<str>::from(token), require_token));
@@ -160,6 +161,29 @@ struct Submission {
 }
 
 /// Queues an address for crawling now, even if it is already known.
+/// A Hyphanet page in an ordinary browser: the search page links here
+/// outside the app, and the node's own FProxy serves it. Keys only, never a
+/// URL, so this redirects nowhere but the node.
+async fn hyphanet(State(state): State<AppState>, Path(key): Path<String>) -> Result<Redirect, ApiError> {
+    let fproxy = state
+        .gateway
+        .fproxy()
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "no Hyphanet node is configured".into()))?;
+    let source =
+        Source::parse(&format!("freenet:{key}")).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
+    let Source::Hyphanet(key) = &source else {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "not a Hyphanet key".into()));
+    };
+    if state.safety.check_source(&source) != Verdict::Allow {
+        return Err(ApiError(StatusCode::FORBIDDEN, "that site is on the denylist".into()));
+    }
+    let page = fproxy.join(key).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
+    if page.origin() != fproxy.origin() {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "not a Hyphanet key".into()));
+    }
+    Ok(Redirect::temporary(page.as_str()))
+}
+
 async fn submit(State(state): State<AppState>, Json(submission): Json<Submission>) -> Result<Response, ApiError> {
     let source = Source::parse(&submission.url).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
     if state.safety.check_source(&source) != Verdict::Allow {

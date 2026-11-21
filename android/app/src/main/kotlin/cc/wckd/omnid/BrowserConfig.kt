@@ -100,12 +100,22 @@ internal object BrowserConfig {
     }
 
     /**
-     * Whether a load that failed is tried again over plain HTTP. HTTPS-only mode upgrades every
-     * address before it loads, and few `.i2p` sites serve HTTPS. I2P encrypts the whole way, as Tor
-     * does for onion services (which Gecko leaves alone on its own), so HTTP is not readable on
-     * the way there.
+     * The name the daemon gives the Hyphanet node's FProxy: `http://hyphanet/USK@…` opens a
+     * Hyphanet page through the node set under ⋮ → Hyphanet node (`omnid_net::HYPHANET_HOST`).
      */
-    fun retriesOverHttp(url: String?): Boolean = url?.startsWith("https:", ignoreCase = true) == true && isI2p(url)
+    const val HYPHANET_HOST = "hyphanet"
+
+    /**
+     * Whether a load that failed is tried again over plain HTTP. HTTPS-only mode upgrades every
+     * address before it loads; few `.i2p` sites serve HTTPS and Hyphanet pages never do. I2P
+     * encrypts the whole way, as Tor does for onion services (which Gecko leaves alone on its own),
+     * and Hyphanet pages come from the owner's own node, so HTTP is not readable on the way there.
+     */
+    fun retriesOverHttp(url: String?): Boolean =
+        url?.startsWith("https:", ignoreCase = true) == true && (isI2p(url) || isHyphanet(url))
+
+    /** Whether the address is a Hyphanet page, through the node. */
+    fun isHyphanet(url: String?): Boolean = runCatching { URI(url).host }.getOrNull()?.lowercase() == HYPHANET_HOST
 
     /** Whether the address is a `.i2p` site, which the daemon reaches through an I2P router. */
     fun isI2p(url: String?): Boolean {
@@ -122,8 +132,10 @@ internal object BrowserConfig {
         val bare = url.substringAfter("://", url).trimEnd('/')
         val onion = Regex("""^((?:[a-z0-9-]+\.)*)([a-z2-7]{8})[a-z2-7]{43}([a-z2-7]{5})\.onion""", RegexOption.IGNORE_CASE)
             .replace(bare) { m -> "${m.groupValues[1]}${m.groupValues[2]}…${m.groupValues[3]}.onion" }
-        return Regex("""^([a-z2-7]{8})[a-z2-7]{39,}([a-z2-7]{5})\.b32\.i2p""", RegexOption.IGNORE_CASE)
+        val i2p = Regex("""^([a-z2-7]{8})[a-z2-7]{39,}([a-z2-7]{5})\.b32\.i2p""", RegexOption.IGNORE_CASE)
             .replace(onion) { m -> "${m.groupValues[1]}…${m.groupValues[2]}.b32.i2p" }
+        // A Hyphanet key keeps its type, its first eight characters and the site's own name.
+        return Regex("""^($HYPHANET_HOST/[A-Z]{3}@[A-Za-z0-9~-]{8})[^/]*""").replace(i2p) { m -> "${m.groupValues[1]}…" }
     }
 
     /**
@@ -134,6 +146,8 @@ internal object BrowserConfig {
     fun address(typed: String): String? {
         val text = typed.trim()
         if (text.isEmpty() || text.any { it.isWhitespace() }) return null
+        // A Hyphanet key, with or without its freenet: or hyphanet: prefix, opens through the node.
+        Regex("""^(?:freenet:|hyphanet:)?((?:USK|SSK|CHK|KSK)@\S+)$""").find(text)?.let { return "http://$HYPHANET_HOST/${it.groupValues[1]}" }
         val scheme = text.substringBefore("://", "").lowercase()
         if (scheme.isNotEmpty()) return if (scheme == "http" || scheme == "https") text else null
         val host = text.substringBefore('/').substringBefore(':').lowercase()

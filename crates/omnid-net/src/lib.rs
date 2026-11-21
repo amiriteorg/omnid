@@ -28,6 +28,11 @@ use url::Url;
 
 pub use guard::is_public_ip;
 
+/// The name `http://hyphanet/USK@…` gives the Hyphanet node's FProxy, for the
+/// app's browser and the SOCKS proxy. A single label, so no real host has it;
+/// it leads to the configured node and nowhere else.
+pub const HYPHANET_HOST: &str = "hyphanet";
+
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug, Clone)]
@@ -312,8 +317,9 @@ impl Gateway {
     }
 
     /// Opens a raw stream to `host:port` over the network its name implies:
-    /// `.onion` through Tor, `.i2p` through i2pd, anything else directly (or
-    /// through Tor with `clearnet_via_tor`). This is what the SOCKS proxy
+    /// `.onion` through Tor, `.i2p` through i2pd, [`HYPHANET_HOST`] to the
+    /// Hyphanet node, anything else directly (or through Tor with
+    /// `clearnet_via_tor`). This is what the SOCKS proxy
     /// serves. Tor streams buffer writes: flush after writing a request.
     pub async fn connect(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
         let (host, network) = stream_target(host);
@@ -334,6 +340,7 @@ impl Gateway {
             }
             match network {
                 Network::I2p => self.i2p_tunnel(&host, port).await,
+                Network::Hyphanet => self.fproxy_stream(port).await,
                 _ => self.direct(&host, port).await,
             }
         };
@@ -342,14 +349,17 @@ impl Gateway {
 
     /// A stream for the built-in browser, which is on `site`: `.onion` and
     /// the clearnet through Tor, on circuits no other site and not the
-    /// crawler uses; `.i2p` through i2pd. Never a direct connection, whatever
+    /// crawler uses; `.i2p` through i2pd; [`HYPHANET_HOST`] to the Hyphanet
+    /// node. Never a direct connection to anywhere else, whatever
     /// `clearnet_via_tor` says: without Tor the clearnet is unavailable.
     pub async fn connect_browser(&self, host: &str, port: u16, site: &str) -> Result<BoxStream, FetchError> {
         let (host, network) = stream_target(host);
         let timeout = self.cfg.overlay_timeout;
         let connect = async {
-            if network == Network::I2p {
-                return self.i2p_tunnel(&host, port).await;
+            match network {
+                Network::I2p => return self.i2p_tunnel(&host, port).await,
+                Network::Hyphanet => return self.fproxy_stream(port).await,
+                _ => {}
             }
             let tor = self.tor.as_ref().ok_or_else(|| unavailable(network, "Tor is disabled"))?;
             let transport = |error: BoxError| FetchError::Transport { network, error };
@@ -357,6 +367,11 @@ impl Gateway {
             Ok(Box::new(tor.isolated_stream(&host, port, site).await.map_err(transport)?) as BoxStream)
         };
         tokio::time::timeout(timeout, connect).await.map_err(|_| FetchError::Timeout(timeout))?
+    }
+
+    /// The Hyphanet node's FProxy, if one is configured.
+    pub fn fproxy(&self) -> Option<&Url> {
+        self.cfg.fproxy.as_ref()
     }
 
     /// New Tor circuits for every site the browser visits from now on.
@@ -386,6 +401,29 @@ impl Gateway {
         let stream = tokio::net::TcpStream::connect(&allowed[..])
             .await
             .map_err(|e| FetchError::Transport { network, error: e.into() })?;
+        Ok(Box::new(stream))
+    }
+
+    /// A stream to the Hyphanet node's FProxy, for [`HYPHANET_HOST`] on port
+    /// 80: the node omnid was given is where Hyphanet pages come from, as
+    /// i2pd is for `.i2p`. Plain HTTP only; an HTTPS attempt is refused.
+    async fn fproxy_stream(&self, port: u16) -> Result<BoxStream, FetchError> {
+        let network = Network::Hyphanet;
+        let fproxy = self.cfg.fproxy.as_ref().ok_or_else(|| unavailable(network, "no Hyphanet node configured"))?;
+        if port != 80 {
+            let error = format!("Hyphanet pages are http://{HYPHANET_HOST}/ on port 80, not {port}");
+            return Err(FetchError::Transport { network, error: error.into() });
+        }
+        let (Some(host), Some(node_port), "http") =
+            (fproxy.host_str(), fproxy.port_or_known_default(), fproxy.scheme())
+        else {
+            return Err(unavailable(network, "the browser reaches a Hyphanet node over http only"));
+        };
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        let stream = tokio::net::TcpStream::connect((host, node_port)).await.map_err(|_| FetchError::Unavailable {
+            network,
+            reason: format!("nothing is listening on {fproxy}; is the node running?"),
+        })?;
         Ok(Box::new(stream))
     }
 
@@ -441,6 +479,8 @@ fn stream_target(host: &str) -> (String, Network) {
         Network::Onion
     } else if host.ends_with(".i2p") {
         Network::I2p
+    } else if host == HYPHANET_HOST {
+        Network::Hyphanet
     } else {
         Network::Clearnet
     };
