@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The icon's four rings, cropped to their extent, in the accent colour: the toolbar mark on
-     the light ground, where the icon's pale glow would not read. Dark uses the glow itself
-     (drawable-night-nodpi). -->
+<!-- The icon's four rings, cropped to their extent, flat in the accent colour: the toolbar mark
+     in both schemes, as on the search page's header. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="30dp"
     android:height="30dp"

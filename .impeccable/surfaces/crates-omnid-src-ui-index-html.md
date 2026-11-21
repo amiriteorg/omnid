@@ -8,38 +8,34 @@ related_targets: ["crates/omnid/src/ui/app.css","crates/omnid/src/ui/app.js","an
 # Search page and app chrome
 
 Scope: the daemon's search page (`crates/omnid/src/ui`), shown in the Android app's WebView and in
-desktop browsers, plus the app's native chrome (start screen, toolbar, the browser's toolbar).
-Mode: Operate. Phone first.
+desktop browsers, plus the app's native chrome (start screen, action bar, the browser's toolbar,
+tab list and find bar). Mode: Operate. Phone first.
 
 Audience and task: privacy-minded people, not experts, searching and exploring onion, I2P,
-Hyphanet, torrent and clearnet results from their own index, then opening them in omnid's
-private browser. Craft bar named by the user: Arc / Arc Search (speed, fluidity) and Signal /
-Proton (trust, plain security states).
+Hyphanet, torrent and clearnet results from their own index, then opening them in OMNId's
+private browser, in tabs.
 
 ## Direction contract
 
-THESIS: One fast, calm search across every network where trust is visible: each result says which
-network it lives on and whether the way there is sealed. It refuses both a themed costume and the
-generic grey search app: the icon's navy and glow are the whole palette.
+THESIS: A photocopied zine of the networks: the same fast search and honest state, made to look
+made rather than themed. It refuses the soft rounded app (pills, tonal cards) the first build
+shipped and the black-and-neon "dark web" costume alike.
 
-OWN-WORLD: Navy #0B0D1F ground (light scheme: cool white with navy ink), one glow blue for the
-primary action and focus, periwinkle for selection, ice for highlights; network colours only as
-small dots and badges (onion violet, I2P teal, Hyphanet blue, clearnet ice, magnets amber). System
-sans on a 1.2 scale, tabular figures for data, mono only for addresses. 14 to 16 px radii, hairline
-rows, soft shadows only on what floats. Drawn SVG icons, one stroke weight.
+OWN-WORLD: The icon's navy palette, unchanged in both schemes. Space Mono (bold for the wordmark,
+heads, titles, chips; regular for addresses, labels, meta), uppercase for state words. No corners
+anywhere. Rules instead of boxes: a ruled trust strip, an underlined search line, dashed rules
+between results. Selection is a solid ink block. The periwinkle accent is a highlighter behind
+unread result titles. Network badges are outlined in their hue. Square dots, square-capped icons.
 
-STORY: They see at a glance that the routers are up and private, type, get results as they type,
-and open one in the private browser in one tap. With no query they explore the best sites per
-network and can add an address to crawl.
+STORY: They see the routers' state on a ruled strip, type on a line, read results as highlighted
+titles over plain snippets, and open one in the browser, whose chrome speaks the same type.
 
-FIRST VIEWPORT: Phone. The toolbar shares the page's ground. A trust strip: Tor, DHT, I2P and
-Hyphanet states plus what the crawler is doing. A 52 px search field with icon and clear. A
-scrolling row of network chips with counts. Then results (title opens the private browser,
-snippet, routes with network badge and lock, language and dates) or, empty, Explore.
+FIRST VIEWPORT: Phone. Action bar with the mark and OMNId in Space Mono Bold. The ruled strip:
+TOR, TORRENTS, I2P, HYPHANET, then the crawler's word. The search line. Chips as ink blocks. Then
+Explore or results.
 
-FORM: seed: none (pinned) "I want a modern sleek trustworthy super fast UI/UX using the Icon/logo
-colors to create a coherent feel and optimal experience searching using the OMNId browser/daemon".
-Signature interaction: results update in place as you type, no spinner, with a skeleton only past
-150 ms; each router state explains itself on tap.
+FORM: seed: none (pinned) "xerox": the user's pick of direction 02 "Xerox" on the wordmark decision
+page (Space Mono; "a photocopied zine: mono, hard edges, rules not boxes"), asked for as "make the
+wordmark another font, and make the style/aesthetic a little more underground".
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

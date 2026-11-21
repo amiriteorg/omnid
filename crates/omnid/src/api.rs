@@ -21,7 +21,8 @@ use tokio::sync::mpsc;
 
 /// Crawled titles and descriptions are attacker-controlled; the page renders
 /// them as text, and this policy is the second line of defence.
-const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; \
+const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; \
+                   connect-src 'self'; \
                    base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const TOKEN_COOKIE: &str = "omnid_token";
 
@@ -44,6 +45,9 @@ pub fn router(state: AppState, listen: SocketAddr, token: Option<String>) -> Rou
         .route("/app.js", get(|| asset("text/javascript; charset=utf-8", include_bytes!("ui/app.js"))))
         .route("/app.css", get(|| asset("text/css; charset=utf-8", include_bytes!("ui/app.css"))))
         .route("/icon.png", get(|| asset("image/png", include_bytes!("ui/icon.png"))))
+        // Space Mono (SIL Open Font License 1.1, `ui/space-mono-OFL.txt`; the files carry it too).
+        .route("/space-mono-regular.woff", get(|| asset("font/woff", include_bytes!("ui/space-mono-regular.woff"))))
+        .route("/space-mono-bold.woff", get(|| asset("font/woff", include_bytes!("ui/space-mono-bold.woff"))))
         .route("/api/search", get(search))
         .route("/api/submit", post(submit))
         .route("/api/status", get(status))

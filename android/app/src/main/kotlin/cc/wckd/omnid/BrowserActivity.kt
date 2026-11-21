@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -23,6 +24,7 @@ import android.text.TextWatcher
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
+import android.util.Base64
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -92,6 +94,8 @@ class BrowserActivity : Activity() {
          */
         private var carried: Carried? = null
         private var running: WeakReference<BrowserActivity>? = null
+        /** Space Mono Bold as a data: URI, for the error page, which loads nothing from outside. */
+        private var errorFont: String? = null
 
         /** Closes every tab, as Close browser does: for when OMNId stops. */
         fun closeAll() {
@@ -131,8 +135,16 @@ class BrowserActivity : Activity() {
     private var level = SecurityLevel.STANDARD
     /** Addresses to open once the runtime is ready. */
     private val pending = mutableListOf<String>()
+    /** Counts finds, so a slow answer to an earlier keystroke does not overwrite the latest. */
+    private var finds = 0
+    /** Typing finds once it pauses: finds that overlap can come back uncounted. */
+    private val findTyped = Runnable { find(again = false) }
 
     private val shown: Tab? get() = tabs.shown
+
+    /** Space Mono, the search page's face: regular for addresses, bold for labels and names. */
+    private val mono by lazy { resources.getFont(R.font.space_mono) }
+    private val monoBold by lazy { resources.getFont(R.font.space_mono_bold) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -641,7 +653,8 @@ class BrowserActivity : Activity() {
                 val mark = list[position]
                 return row(
                     mark.title.ifBlank { BrowserConfig.displayAddress(mark.url) },
-                    where(mark.url, secure = null),
+                    mark.url,
+                    secure = null,
                     current = false,
                     removeLabel = getString(R.string.browser_remove_bookmark),
                     open = {
@@ -660,7 +673,8 @@ class BrowserActivity : Activity() {
             .setTitle(R.string.browser_bookmarks)
             .setView(ListView(this).apply {
                 adapter = rows
-                divider = null
+                divider = getDrawable(R.drawable.rule_dashed)
+                dividerHeight = dp(3)
             })
             .setNegativeButton(R.string.browser_close_list, null)
             .show()
@@ -696,27 +710,31 @@ class BrowserActivity : Activity() {
         }
     }
 
-    private fun showKind(url: String?, secure: Boolean?) {
-        val shownKind = kindOf(url, secure)
-        kind.text = shownKind.label
-        kind.setTextColor(getColor(shownKind.color))
-        val lock = checkNotNull(getDrawable(if (shownKind.sealed) R.drawable.ic_lock else R.drawable.ic_lock_open)).mutate()
-        val size = (16 * resources.displayMetrics.density).toInt()
-        lock.setBounds(0, 0, size, size)
-        lock.setTint(getColor(shownKind.color))
-        kind.setCompoundDrawablesRelative(lock, null, null, null)
-        kind.visibility = if (shownKind.label.isEmpty()) View.GONE else View.VISIBLE
+    private fun showKind(url: String?, secure: Boolean?) = showBadge(kind, kindOf(url, secure))
+
+    /** A network badge, as the search page's route badges: the kind in capitals, a lock, an outline. */
+    private fun badge() = TextView(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        includeFontPadding = false
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+        typeface = monoBold
+        isAllCaps = true
+        letterSpacing = 0.06f
+        compoundDrawablePadding = dp(4)
+        setPadding(dp(4), dp(4), dp(5), dp(4))
+        visibility = View.GONE
     }
 
-    /** "Onion · 2gzyxa5i…53wid.onion": the network in its colour, then the short address. */
-    private fun where(url: String?, secure: Boolean?): CharSequence {
-        if (url == null) return ""
-        val at = kindOf(url, secure)
-        val text = SpannableStringBuilder()
-        if (at.label.isNotEmpty()) {
-            text.append(at.label, ForegroundColorSpan(getColor(at.color)), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE).append(" · ")
-        }
-        return text.append(BrowserConfig.displayAddress(url))
+    /** Puts [shownKind] on [view] in its colour, or [color] (on the ink block, the ground's). */
+    private fun showBadge(view: TextView, shownKind: Kind, color: Int = getColor(shownKind.color)) {
+        view.text = shownKind.label
+        view.setTextColor(color)
+        view.background = GradientDrawable().apply { setStroke(dp(1), color) }
+        val lock = checkNotNull(getDrawable(if (shownKind.sealed) R.drawable.ic_lock else R.drawable.ic_lock_open)).mutate()
+        lock.setBounds(0, 0, dp(12), dp(12))
+        lock.setTint(color)
+        view.setCompoundDrawablesRelative(lock, null, null, null)
+        view.visibility = if (shownKind.label.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private fun showFailure(error: Throwable?) {
@@ -785,7 +803,7 @@ class BrowserActivity : Activity() {
     }
 
     /** Finds what is typed: from the top when it changes, else the next match, or the one before. */
-    private fun find(again: Boolean, backwards: Boolean = false) {
+    private fun find(again: Boolean, backwards: Boolean = false, recount: Boolean = true) {
         val finder = shown?.session?.finder ?: return
         val text = findText.text.toString()
         if (text.isEmpty()) {
@@ -793,11 +811,16 @@ class BrowserActivity : Activity() {
             findCount.text = ""
             return
         }
+        val asked = ++finds
         finder.find(if (again) null else text, if (backwards) GeckoSession.FINDER_FIND_BACKWARDS else 0).accept { result ->
-            findCount.text = if (result?.found == true) {
-                getString(R.string.browser_find_count, result.current, result.total)
-            } else {
-                getString(R.string.browser_find_none)
+            if (asked != finds) return@accept
+            when {
+                result?.found != true -> findCount.text = getString(R.string.browser_find_none)
+                result.total > 0 -> findCount.text = getString(R.string.browser_find_count, result.current, result.total)
+                // Found before Gecko had counted the matches: ask once more, which finds the same
+                // match again (a new search starts at the selection) and has the count by then.
+                recount -> findCount.postDelayed({ if (asked == finds) find(again = false, recount = false) }, 250)
+                else -> findCount.text = ""
             }
         }
     }
@@ -867,12 +890,17 @@ class BrowserActivity : Activity() {
         setOnClickListener(onClick)
     }
 
-    /** A text field in the address pill's shape. */
+    /** A text field on the address rule, in the mono. */
     private fun field(hint: Int) = EditText(this).apply {
         this.hint = getString(hint)
         isSingleLine = true
         ellipsize = TextUtils.TruncateAt.END
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        // The small step: the mono is wide, and addresses are long. What does not fit fades out at
+        // the edge, since an editable field cannot end in an ellipsis.
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+        typeface = mono
+        isHorizontalFadingEdgeEnabled = true
+        setFadingEdgeLength(dp(20))
         setTextColor(getColor(R.color.ink))
         setHintTextColor(getColor(R.color.muted))
         background = null
@@ -885,7 +913,7 @@ class BrowserActivity : Activity() {
         // Centre the badge and the text on each other, not on their text baselines.
         isBaselineAligned = false
         setBackgroundResource(R.drawable.bg_address)
-        setPadding(dp(14), 0, dp(4), 0)
+        setPadding(dp(4), 0, 0, 0)
     }
 
     private fun toolbar(vararg views: Pair<View, LinearLayout.LayoutParams>) = LinearLayout(this).apply {
@@ -907,15 +935,7 @@ class BrowserActivity : Activity() {
         tabButton = TabButton(this).apply { setOnClickListener { showTabList(true) } }
         val menu = button(R.drawable.ic_more, R.string.browser_menu, ::showMenu)
         setEnabled(back, false)
-        kind = TextView(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            includeFontPadding = false
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            compoundDrawablePadding = dp(4)
-            setPadding(0, 0, dp(6), 0)
-            visibility = View.GONE
-        }
+        kind = badge()
         address = field(R.string.browser_address_hint).apply {
             inputType = InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_CLASS_TEXT
             // The keyboard must not learn or sync what is typed here.
@@ -939,9 +959,9 @@ class BrowserActivity : Activity() {
         }
         // The address pill: where the page came from and how, the address, and reload.
         val addressPill = pill().apply {
-            addView(kind)
+            addView(kind, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(6) })
             addView(address, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(reload, LinearLayout.LayoutParams(dp(40), dp(40)))
+            addView(reload, LinearLayout.LayoutParams(dp(48), dp(48)))
             setOnClickListener { focusAddress() }
         }
         bar = toolbar(
@@ -957,7 +977,10 @@ class BrowserActivity : Activity() {
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-                override fun afterTextChanged(s: Editable?) = find(again = false)
+                override fun afterTextChanged(s: Editable?) {
+                    findText.removeCallbacks(findTyped)
+                    findText.postDelayed(findTyped, 150)
+                }
             })
             setOnEditorActionListener { _, _, _ ->
                 find(again = true)
@@ -965,7 +988,8 @@ class BrowserActivity : Activity() {
             }
         }
         findCount = TextView(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            typeface = mono
             setTextColor(getColor(R.color.muted))
             setPadding(dp(8), 0, dp(10), 0)
         }
@@ -1022,8 +1046,10 @@ class BrowserActivity : Activity() {
     /** Every open tab, the shown one marked: a tap shows one, × closes it. */
     private fun buildTabList(): View {
         tabListTitle = TextView(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            typeface = monoBold
+            isAllCaps = true
+            letterSpacing = 0.04f
             setTextColor(getColor(R.color.ink))
             setPadding(dp(14), 0, 0, 0)
         }
@@ -1039,7 +1065,8 @@ class BrowserActivity : Activity() {
                 val tab = tabs.all[position]
                 return row(
                     tabName(tab),
-                    where(tab.url, tab.secure),
+                    tab.url,
+                    tab.secure,
                     current = position == tabs.current,
                     removeLabel = getString(R.string.browser_close_tab),
                     open = { showTab(tab) },
@@ -1049,7 +1076,8 @@ class BrowserActivity : Activity() {
         }
         val rows = ListView(this).apply {
             adapter = tabRows
-            divider = null
+            divider = getDrawable(R.drawable.rule_dashed)
+            dividerHeight = dp(3)
             clipToPadding = false
             setPadding(0, 0, 0, dp(8))
         }
@@ -1060,15 +1088,21 @@ class BrowserActivity : Activity() {
         }
     }
 
-    /** A row of the tab list or the bookmarks: the name, then where it is, and a button to close or remove it. */
+    /**
+     * A row of the tab list or the bookmarks: the name, then its network's badge and short address,
+     * and a button to close or remove it.
+     */
     private fun row(
         title: String,
-        where: CharSequence,
+        url: String?,
+        secure: Boolean?,
         current: Boolean,
         removeLabel: String,
         open: () -> Unit,
         remove: () -> Unit,
     ): View {
+        // On the ink block everything takes the ground's colour, the network's included.
+        val ink = getColor(if (current) R.color.ground else R.color.ink)
         val text = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@BrowserActivity).apply {
@@ -1076,27 +1110,39 @@ class BrowserActivity : Activity() {
                 isSingleLine = true
                 ellipsize = TextUtils.TruncateAt.END
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setTextColor(getColor(R.color.ink))
+                typeface = monoBold
+                letterSpacing = -0.02f
+                setTextColor(ink)
             })
-            if (where.isNotEmpty()) {
-                addView(TextView(this@BrowserActivity).apply {
-                    text = where
-                    isSingleLine = true
-                    ellipsize = TextUtils.TruncateAt.END
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                    setTextColor(getColor(R.color.muted))
-                })
+            if (url != null) {
+                val at = kindOf(url, secure)
+                addView(LinearLayout(this@BrowserActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    isBaselineAligned = false
+                    addView(badge().also { showBadge(it, at, if (current) ink else getColor(at.color)) },
+                        LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(8) })
+                    addView(TextView(this@BrowserActivity).apply {
+                        text = BrowserConfig.displayAddress(url)
+                        isSingleLine = true
+                        ellipsize = TextUtils.TruncateAt.END
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                        typeface = mono
+                        setTextColor(if (current) ink else getColor(R.color.muted))
+                    }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
             }
         }
         val inner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(60)
-            setPadding(dp(14), dp(6), dp(2), dp(6))
+            setPadding(dp(12), dp(6), dp(2), dp(6))
             if (current) setBackgroundResource(R.drawable.bg_tab_current) else setBackgroundResource(ripple(borderless = false))
             addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(ImageButton(this@BrowserActivity).apply {
                 setImageResource(R.drawable.ic_close)
+                setColorFilter(ink)
                 setBackgroundResource(ripple(borderless = true))
                 contentDescription = "$removeLabel: $title"
                 // A focusable child would take the row's taps in a ListView.
@@ -1130,10 +1176,13 @@ class BrowserActivity : Activity() {
             },
         )
         val escape = { text: String -> TextUtils.htmlEncode(text) }
+        val font = errorFont ?: ("data:font/woff;base64," +
+            Base64.encodeToString(assets.open("fonts/space-mono-bold.woff").use { it.readBytes() }, Base64.NO_WRAP)).also { errorFont = it }
         // The brand's dark scheme always: Gecko's fingerprinting protection reports a light one.
         val html = "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>" +
+            "<style>@font-face{font-family:m;font-weight:700;src:url($font)}</style>" +
             "<body style='font:15px/1.55 sans-serif;margin:0;padding:3rem 1.5rem;background:#0B0D1F;color:#B2BBDF;min-height:100vh'>" +
-            "<h1 style='margin:0 0 .5rem;font-size:21.6px;font-weight:650;color:#EEF2FF'>${escape(getString(R.string.browser_error_title))}</h1>" +
+            "<h1 style='margin:0 0 .5rem;font:700 21.6px/1.3 m,monospace;letter-spacing:-.04em;color:#EEF2FF'>${escape(getString(R.string.browser_error_title))}</h1>" +
             "<p style='margin:0 0 1.25rem'>${escape(reason)}</p>" +
             "<p style='margin:0;word-break:break-all;color:#8690BD;font:12.5px/1.5 monospace'>${escape(uri.orEmpty())}</p>" +
             "<p style='margin:.5rem 0 0;color:#8690BD;font-size:12.5px'>${escape(getString(R.string.browser_error_code, "0x" + Integer.toHexString(error.code)))}</p>" +
@@ -1149,8 +1198,8 @@ internal class TabButton(context: Context) : FrameLayout(context) {
     private val number = TextView(context).apply {
         gravity = Gravity.CENTER
         includeFontPadding = false
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+        typeface = context.resources.getFont(R.font.space_mono_bold)
         setTextColor(context.getColor(R.color.ink))
         setBackgroundResource(R.drawable.bg_tab_count)
     }

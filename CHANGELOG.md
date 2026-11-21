@@ -21,6 +21,11 @@
   gamepads, WebGPU, DRM and beacons are off; lookalike names show as punycode.
 - New identity closes every tab, after asking.
 - Tapping the address bar selects the whole address, so what is typed replaces it.
+- A new look, "Xerox": the wordmark and every label, title and address in Space Mono (SIL Open
+  Font License, served by the daemon itself), no rounded corners, rules instead of boxes, an ink
+  block for what is selected, a highlighter behind unread result titles, and network badges
+  outlined in their colour, which they had lost to grey. Same navy palette, light and dark, with
+  the light scheme's green and teal a shade darker so small capitals in them read (4.5:1 or more).
 
 ## 0.1.1 (2026-11-21)
 
