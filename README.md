@@ -60,7 +60,9 @@ curl --socks5-hostname 127.0.0.1:7172 http://hyphanet/USK@…/   # a freesite, t
 ```
 
 Tor starts with the daemon and needs nothing installed. For I2P run i2pd
-(HTTP proxy on 4444); for Hyphanet run a node (FProxy on 8888). `--no-tor`,
+(HTTP proxy on 4444); for Hyphanet run a node (FProxy on 8888). Pages on a
+network whose router is down are put off rather than failed, and crawled as
+soon as it is back (omnid looks every 30 seconds). `--no-tor`,
 `--i2p-proxy` and `--fproxy` change that; `--clearnet-via-tor` sends
 clearnet traffic through Tor exits. omnid joins the BitTorrent DHT as a
 read-only node to resolve magnets (`--no-dht` to stay out); `--dht-harvest`
@@ -93,7 +95,9 @@ all of them), `"a phrase"`, `-exclude`, `title:word`, `site:host`,
 `network:onion`. The last word also matches the words it starts, from three
 letters, so results come while it is being typed. When nothing matches, plain
 words are matched with a letter wrong, missing, extra or swapped (two from
-eight letters), and the results say so (`fuzzy`).
+eight letters), and the results say so (`fuzzy`). On the search page, an
+address typed into the search field (an onion or `.i2p` host, a URL, a magnet
+or a Hyphanet key) can be opened or added to the index right there.
 
 ### API
 

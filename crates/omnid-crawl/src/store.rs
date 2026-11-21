@@ -205,6 +205,23 @@ impl CrawlStore {
         Ok(liveness as f32)
     }
 
+    /// Makes the addresses on `network` that wait out a deferral due now:
+    /// they were put off because its router was missing ([`Visit::Deferred`]),
+    /// and it is back. Returns how many.
+    pub fn retry_deferred(&self, network: Network, now: i64) -> rusqlite::Result<usize> {
+        let db = self.db();
+        let waiting: Vec<String> = db
+            .prepare_cached("SELECT url FROM pages WHERE state = 0 AND next_visit > ?1 AND next_visit <= ?2")?
+            .query_map(params![now, now + DEFERRED], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut due = db.prepare_cached("UPDATE pages SET next_visit = ?2 WHERE url = ?1 AND state = 0")?;
+        let mut retried = 0;
+        for url in waiting.iter().filter(|url| Source::parse(url).is_ok_and(|s| s.network() == network)) {
+            retried += due.execute(params![url, now])?;
+        }
+        Ok(retried)
+    }
+
     fn db(&self) -> MutexGuard<'_, Connection> {
         self.db.lock().expect("crawl store lock poisoned")
     }
@@ -242,6 +259,26 @@ mod tests {
 
     fn urls(jobs: &[Job]) -> Vec<String> {
         jobs.iter().map(|j| j.source.to_string()).collect()
+    }
+
+    #[test]
+    fn retries_what_waited_for_a_router() {
+        let store = CrawlStore::in_memory().unwrap();
+        let waiting = ["http://a.i2p/", "http://b.example/", "freenet:USK@abc,def,AQACAAE/site/1/"];
+        let jobs: Vec<_> = waiting.iter().map(|url| job(url, 0, 0.5)).collect();
+        store.schedule(&jobs, 0).unwrap();
+        for job in &jobs {
+            let url = job.source.to_string();
+            assert!(store.claim(&url, 0).unwrap());
+            store.finish(&url, job.source.network(), Visit::Deferred, 100).unwrap();
+        }
+        assert!(store.take_due(200, 10).unwrap().is_empty(), "all three wait out the deferral");
+        // The I2P router is up: its address is due, the others still wait.
+        assert_eq!(store.retry_deferred(Network::I2p, 200).unwrap(), 1);
+        assert_eq!(urls(&store.take_due(200, 10).unwrap()), ["http://a.i2p/"]);
+        assert_eq!(store.retry_deferred(Network::Hyphanet, 200).unwrap(), 1);
+        assert_eq!(urls(&store.take_due(200, 10).unwrap()), ["freenet:USK@abc,def,AQACAAE/site/1/"]);
+        assert_eq!(store.retry_deferred(Network::I2p, 200).unwrap(), 0, "nothing twice");
     }
 
     #[test]

@@ -4,18 +4,20 @@
 pub mod api;
 mod socks;
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use omnid_core::{Magnet, Source, now_secs};
+use omnid_core::{Magnet, Network, Source, now_secs};
 use omnid_crawl::{
     CrawlConfig, CrawlControl, CrawlStore, Crawler, HARVESTED_TRUST, Job, SEED_TRUST, Safety, StatsSnapshot,
 };
 use omnid_dht::{Dht, DhtConfig};
 use omnid_index::{SCHEMA_VERSION, SearchIndex};
-use omnid_net::{Gateway, GatewayConfig};
+use omnid_net::{Gateway, GatewayConfig, RouterState};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -90,8 +92,9 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
     let shutdown = CancellationToken::new();
     let crawl = tokio::spawn(crawler.run(rx, shutdown.clone()));
     if let (Some(dht), true) = (&dht, cfg.dht_harvest) {
-        tokio::spawn(harvest(dht.clone(), store, shutdown.clone()));
+        tokio::spawn(harvest(dht.clone(), store.clone(), shutdown.clone()));
     }
+    tokio::spawn(watch_routers(gateway.clone(), store, shutdown.clone()));
     let seeder = jobs.clone();
     tokio::spawn(async move {
         for job in cfg.seeds {
@@ -178,6 +181,36 @@ impl Daemon {
         // The server stopping for any reason stops the crawl too.
         self.shutdown.cancel();
         Ok(self.crawl.await?)
+    }
+}
+
+/// How often the daemon looks whether the I2P router and Hyphanet node are up.
+const ROUTER_CHECK: Duration = Duration::from_secs(30);
+
+/// When the I2P router or the Hyphanet node comes up (the i2pd app started,
+/// a node set), what was put off for want of it is crawled now instead of
+/// after its deferral.
+async fn watch_routers(gateway: Arc<Gateway>, store: Arc<CrawlStore>, shutdown: CancellationToken) {
+    let mut was_ready = HashSet::new();
+    loop {
+        let ready: HashSet<Network> =
+            gateway.status().await.into_iter().filter(|r| r.state == RouterState::Ready).map(|r| r.network).collect();
+        for network in [Network::I2p, Network::Hyphanet] {
+            if ready.contains(&network) && !was_ready.contains(&network) {
+                let store = store.clone();
+                match tokio::task::spawn_blocking(move || store.retry_deferred(network, now_secs())).await {
+                    Ok(Ok(0)) => {}
+                    Ok(Ok(n)) => tracing::info!(%network, retried = n, "router up: crawling what waited for it"),
+                    Ok(Err(e)) => tracing::warn!(%network, "retrying deferred addresses: {e}"),
+                    Err(e) => tracing::warn!(%network, "retrying deferred addresses: {e}"),
+                }
+            }
+        }
+        was_ready = ready;
+        tokio::select! {
+            _ = shutdown.cancelled() => return,
+            _ = tokio::time::sleep(ROUTER_CHECK) => {}
+        }
     }
 }
 
