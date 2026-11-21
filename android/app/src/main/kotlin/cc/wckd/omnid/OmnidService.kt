@@ -69,7 +69,10 @@ class OmnidService : Service() {
                 val port = Native.start(File(filesDir, "omnid").path, token, node)
                 endpoint = Endpoint(port, token, Native.browserProxyPort())
                 failure = null
-                val crawlPolicy = CrawlPolicy(this) { paused, reason -> native.execute { Native.setPaused(paused, reason) } }
+                val crawlPolicy = CrawlPolicy(this) { paused, reason ->
+                    native.execute { Native.setPaused(paused, reason) }
+                    showCrawling(paused, reason)
+                }
                 policy = crawlPolicy
                 mainExecutor.execute { crawlPolicy.start() }
             } catch (e: RuntimeException) {
@@ -96,6 +99,30 @@ class OmnidService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** The notification says what crawling waits for, when it waits. */
+    private fun showCrawling(paused: Boolean, reason: String) {
+        val text = if (paused && reason.isNotEmpty()) getString(R.string.notification_waiting, reason) else getString(R.string.notification_text)
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
+    }
+
+    private fun notification(text: String): Notification {
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val stop = PendingIntent.getService(
+            this, 0, Intent(this, OmnidService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE,
+        )
+        return Notification.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(getColor(R.color.glow))
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(text)
+            .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null, getString(R.string.stop), stop).build())
+            .setOngoing(true)
+            .build()
+    }
+
     private fun goForeground() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
@@ -103,21 +130,7 @@ class OmnidService : Service() {
                 description = getString(R.string.channel_description)
             },
         )
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stop = PendingIntent.getService(
-            this, 0, Intent(this, OmnidService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setColor(getColor(R.color.glow))
-            .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text))
-            .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, getString(R.string.stop), stop).build())
-            .setOngoing(true)
-            .build()
+        val notification = notification(getString(R.string.notification_text))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {

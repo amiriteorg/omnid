@@ -10,6 +10,7 @@
     <string name="channel_description">Shown while OMNId keeps its index and routers available</string>
     <string name="notification_title">OMNId is running</string>
     <string name="notification_text">Search is available; crawling follows your charger and Wi-Fi settings.</string>
+    <string name="notification_waiting">Search is available. Crawling is %1$s.</string>
     <string name="stop">Stop</string>
     <string name="crawl_anytime">Crawl on battery and mobile data</string>
     <string name="stop_omnid">Stop OMNId</string>
