@@ -5,24 +5,31 @@
 //! when the phone is off its charger or off an unmetered network. The daemon
 //! is the same one `omnid serve` runs; only the defaults are phone-sized.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::{JClass, JString};
-use jni::sys::{jboolean, jint};
+use jni::objects::{JClass, JLongArray, JString};
+use jni::sys::{jboolean, jint, jlong};
 use omnid::{Daemon, DaemonConfig};
 use omnid_core::{Network, now_secs};
 use omnid_crawl::{CrawlConfig, Politeness, Safety};
-use omnid_net::GatewayConfig;
+use omnid_net::{DownloadError, DownloadOptions, Expected, GatewayConfig, Progress, Route};
 use serde::Deserialize;
+use tokio_util::sync::CancellationToken;
 
 static RUNNING: Mutex<Option<Running>> = Mutex::new(None);
+/// Downloads the app's browser handed over (`Native.download`), by id, until
+/// the app forgets them.
+static DOWNLOADS: Mutex<BTreeMap<i64, Arc<DownloadJob>>> = Mutex::new(BTreeMap::new());
+static NEXT_DOWNLOAD: AtomicI64 = AtomicI64::new(1);
 static LOGGING: Once = Once::new();
 
 struct Running {
@@ -186,12 +193,146 @@ fn elsewhere(address: &str, what: &str, schemes: &[&str]) -> Result<Option<url::
     Ok(Some(url))
 }
 
+/// A download in the daemon, as the app polls it.
+struct DownloadJob {
+    progress: Arc<Progress>,
+    cancel: CancellationToken,
+    /// `None` while it runs.
+    outcome: Mutex<Option<Outcome>>,
+}
+
+enum Outcome {
+    Done,
+    /// Not the file the browser saw: the app falls back to the browser's copy.
+    Changed(String),
+    Failed(String),
+    Cancelled,
+}
+
+/// What the app reads of a download: `Native.downloadState`'s last value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i64)]
+pub enum DownloadState {
+    /// Asking the server; the browser's own copy is still held.
+    Probing = 0,
+    /// The server's answer is the file the browser saw, and it is coming.
+    Running = 1,
+    Done = 2,
+    Failed = 3,
+    Changed = 4,
+    Cancelled = 5,
+}
+
+/// What the browser saw of the file, to check the daemon's answer against.
+#[derive(Debug, Default)]
+pub struct Seen {
+    pub length: Option<u64>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+/// Starts downloading `url` into `file` in the running daemon, over the
+/// browser's route for `site` (never direct), in up to `connections`
+/// parallel ranges each on Tor circuits of its own. Returns its id.
+pub fn download(
+    url: &str,
+    site: &str,
+    user_agent: &str,
+    file: std::fs::File,
+    connections: usize,
+    seen: Seen,
+) -> Result<i64> {
+    let running = RUNNING.lock().expect("daemon lock poisoned");
+    let running = running.as_ref().context("OMNId is not running")?;
+    let url: url::Url = url.parse().context("not an address")?;
+    let job =
+        Arc::new(DownloadJob { progress: Arc::default(), cancel: CancellationToken::new(), outcome: Mutex::new(None) });
+    let id = NEXT_DOWNLOAD.fetch_add(1, Ordering::Relaxed);
+    DOWNLOADS.lock().expect("downloads lock poisoned").insert(id, job.clone());
+    let opts = DownloadOptions {
+        connections: connections.clamp(1, omnid_net::MAX_CONNECTIONS),
+        user_agent: Some(user_agent.to_owned()).filter(|agent| !agent.is_empty()),
+        route: Route::Browser { site: site.to_owned() },
+        expect: Some(Expected { length: seen.length, etag: seen.etag, last_modified: seen.last_modified }),
+        ..DownloadOptions::default()
+    };
+    let gateway = running.daemon.gateway().clone();
+    running.runtime.spawn(async move {
+        let result = gateway.download(&url, &file, &opts, &job.progress, &job.cancel).await;
+        // The address stays out of the log: it is the user's.
+        let outcome = match result {
+            Ok(done) => {
+                tracing::info!(
+                    bytes = done.bytes,
+                    ranged = done.ranged,
+                    connections = done.connections,
+                    "download finished"
+                );
+                Outcome::Done
+            }
+            Err(DownloadError::Cancelled) => Outcome::Cancelled,
+            Err(e @ (DownloadError::Mismatch(_) | DownloadError::Changed)) => Outcome::Changed(e.to_string()),
+            Err(e) => {
+                tracing::info!("download failed: {e}");
+                Outcome::Failed(e.to_string())
+            }
+        };
+        job.outcome.lock().expect("download lock poisoned").get_or_insert(outcome);
+    });
+    Ok(id)
+}
+
+/// Bytes done, the size (-1 while unknown), connections open, and the
+/// [`DownloadState`].
+pub fn download_state(id: i64) -> [i64; 4] {
+    let Some(job) = DOWNLOADS.lock().expect("downloads lock poisoned").get(&id).cloned() else {
+        return [0, -1, 0, DownloadState::Failed as i64];
+    };
+    let progress = &job.progress;
+    let state = match &*job.outcome.lock().expect("download lock poisoned") {
+        // The engine counts a size or bytes only once the answer matched.
+        None if progress.total() > 0 || progress.done() > 0 => DownloadState::Running,
+        None => DownloadState::Probing,
+        Some(Outcome::Done) => DownloadState::Done,
+        Some(Outcome::Changed(_)) => DownloadState::Changed,
+        Some(Outcome::Failed(_)) => DownloadState::Failed,
+        Some(Outcome::Cancelled) => DownloadState::Cancelled,
+    };
+    let total = if progress.total() > 0 { progress.total() as i64 } else { -1 };
+    [progress.done() as i64, total, progress.active() as i64, state as i64]
+}
+
+/// Why a download failed or changed; empty otherwise.
+pub fn download_error(id: i64) -> String {
+    let job = DOWNLOADS.lock().expect("downloads lock poisoned").get(&id).cloned();
+    let Some(job) = job else { return "no such download".into() };
+    match &*job.outcome.lock().expect("download lock poisoned") {
+        Some(Outcome::Changed(why) | Outcome::Failed(why)) => why.clone(),
+        _ => String::new(),
+    }
+}
+
+pub fn cancel_download(id: i64) {
+    if let Some(job) = DOWNLOADS.lock().expect("downloads lock poisoned").get(&id) {
+        job.cancel.cancel();
+    }
+}
+
+pub fn forget_download(id: i64) {
+    DOWNLOADS.lock().expect("downloads lock poisoned").remove(&id);
+}
+
 /// Stops crawling, commits the index and shuts the daemon down.
 pub fn stop() {
     let Some(Running { runtime, daemon }) = RUNNING.lock().expect("daemon lock poisoned").take() else {
         return;
     };
     daemon.shutdown();
+    // Downloads die with the runtime: say so, so the app does not wait on them.
+    for job in DOWNLOADS.lock().expect("downloads lock poisoned").values() {
+        job.cancel.cancel();
+        job.outcome.lock().expect("download lock poisoned").get_or_insert(Outcome::Failed("OMNId stopped".into()));
+    }
     // The timer is made inside the runtime: the caller's thread has none.
     match runtime.block_on(async { tokio::time::timeout(Duration::from_secs(15), daemon.wait()).await }) {
         Ok(Ok(stats)) => tracing::info!(?stats, "stopped"),
@@ -326,6 +467,83 @@ pub extern "system" fn Java_cc_wckd_omnid_Native_appProxyPort<'local>(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_cc_wckd_omnid_Native_download<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    url: JString<'local>,
+    site: JString<'local>,
+    user_agent: JString<'local>,
+    fd: jint,
+    connections: jint,
+    length: jlong,
+    etag: JString<'local>,
+    last_modified: JString<'local>,
+) -> jlong {
+    env.with_env(|_| -> Result<jlong, NativeError> {
+        // SAFETY: the app detached this descriptor from its ParcelFileDescriptor
+        // for us: nothing else owns or closes it.
+        let file = unsafe { <std::fs::File as std::os::fd::FromRawFd>::from_raw_fd(fd) };
+        let text = |s: &JString| Some(s.to_string()).filter(|s| !s.is_empty());
+        let seen = Seen { length: u64::try_from(length).ok(), etag: text(&etag), last_modified: text(&last_modified) };
+        let connections = usize::try_from(connections).unwrap_or(1);
+        download(&url.to_string(), &site.to_string(), &user_agent.to_string(), file, connections, seen)
+            .map_err(|e| NativeError::Daemon(format!("{e:#}")))
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cc_wckd_omnid_Native_downloadState<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+) -> JLongArray<'local> {
+    env.with_env(|env| -> Result<JLongArray<'local>, NativeError> {
+        let array = env.new_long_array(4)?;
+        array.set_region(env, 0, &download_state(id))?;
+        Ok(array)
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cc_wckd_omnid_Native_downloadError<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+) -> JString<'local> {
+    env.with_env(|env| -> Result<JString<'local>, NativeError> { Ok(env.new_string(download_error(id))?) })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cc_wckd_omnid_Native_cancelDownload<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+) {
+    env.with_env(|_| -> Result<(), NativeError> {
+        cancel_download(id);
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cc_wckd_omnid_Native_forgetDownload<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    id: jlong,
+) {
+    env.with_env(|_| -> Result<(), NativeError> {
+        forget_download(id);
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_cc_wckd_omnid_Native_newIdentity<'local>(
     mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
@@ -404,6 +622,16 @@ mod tests {
         assert_eq!(CrawlSpeed::from_ordinal(7), CrawlSpeed::Normal, "unknown: normal");
     }
 
+    fn tempfile_in(dir: &Path) -> std::fs::File {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(dir.join("download"))
+            .unwrap()
+    }
+
     fn routers(hyphanet_node: &str, i2p_router: &str) -> Options {
         Options { hyphanet_node: hyphanet_node.into(), i2p_router: i2p_router.into(), ..Options::default() }
     }
@@ -474,6 +702,24 @@ mod tests {
         proxy.read_exact(&mut refused).unwrap();
         assert_eq!(refused, [5, 0xff], "no authentication is not offered");
         new_identity();
+        // A download goes the browser's way, never direct: with Tor off it
+        // fails, though the server is right here, and says so.
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://127.0.0.1:{}/file", server.local_addr().unwrap().port());
+        let file = tempfile_in(&dir);
+        let id = download(&url, "127.0.0.1", "", file, 4, Seen::default()).unwrap();
+        let state = (0..100)
+            .map(|_| {
+                std::thread::sleep(Duration::from_millis(50));
+                download_state(id)
+            })
+            .find(|state| state[3] != DownloadState::Probing as i64)
+            .expect("the download ended");
+        assert_eq!(state[3], DownloadState::Failed as i64, "{}", download_error(id));
+        server.set_nonblocking(true).unwrap();
+        assert!(server.accept().is_err(), "nothing reached the server");
+        forget_download(id);
+        assert_eq!(download_state(id)[3], DownloadState::Failed as i64, "a forgotten id is no download");
         set_paused(true, "waiting for a charger");
         let mut stream = std::net::TcpStream::connect(("127.0.0.1", started)).unwrap();
         use std::io::{Read, Write};

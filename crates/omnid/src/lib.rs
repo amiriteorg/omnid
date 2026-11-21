@@ -299,6 +299,11 @@ impl Daemon {
         &self.control
     }
 
+    /// The gateway, for what the app asks of the network itself (downloads).
+    pub fn gateway(&self) -> &Arc<Gateway> {
+        &self.gateway
+    }
+
     /// Stops accepting requests and crawling; [`wait`](Self::wait) returns
     /// once the index is committed.
     pub fn shutdown(&self) {

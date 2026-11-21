@@ -136,6 +136,55 @@ the same warm Tor state.
 
 p95 (1.3–4.2 s) is network jitter in both and does not separate them.
 
+## Downloads over Tor
+
+    OMNID_TOR_DIR=target/bench/tor cargo run --release -p omnid-net --example bench_download -- \
+      http://2s4yqjx5ul6okpp3f2gaunr2syex5jgbfpfvhxxbbjwnrsvbk5v3qbid.onion/debian/pool/main/l/llvm-toolchain-14/libllvm14_14.0.6-12_amd64.deb 5 1,4,8
+    OMNID_TOR_DIR=target/bench/tor cargo run --release -p omnid-net --example bench_download -- \
+      https://www.python.org/ftp/python/3.12.0/Python-3.12.0.tar.xz 5 1,4,8
+
+2026-11-21, the Mac mini (Apple M5 Pro), Rust 1.99.1. Two files that do not
+change: Debian 12's `libllvm14` package from Debian's onion mirror (21.8 MB,
+inside Tor), and Python 3.12.0's source from python.org through Tor exits
+(20.6 MB, `clearnet_via_tor`). One gateway, warm after the bootstrap; the
+counts take turns (1, 4, 8, 1, 4, 8, ...) so the network's drift falls on all
+of them; every connection is on circuits of its own, so each download builds
+new ones. Defaults otherwise: parts of 1 MiB at least, 30 s stall timeout.
+Every download was byte-identical to the first, and the onion's copy to
+deb.debian.org's (sha256 `cd986403…cf64a8`). Other builds ran on the machine
+(load average 5–12); the downloads used 4–11 % of a core. About 640 MB in all.
+
+| File | connections | n | median s (MB/s) | p95 s | min–max s | retries |
+|---|---|---|---|---|---|---|
+| onion, 21.8 MB | 1 | 5 | 158.6 (0.14) | 317.6 | 127.3–317.6 | 1 |
+| | 4 | 5 | 63.5 (0.34) | 97.6 | 49.6–97.6 | 1 |
+| | 8 | 5 | 52.5 (0.42) | 60.4 | 42.9–60.4 | 14 |
+| exits, 20.6 MB | 1 | 5 | 18.5 (1.11) | 33.9 | 6.8–33.9 | 0 |
+| | 4 | 5 | 8.2 (2.51) | 9.1 | 5.3–9.1 | 0 |
+| | 8 | 5 | 9.6 (2.15) | 10.9 | 5.6–10.9 | 0 |
+
+p95 is nearest-rank, so with 5 samples it is the slowest. Seconds by round:
+
+    onion  1: 147.7 127.3 317.6 158.6 199.7   4: 49.6 54.6 85.6 97.6 63.5   8: 52.5 55.8 49.3 60.4 42.9
+    exits  1:   6.8  33.9  28.9   9.3  18.5   4:  8.2  9.1  5.9  8.4  5.3   8:  5.6  9.6 10.1 10.9  9.0
+
+To the onion, 4 connections against 1 is outside the noise: every
+4-connection download (97.6 s at worst) beat every 1-connection one (127.3 s
+at best), median 2.5x faster. 8 against 4 is within it: medians 52.5 and
+63.5 s, ranges overlapping (42.9–60.4 and 49.6–97.6), though 8's spread was
+the narrowest. Through exits one connection's time is whichever exit it got
+(6.8 to 33.9 s); with 4 the slowest was 9.1 s. The median gain (2.3x) is not
+separated from the noise at this N: the best single-connection run beat
+three of the 4-connection ones. The tail is: 33.9 s at worst against 9.1. 8
+connections were no faster than 4 (medians 9.6 and 8.2 s, within noise):
+each gets 2.6 MB of a 20.6 MB file, and opening eight connections costs as
+much as it saves. The default stays at 4.
+
+All retries recovered (14 of them in two 8-connection onion runs). Their
+cause was not captured: the example has no log subscriber, and a rerun of
+`omnid download --connections 8` on the onion with `RUST_LOG=omnid_net=debug`
+(48.4 s) had none.
+
 ## DHT metadata
 
     cargo run --release -p omnid-dht --example bench_metadata -- 5           # one shared Dht, warmed 30 s

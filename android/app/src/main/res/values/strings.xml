@@ -81,7 +81,6 @@
     <string name="browser_tor_plain">Tor · not encrypted</string>
     <string name="browser_kind_onion">Onion</string>
     <string name="browser_refused">OMNId\'s browser does not open %1$s</string>
-    <string name="browser_no_downloads">Downloads are off in OMNId\'s browser</string>
     <string name="browser_unsafe">The browser could not be set up safely, so nothing was loaded: %1$s</string>
     <string name="browser_error_title">This page did not load</string>
     <string name="browser_error_proxy">OMNId\'s proxy did not answer: OMNId may have stopped. Reopen it from the search page.</string>
@@ -164,6 +163,21 @@
     <string name="network_torrents">Torrents</string>
     <string name="network_i2p">I2P</string>
     <string name="network_hyphanet">Hyphanet</string>
+
+    <!-- Downloads. -->
+    <string name="download">Download</string>
+    <string name="download_ask">Download %1$s?</string>
+    <string name="download_ask_detail">%1$s, from %2$s.\n\nIt goes to your Downloads. Another app that opens it can go online directly, outside Tor, and show where you are: open it offline, or only in apps you trust.</string>
+    <string name="download_size_unknown">Size unknown</string>
+    <string name="download_channel">Downloads</string>
+    <string name="download_progress">%1$s of %2$s</string>
+    <string name="download_connections">%1$s · %2$d connections</string>
+    <string name="download_done">Downloaded. Tap to see your downloads.</string>
+    <string name="download_failed">Download failed: %1$s</string>
+    <string name="settings_download_connections">Download connections</string>
+    <string name="settings_download_connections_value">%1$d at once</string>
+    <string name="settings_download_connections_one">One at a time</string>
+    <string name="settings_download_connections_about">A large file from a server that allows it comes in parts over several Tor circuits at once, which is faster and goes on when a circuit fails.</string>
 
     <!-- The browser's menu. -->
     <string name="browser_share">Share</string>

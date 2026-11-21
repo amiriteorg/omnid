@@ -11,7 +11,11 @@
 //!
 //! Redirects are resolved here, against the source that issued them, so a
 //! clearnet page that redirects to an onion is followed over Tor.
+//!
+//! [`Gateway::download`] fetches one file a user asked for, in byte ranges
+//! over several connections at once.
 
+mod download;
 mod guard;
 mod http;
 mod routers;
@@ -28,7 +32,11 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use url::Url;
 
 use crate::routers::Routers;
+use crate::tor::Circuits;
 
+pub use download::{
+    Download, DownloadError, DownloadOptions, Expected, MAX_CONNECTIONS, Progress, Route, sanitize_filename,
+};
 pub use guard::is_public_ip;
 
 /// The name `http://hyphanet/USK@…` gives the Hyphanet node's FProxy, for the
@@ -341,6 +349,17 @@ impl Gateway {
     /// `clearnet_via_tor`). This is what the SOCKS proxy
     /// serves. Tor streams buffer writes: flush after writing a request.
     pub async fn connect(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
+        self.connect_on(host, port, Circuits::Shared).await
+    }
+
+    /// [`Gateway::connect`], with a stream through Tor on the circuits
+    /// `circuits` picks.
+    pub(crate) async fn connect_on(
+        &self,
+        host: &str,
+        port: u16,
+        circuits: Circuits<'_>,
+    ) -> Result<BoxStream, FetchError> {
         let (host, network) = stream_target(host);
         let tor = || self.tor.as_ref().ok_or_else(|| unavailable(network, "Tor is disabled"));
         let transport = |error: BoxError| FetchError::Transport { network, error };
@@ -355,7 +374,7 @@ impl Gateway {
         };
         let connect = async {
             if over_tor {
-                return Ok(Box::new(tor()?.stream(&host, port).await.map_err(transport)?) as BoxStream);
+                return Ok(Box::new(tor()?.stream_on(&host, port, circuits).await.map_err(transport)?) as BoxStream);
             }
             match network {
                 Network::I2p => self.i2p_tunnel(&host, port).await,
@@ -372,6 +391,17 @@ impl Gateway {
     /// node. Never a direct connection to anywhere else, whatever
     /// `clearnet_via_tor` says: without Tor the clearnet is unavailable.
     pub async fn connect_browser(&self, host: &str, port: u16, site: &str) -> Result<BoxStream, FetchError> {
+        self.connect_browser_on(host, port, Circuits::Site(site)).await
+    }
+
+    /// [`Gateway::connect_browser`], with a stream through Tor on the
+    /// circuits `circuits` picks.
+    pub(crate) async fn connect_browser_on(
+        &self,
+        host: &str,
+        port: u16,
+        circuits: Circuits<'_>,
+    ) -> Result<BoxStream, FetchError> {
         let (host, network) = stream_target(host);
         let timeout = self.cfg.overlay_timeout;
         let connect = async {
@@ -383,7 +413,7 @@ impl Gateway {
             let tor = self.tor.as_ref().ok_or_else(|| unavailable(network, "Tor is disabled"))?;
             let transport = |error: BoxError| FetchError::Transport { network, error };
             tor.ready().await.map_err(transport)?;
-            Ok(Box::new(tor.isolated_stream(&host, port, site).await.map_err(transport)?) as BoxStream)
+            Ok(Box::new(tor.stream_on(&host, port, circuits).await.map_err(transport)?) as BoxStream)
         };
         tokio::time::timeout(timeout, connect).await.map_err(|_| FetchError::Timeout(timeout))?
     }

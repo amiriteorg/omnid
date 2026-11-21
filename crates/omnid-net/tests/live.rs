@@ -3,17 +3,22 @@
 //! runs them. A test whose router is not running fails and says how to start
 //! it, rather than passing.
 
+use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use omnid_core::Source;
-use omnid_net::{FetchOptions, Gateway, GatewayConfig, Page};
+use omnid_net::{DownloadOptions, FetchOptions, Gateway, GatewayConfig, Page, Progress};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_util::sync::CancellationToken;
+use url::Url;
 
 const TOR_PROJECT: &str = "2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion";
 const BBC: &str = "www.bbcweb3hytmzhn5d532owbu6oqadra5z3ar726vq5kgwwn6aucdccrad.onion";
 /// Hyphanet's own introduction, which every node bookmarks.
 const FIRST_STEPS: &str = "USK@62H8KFSZWMyQ2MQgwvNhEYJ2m3SQl696PfsVfWQ-HQo,cJrPvdNz4AnrHJQXNteDV7k3YnAVY-MClt84gwH2qEo,AQACAAE/freenet-first-steps";
+/// A few MB that do not change (Python 2.2's source, 2001), with ranges.
+const FEW_MB: &str = "https://www.python.org/ftp/python/2.2/Python-2.2.tgz";
 /// I2P's standard anonymized User-Agent; some eepsites refuse any other.
 const I2P_USER_AGENT: &str = "MYOB/6.66 (AN/ON)";
 
@@ -103,6 +108,41 @@ async fn live_clearnet_via_tor_exits_through_tor() {
     let direct =
         fetch(&Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap(), check).await;
     assert!(text(&direct).contains("\"IsTor\":false"), "{}", text(&direct));
+}
+
+#[tokio::test]
+#[ignore = "live: Tor network and www.python.org"]
+async fn live_tor_downloads_in_parallel_what_one_connection_does() {
+    let gateway = gateway("download", GatewayConfig { clearnet_via_tor: true, ..GatewayConfig::default() });
+    let url = Url::parse(FEW_MB).unwrap();
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("live-download");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut files = Vec::new();
+    for connections in [1, 4] {
+        let path = dir.join(connections.to_string());
+        let opts = DownloadOptions { connections, min_segment: 256 << 10, ..DownloadOptions::default() };
+        let mut last = String::new();
+        let mut downloaded = None;
+        // Exit relays reset connections now and then; retried.
+        for _ in 0..3 {
+            let file = File::create(&path).unwrap();
+            match gateway.download(&url, &file, &opts, &Progress::default(), &CancellationToken::new()).await {
+                Ok(download) => {
+                    downloaded = Some(download);
+                    break;
+                }
+                Err(e) => last = e.to_string(),
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+        let download = downloaded.unwrap_or_else(|| panic!("{connections} connections: {last}"));
+        assert!(download.ranged, "{connections} connections: python.org sends ranges");
+        assert!(download.connections >= connections.min(2), "{connections} connections: {download:?}");
+        assert_eq!(download.filename, "Python-2.2.tgz");
+        files.push(std::fs::read(&path).unwrap());
+    }
+    assert!(files[0].len() > 2 << 20, "{} bytes", files[0].len());
+    assert!(files[0] == files[1], "four connections wrote what one did, byte for byte");
 }
 
 #[tokio::test]

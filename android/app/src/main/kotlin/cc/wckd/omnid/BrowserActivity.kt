@@ -527,8 +527,9 @@ class BrowserActivity : Activity() {
             showLinkMenu(tabOf(session) ?: return, element)
         }
 
+        // A file the page does not show: downloaded only if asked.
         override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
-            Toast.makeText(this@BrowserActivity, R.string.browser_no_downloads, Toast.LENGTH_LONG).show()
+            askDownload(session, response)
         }
 
         // A video's full-screen button, or a page asking for the whole screen.
@@ -896,6 +897,33 @@ class BrowserActivity : Activity() {
                 true
             }
         }.show()
+    }
+
+    /**
+     * Asks before saving a file: its name, size and where it comes from, and that another app
+     * opening it may go online outside Tor. Declined, the browser's connection for it is closed.
+     */
+    private fun askDownload(session: GeckoSession, response: WebResponse) {
+        val headers = response.headers
+        val type = Downloads.header(headers, "Content-Type")?.substringBefore(';')?.trim()
+        val name = Downloads.fileName(Downloads.header(headers, "Content-Disposition"), response.uri, type)
+        val size = Downloads.length(headers)?.let { android.text.format.Formatter.formatShortFileSize(this, it) }
+            ?: getString(R.string.download_size_unknown)
+        val host = Uri.parse(response.uri).host.orEmpty()
+        val site = Uri.parse(tabOf(session)?.url ?: response.uri).host ?: host
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.download_ask, name))
+            .setMessage(getString(R.string.download_ask_detail, size, BrowserConfig.displayAddress(host)))
+            .setPositiveButton(R.string.download) { _, _ ->
+                val connections = Downloads.connections(prefs().getInt(Downloads.CONNECTIONS, Downloads.DEFAULT_CONNECTIONS))
+                session.userAgent.accept(
+                    { agent -> Downloader.start(this, response, site, agent.orEmpty(), connections) },
+                    { _ -> Downloader.start(this, response, site, "", connections) },
+                )
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> runCatching { response.body?.close() } }
+            .setOnCancelListener { runCatching { response.body?.close() } }
+            .show()
     }
 
     /** Hands the page's address to another app; a Hyphanet page as its `freenet:` key. */

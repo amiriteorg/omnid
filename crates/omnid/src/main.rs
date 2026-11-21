@@ -1,10 +1,11 @@
 //! omnid: one daemon for Tor, I2P, Hyphanet, magnets and the clearnet, with
 //! one search index over all of them.
 
+use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
 use clap::{Args, Parser, Subcommand};
@@ -13,7 +14,7 @@ use omnid_core::{Network, Source};
 use omnid_crawl::{CrawlConfig, Crawler, Job, SEED_TRUST, Safety, extract, is_indexable_type};
 use omnid_dht::{Dht, DhtConfig};
 use omnid_index::{SearchIndex, SearchQuery};
-use omnid_net::{FetchOptions, Gateway, GatewayConfig};
+use omnid_net::{DownloadOptions, FetchOptions, Gateway, GatewayConfig, Progress};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
@@ -66,6 +67,10 @@ enum Command {
         /// A URL, bare host, freenet: key or magnet link
         address: String,
     },
+    /// Download a file through the gateway: in byte ranges over several
+    /// connections when the server sends them, over Tor each on circuits of
+    /// its own
+    Download(DownloadArgs),
     /// Search the local index
     Search {
         query: String,
@@ -107,6 +112,25 @@ struct ServeArgs {
     socks_password: Option<String>,
     #[command(flatten)]
     crawl: CrawlOptions,
+}
+
+#[derive(Args)]
+struct DownloadArgs {
+    /// A URL, bare host or freenet: key
+    address: String,
+    /// Where to save it: a file, or a directory to put it in under the name
+    /// the server gives [default: that name, here]
+    #[arg(long, short)]
+    output: Option<PathBuf>,
+    /// Connections at once
+    #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u8).range(1..=omnid_net::MAX_CONNECTIONS as i64))]
+    connections: u8,
+    /// Refuse a file larger than this many bytes
+    #[arg(long, default_value_t = DownloadOptions::default().max_bytes)]
+    max_bytes: u64,
+    /// Replace a file that is already there
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Args)]
@@ -168,6 +192,7 @@ async fn main() -> Result<()> {
         Command::Serve(args) => serve(&cli.common, &data_dir, args).await,
         Command::Crawl(args) => crawl(&cli.common, &data_dir, args).await,
         Command::Fetch { address } => fetch(&cli.common, &data_dir, &address).await,
+        Command::Download(args) => download(&cli.common, &data_dir, args).await,
         Command::Search { query, networks, limit, lang, json } => search(&data_dir, query, networks, limit, lang, json),
     }
 }
@@ -297,6 +322,113 @@ async fn fetch(common: &Common, data_dir: &Path, address: &str) -> Result<()> {
         None if page.redirect.is_none() => println!("body          not downloaded (not a text type)"),
         None => {}
     }
+    Ok(())
+}
+
+async fn download(common: &Common, data_dir: &Path, args: DownloadArgs) -> Result<()> {
+    let url = match Source::parse(&args.address)? {
+        Source::Hyphanet(key) => Url::parse(&format!("http://{}/{key}", omnid_net::HYPHANET_HOST))?,
+        Source::Magnet(_) => anyhow::bail!("a magnet is not a file; `omnid fetch` shows its metadata"),
+        source => source.url().cloned().context("no URL to download")?,
+    };
+    // A file named and already there is refused before anything is fetched.
+    let named = args.output.clone().filter(|path| !path.is_dir());
+    if let Some(path) = &named {
+        refuse_existing(path, args.force)?;
+    }
+    let dir = match (&args.output, &named) {
+        (Some(dir), None) => dir.clone(),
+        (_, Some(path)) => path.parent().filter(|dir| !dir.as_os_str().is_empty()).unwrap_or(Path::new(".")).to_owned(),
+        (None, None) => PathBuf::from("."),
+    };
+    // Into a hidden file beside the target, renamed once it is complete.
+    let partial = dir.join(format!(".omnid-download-{}.part", std::process::id()));
+    let file = std::fs::File::options()
+        .write(true)
+        .create_new(true)
+        .open(&partial)
+        .with_context(|| format!("creating {}", partial.display()))?;
+    let saved = async {
+        let gateway =
+            Gateway::new(gateway_config(common, data_dir)).map_err(|e| anyhow!("starting the gateway: {e}"))?;
+        let opts = DownloadOptions {
+            connections: args.connections.into(),
+            max_bytes: args.max_bytes,
+            ..DownloadOptions::default()
+        };
+        let (progress, cancel) = (Arc::new(Progress::default()), CancellationToken::new());
+        let stop = cancel.clone();
+        tokio::spawn(async move {
+            terminated().await;
+            stop.cancel();
+        });
+        let started = Instant::now();
+        let shown = progress.clone();
+        let terminal = std::io::stderr().is_terminal();
+        let ticker = tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_millis(500));
+            loop {
+                tick.tick().await;
+                if terminal {
+                    eprint!("\r\x1b[K{}", progress_line(&shown, started.elapsed()));
+                }
+            }
+        });
+        let downloaded = gateway.download(&url, &file, &opts, &progress, &cancel).await;
+        ticker.abort();
+        if terminal {
+            eprint!("\r\x1b[K");
+        }
+        let downloaded = downloaded?;
+        file.sync_all()?;
+        let target = named.clone().unwrap_or_else(|| dir.join(&downloaded.filename));
+        refuse_existing(&target, args.force)?;
+        std::fs::rename(&partial, &target).with_context(|| format!("saving as {}", target.display()))?;
+        anyhow::Ok((downloaded, target, started.elapsed()))
+    };
+    let (downloaded, target, elapsed) = match saved.await {
+        Ok(saved) => saved,
+        Err(e) => {
+            let _ = std::fs::remove_file(&partial);
+            return Err(e);
+        }
+    };
+    let seconds = elapsed.as_secs_f64();
+    println!("saved         {}", target.display());
+    println!("address       {}", downloaded.url);
+    println!("content-type  {}", downloaded.content_type.as_deref().unwrap_or("-"));
+    println!("bytes         {}", downloaded.bytes);
+    println!("seconds       {seconds:.1}");
+    println!("MB/s          {:.2}", downloaded.bytes as f64 / 1e6 / seconds.max(1e-3));
+    let ranges = if downloaded.ranged { "" } else { " (the server sent no ranges)" };
+    println!("connections   {}{ranges}", downloaded.connections);
+    println!("retries       {}", downloaded.retries);
+    Ok(())
+}
+
+/// `12.3 / 40.0 MB  1.23 MB/s  4 connections  0 retries`
+fn progress_line(progress: &Progress, elapsed: Duration) -> String {
+    let mb = |bytes: u64| bytes as f64 / 1e6;
+    let total = match progress.total() {
+        0 => String::new(),
+        total => format!(" / {:.1}", mb(total)),
+    };
+    format!(
+        "{:.1}{total} MB  {:.2} MB/s  {} connections  {} retries",
+        mb(progress.done()),
+        mb(progress.done()) / elapsed.as_secs_f64().max(1e-3),
+        progress.active(),
+        progress.retries()
+    )
+}
+
+/// A dangling symlink counts: renaming onto it would replace it.
+fn refuse_existing(path: &Path, force: bool) -> Result<()> {
+    anyhow::ensure!(
+        force || std::fs::symlink_metadata(path).is_err(),
+        "{} exists; --force replaces it",
+        path.display()
+    );
     Ok(())
 }
 

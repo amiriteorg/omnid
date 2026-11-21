@@ -36,6 +36,34 @@ internal object Native {
     @JvmStatic
     external fun appProxyPort(): Int
 
+    /**
+     * Starts the daemon downloading [url] into [fd], which it takes over and closes: in up to
+     * [connections] parallel ranges, each on a Tor circuit of its own, over the browser's route for
+     * [site], asking with [userAgent]. [length], [etag] and [lastModified] are what the browser saw
+     * (-1 or "" for none); an answer that differs ends in the changed state. Returns its id.
+     */
+    @JvmStatic
+    external fun download(url: String, site: String, userAgent: String, fd: Int, connections: Int, length: Long, etag: String, lastModified: String): Long
+
+    /**
+     * A download's bytes done, its size (-1 while unknown), the connections working, and its
+     * state: 0 probing, 1 running, 2 done, 3 failed, 4 changed (not the file the browser saw),
+     * 5 cancelled.
+     */
+    @JvmStatic
+    external fun downloadState(id: Long): LongArray
+
+    /** Why a download failed or changed. */
+    @JvmStatic
+    external fun downloadError(id: Long): String
+
+    @JvmStatic
+    external fun cancelDownload(id: Long)
+
+    /** Lets the daemon forget a download that is over. */
+    @JvmStatic
+    external fun forgetDownload(id: Long)
+
     /** New Tor circuits for every site the browser visits from now on. */
     @JvmStatic
     external fun newIdentity()
