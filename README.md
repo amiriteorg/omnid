@@ -209,7 +209,9 @@ The daemon itself:
   omnid's own data directory. `rsa` and `crypto-bigint` timing issues come
   through arti's key management and concern private-key operations a Tor
   client does not perform. bincode, chrono, humantime and paste are flagged
-  as unmaintained. None is suppressed in the scanner.
+  as unmaintained; bincode, chrono and crypto-bigint are in `Cargo.lock` but
+  compiled into no omnid build. Each is a reviewed exception in
+  `osv-scanner.toml` that expires on 2027-02-21.
 - The Android build is arm64 only.
 
 ## Development
