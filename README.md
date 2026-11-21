@@ -149,3 +149,10 @@ cargo fmt --all --check
 ```
 
 No test touches the network: the end-to-end crawl runs against a local server.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Dependencies are permissively licensed (MIT,
+Apache-2.0, BSD, ISC, Zlib, Unicode) except `option-ext`, an unmodified
+MPL-2.0 dependency of arti; binary distributions should ship the
+dependencies' license notices.

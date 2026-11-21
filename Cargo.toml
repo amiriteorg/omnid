@@ -7,6 +7,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.92"
 publish = false
+license = "MIT"
+repository = "https://github.com/wckdboy/omnid"
 
 [workspace.dependencies]
 omnid-core = { path = "crates/omnid-core" }
