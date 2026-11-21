@@ -32,6 +32,24 @@ pub(crate) struct TorTransport {
     isolation: Isolation,
 }
 
+/// Which circuits a stream goes on.
+#[derive(Clone, Copy)]
+pub(crate) enum Circuits<'a> {
+    /// The crawler's, which every stream that asks for nothing else shares.
+    Shared,
+    /// Those of a site the browser is on (see [`Isolation`]).
+    Site(&'a str),
+    /// Circuits of their own, which only streams with this token use: each of
+    /// a download's connections gets one.
+    Own(IsolationToken),
+}
+
+impl Circuits<'_> {
+    pub(crate) fn own() -> Self {
+        Circuits::Own(IsolationToken::new())
+    }
+}
+
 /// One isolation token per site the browser is on, as Tor Browser does:
 /// streams for different sites never share a circuit, so an exit or an
 /// onion service cannot link them by circuit.
@@ -163,6 +181,24 @@ impl TorTransport {
             Err(e) => {
                 tracing::debug!(host, "tor: {e}; trying a new circuit for {site}");
                 Ok(connect(self.isolation.renew(site)).await?)
+            }
+        }
+    }
+
+    /// A stream on the circuits `circuits` picks.
+    pub(crate) async fn stream_on(
+        &self,
+        host: &str,
+        port: u16,
+        circuits: Circuits<'_>,
+    ) -> Result<DataStream, BoxError> {
+        match circuits {
+            Circuits::Shared => self.stream(host, port).await,
+            Circuits::Site(site) => self.isolated_stream(host, port, site).await,
+            Circuits::Own(token) => {
+                let mut prefs = self.prefs.clone();
+                prefs.set_isolation(token);
+                Ok(self.client.connect_with_prefs((host, port), &prefs).await?)
             }
         }
     }

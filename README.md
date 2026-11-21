@@ -50,6 +50,8 @@ B=target/release/omnid
 $B fetch https://example.com/              # one fetch, routed by network
 $B fetch http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/
 $B fetch 'magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10'   # Sintel: name, files, peers
+$B download https://www.python.org/ftp/python/3.12.0/Python-3.12.0.tar.xz   # in parallel byte ranges, saved here
+$B download --clearnet-via-tor --connections 8 -o ~/Downloads/ https://…  # through Tor, eight circuits at once
 $B crawl --max-pages 50 https://example.com/   # crawl until nothing is due, then exit
 $B crawl                                   # resume whatever the store has due (a new store: the default seeds)
 $B search "tor browser" -n onion
@@ -241,7 +243,7 @@ A new level reloads every open tab.
 | Path | Owns |
 |---|---|
 | `crates/omnid-core` | `Source` (canonical address + network), `IndexedDoc` |
-| `crates/omnid-net` | `Gateway::fetch` and `Gateway::connect`: transports, redirects, the private-address guard |
+| `crates/omnid-net` | `Gateway::fetch`, `Gateway::connect` and `Gateway::download`: transports, redirects, the private-address guard, downloads in parallel byte ranges |
 | `crates/omnid-index` | Tantivy schema, analyzer, ranking, snippets, mirror folding |
 | `crates/omnid-crawl` | crawl store, frontier, robots.txt, extraction, safety gate, crawl loop |
 | `crates/omnid-dht` | read-only DHT client: get_peers, BEP 9 metadata, BEP 51 sampling, own bencode |
@@ -302,6 +304,26 @@ A new level reloads every open tab.
   prefer the languages in `lang=` or the browser's `Accept-Language` (the CLI:
   `--lang`, else `$LANG`); pages in other known languages score lower, and
   pages nearer a site's root a little higher.
+- **Downloads** (`omnid download`, and the app's browser) fetch a file in
+  byte ranges over several connections at once (`--connections`, default
+  4, at most 16). Over Tor each connection gets circuits of its own, so the
+  download runs at what several circuits carry together. The first request
+  asks for `bytes=0-`; when the server answers with a length (206), the first
+  connection keeps reading from the start, the rest of the file is split
+  among the others, and a connection that finishes takes half of the largest
+  part still left, so a slow circuit does not hold the download. A
+  connection that fails or sends nothing for 30 seconds is dropped and the
+  rest of its part goes to a new one on new circuits (up to 4 times in a
+  row without progress, then the download fails). Every later answer must be the
+  same file: the same length, and `If-Range` with the first answer's ETag or
+  date, so a file that changes meanwhile fails the download instead of
+  being spliced from two versions. A file under 2 MiB comes on one
+  connection, and a server without ranges in one stream that cannot resume. The name is the server's
+  (`Content-Disposition`) or the URL's, made safe: one path component, no
+  control characters, no leading dot, at most 200 bytes. `--max-bytes`
+  (default 16 GiB) refuses a larger file before anything is written. The
+  file goes into a hidden `.part` file beside the target and is renamed when
+  complete; an existing file is kept unless `--force`.
 - **Index format is versioned** by directory name (`index-v3`). A schema
   change builds a new index rather than misreading an old one; the daemon
   copies the previous version's pages into it on first start, then removes
@@ -309,9 +331,11 @@ A new level reloads every open tab.
 
 ## Safety
 
-- **Media is never downloaded.** Only `text/html`, `application/xhtml+xml`
-  and `text/plain` bodies are read; the check runs on the response headers
-  before the body is fetched. A missing Content-Type is refused.
+- **The crawler never downloads media.** Only `text/html`,
+  `application/xhtml+xml` and `text/plain` bodies are read; the check runs on
+  the response headers before the body is fetched. A missing Content-Type is
+  refused. A file of any type is downloaded only when you ask for it
+  (`omnid download`, a download in the app's browser).
 - **Denylist** (`--denylist`): hostnames (subdomains included), Hyphanet keys,
   magnets, or MD5 hex digests of hostnames, the form published blocklists use.
   Denied sites are never fetched and links to them are never queued.
