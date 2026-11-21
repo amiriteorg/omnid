@@ -108,7 +108,10 @@ async fn live_crawls_an_eepsite_through_i2pd() {
 async fn live_crawls_freesites_through_fproxy() {
     require_router(8888, "Hyphanet's FProxy");
     let gateway = GatewayConfig { tor_dir: None, ..GatewayConfig::default() };
-    let (stats, index) = crawl(gateway, None, FIRST_STEPS, 6).await;
+    // A node that has run a while knows newer editions of the sites this one
+    // links to and redirects to them, and each redirect takes one page of the
+    // budget: room for those, the assertions unchanged.
+    let (stats, index) = crawl(gateway, None, FIRST_STEPS, 12).await;
     assert!(stats.indexed >= 3, "{stats:?}");
     assert_eq!(stats.failed, 0, "{stats:?}");
     let found = hits(&index, "freenet", Network::Hyphanet);
