@@ -206,13 +206,7 @@ impl TorTransport {
 }
 
 fn tls_connector() -> Result<TlsConnector, BoxError> {
-    let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
-    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-    let config = rustls::ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    Ok(TlsConnector::from(Arc::new(config)))
+    Ok(TlsConnector::from(Arc::new(crate::tls_config()?)))
 }
 
 #[cfg(test)]
