@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 omnid-core.workspace = true
+omnid-dht.workspace = true
 omnid-index.workspace = true
 omnid-net.workspace = true
 anyhow.workspace = true

@@ -12,8 +12,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use omnid_core::{Network, Source};
 use omnid_crawl::{CrawlControl, DISCOVERED_TRUST, Job, Safety, Verdict};
+use omnid_dht::Dht;
 use omnid_index::{SearchIndex, SearchQuery, SearchResults};
-use omnid_net::Gateway;
+use omnid_net::{Gateway, RouterState};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -31,6 +32,7 @@ pub struct AppState {
     pub control: Arc<CrawlControl>,
     pub jobs: mpsc::Sender<Job>,
     pub safety: Arc<Safety>,
+    pub dht: Option<Dht>,
 }
 
 /// `token`, when set, is required on every request as a bearer token or the
@@ -170,9 +172,16 @@ async fn crawl(State(state): State<AppState>, Json(desired): Json<CrawlState>) -
 }
 
 async fn status(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let mut routers = state.gateway.status().await;
+    let dht = state.dht.as_ref().map(Dht::status);
+    if let (Some(dht), Some(magnet)) = (&dht, routers.iter_mut().find(|r| r.network == Network::Magnet)) {
+        magnet.state = if dht.ready { RouterState::Ready } else { RouterState::Starting };
+        magnet.detail = format!("DHT, {} nodes", dht.nodes);
+    }
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
-        "routers": state.gateway.status().await,
+        "routers": routers,
+        "dht": dht,
         "index": { "documents": state.index.num_docs() },
         "crawl": state.control.stats(),
         "pause_reason": state.control.pause_reason(),

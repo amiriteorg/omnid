@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use omnid_core::{IndexedDoc, Magnet, Network, Source, now_secs};
+use omnid_dht::{Dht, TorrentMeta};
 use omnid_index::SearchIndex;
 use omnid_net::{FetchError, FetchOptions, Gateway};
 use serde::Serialize;
@@ -28,6 +29,10 @@ pub use store::{CrawlStore, Visit};
 pub const SEED_TRUST: f32 = 0.8;
 /// Trust given to links the crawler discovers and to user submissions.
 pub const DISCOVERED_TRUST: f32 = 0.5;
+/// Trust given to info hashes sampled from the DHT: nobody linked them.
+pub const HARVESTED_TRUST: f32 = 0.3;
+/// Peers at which a torrent counts as fully alive.
+const HEALTHY_SWARM: f32 = 20.0;
 
 #[derive(Debug, Clone)]
 pub struct CrawlConfig {
@@ -188,6 +193,7 @@ struct Context {
     store: Arc<CrawlStore>,
     robots: robots::RobotsCache,
     control: Arc<CrawlControl>,
+    dht: Option<Dht>,
     cfg: CrawlConfig,
 }
 
@@ -201,7 +207,14 @@ impl Crawler {
     ) -> Self {
         let robots = robots::RobotsCache::new(&cfg.robots_agent);
         let control = Arc::default();
-        Self { ctx: Arc::new(Context { gateway, index, safety, store, robots, control, cfg }) }
+        Self { ctx: Arc::new(Context { gateway, index, safety, store, robots, control, dht: None, cfg }) }
+    }
+
+    /// Resolves magnets' metadata through the DHT instead of indexing them
+    /// from the link alone.
+    pub fn with_dht(mut self, dht: Dht) -> Self {
+        Arc::get_mut(&mut self.ctx).expect("the crawler has not started").dht = Some(dht);
+        self
     }
 
     pub fn control(&self) -> Arc<CrawlControl> {
@@ -323,7 +336,7 @@ impl Context {
             return Outcome::Blocked(verdict);
         }
         if let Source::Magnet(magnet) = source {
-            return self.magnet(magnet, job);
+            return self.magnet(magnet, job).await;
         }
         match self.robots.allowed(&self.gateway, source).await {
             Ok(true) => {}
@@ -383,13 +396,28 @@ impl Context {
         Outcome::Indexed { doc: Box::new(doc), links }
     }
 
-    /// A magnet link is indexed from the link alone. Its file list and
-    /// swarm health arrive with the DHT module.
-    fn magnet(&self, magnet: &Magnet, job: &Job) -> Outcome {
+    /// A magnet is indexed from its metadata when the DHT finds a peer that
+    /// serves it (only the info dictionary is fetched, never content), and
+    /// from the link alone otherwise.
+    async fn magnet(&self, magnet: &Magnet, job: &Job) -> Outcome {
         let url = job.source.to_string();
         let info_hash = magnet.info_hash_hex();
-        let title = magnet.name.clone().unwrap_or_else(|| info_hash.clone());
-        let verdict = self.safety.check_content(&[&url, &title]);
+        let meta = match &self.dht {
+            Some(dht) => {
+                dht.metadata(magnet.info_hash).await.inspect_err(|e| tracing::debug!(%url, "no metadata: {e}")).ok()
+            }
+            None => None,
+        };
+        let title = meta
+            .as_ref()
+            .map(|m| m.name.clone())
+            .filter(|name| !name.is_empty())
+            .or_else(|| magnet.name.clone())
+            .unwrap_or_else(|| info_hash.clone());
+        let files = meta.as_ref().map(|m| m.files.clone()).unwrap_or_default();
+        let file_list = files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>().join("\n");
+        let link_name = magnet.name.as_deref().unwrap_or_default();
+        let verdict = self.safety.check_content(&[&url, &title, link_name, &file_list]);
         if verdict != Verdict::Allow {
             return Outcome::Blocked(verdict);
         }
@@ -397,16 +425,18 @@ impl Context {
         let doc = IndexedDoc {
             network: Network::Magnet,
             site: job.source.site_key(),
+            description: meta.as_ref().map(describe).unwrap_or_default(),
+            // The link's own name stays searchable when the torrent's differs.
+            keywords: Some(link_name.to_owned()).filter(|n| !n.is_empty() && *n != title).into_iter().collect(),
             title,
-            description: String::new(),
-            keywords: vec![],
             body: String::new(),
             content_hash: format!("btih:{info_hash}"),
             info_hash: Some(info_hash),
-            files: vec![],
+            files,
             first_seen: now,
             last_seen: now,
-            liveness: 0.0,
+            // Unknown without the DHT; otherwise how many peers it found.
+            liveness: meta.as_ref().map_or(0.0, |m| (m.peers as f32 / HEALTHY_SWARM).min(1.0)),
             trust: job.trust,
             url,
         };
@@ -533,6 +563,26 @@ fn spawn_write(writes: &mut JoinSet<()>, write: impl FnOnce() -> omnid_index::Re
     });
 }
 
+/// "11 files · 123.3 MB · 322 peers"
+fn describe(meta: &TorrentMeta) -> String {
+    let files = match meta.files.len() {
+        1 => "1 file".to_owned(),
+        n => format!("{n} files"),
+    };
+    format!("{files} · {} · {} peers", human_size(meta.total_size), meta.peers)
+}
+
+fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 { format!("{bytes} B") } else { format!("{size:.1} {}", UNITS[unit]) }
+}
+
 /// `www.example.com` and `example.com` are one site.
 fn same_site(a: &str, b: &str) -> bool {
     a.strip_prefix("www.").unwrap_or(a) == b.strip_prefix("www.").unwrap_or(b)
@@ -558,6 +608,20 @@ fn content_hash(text: &str, raw: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn describes_torrents() {
+        let meta = TorrentMeta {
+            name: "Sintel".into(),
+            files: vec![omnid_core::FileMeta { path: "Sintel.mp4".into(), size: 129_241_752 }],
+            total_size: 129_302_391,
+            piece_length: 131_072,
+            private: false,
+            peers: 322,
+        };
+        assert_eq!(describe(&meta), "1 file · 123.3 MB · 322 peers");
+        assert_eq!(human_size(512), "512 B");
+    }
 
     #[test]
     fn www_is_the_same_site() {

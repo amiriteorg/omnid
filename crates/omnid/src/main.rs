@@ -11,6 +11,7 @@ use clap::{Args, Parser, Subcommand};
 use omnid::DaemonConfig;
 use omnid_core::{Network, Source};
 use omnid_crawl::{CrawlConfig, Crawler, Job, SEED_TRUST, Safety, extract, is_indexable_type};
+use omnid_dht::{Dht, DhtConfig};
 use omnid_index::{SearchIndex, SearchQuery};
 use omnid_net::{FetchOptions, Gateway, GatewayConfig};
 use tokio::sync::mpsc;
@@ -47,6 +48,9 @@ struct Common {
     /// Reach the clearnet through Tor exits instead of directly
     #[arg(long, global = true)]
     clearnet_via_tor: bool,
+    /// Do not join the BitTorrent DHT (magnets are then indexed from their links alone)
+    #[arg(long, global = true)]
+    no_dht: bool,
 }
 
 #[derive(Subcommand)]
@@ -120,6 +124,10 @@ struct CrawlOptions {
     /// Follow clearnet links to other sites, not only within the linking site
     #[arg(long)]
     follow_offsite: bool,
+    /// Also index info hashes sampled from the whole DHT (BEP 51): torrents
+    /// nobody linked to, whatever they are. Use a blocked-terms list.
+    #[arg(long)]
+    dht_harvest: bool,
 }
 
 #[tokio::main]
@@ -151,6 +159,8 @@ async fn serve(common: &Common, data_dir: &Path, args: ServeArgs) -> Result<()> 
         api_token: args.api_token,
         start_paused: args.paused,
         socks: args.socks,
+        dht: (!common.no_dht).then(DhtConfig::default),
+        dht_harvest: args.crawl.dht_harvest,
     })
     .await?;
     let stop = daemon.shutdown_token();
@@ -173,7 +183,10 @@ async fn crawl(common: &Common, data_dir: &Path, args: CrawlArgs) -> Result<()> 
         let source = Source::parse(address).with_context(|| format!("seed `{address}`"))?;
         seeds.push(Job { source, depth: 0, trust: SEED_TRUST });
     }
-    let crawler = Crawler::new(gateway, index, Arc::new(safety(&args.crawl)?), store, crawl_config(&args.crawl));
+    let mut crawler = Crawler::new(gateway, index, Arc::new(safety(&args.crawl)?), store, crawl_config(&args.crawl));
+    if !common.no_dht {
+        crawler = crawler.with_dht(Dht::start(DhtConfig::default()).await.context("joining the DHT")?);
+    }
 
     // With no seeds this resumes whatever the store has due.
     let (jobs, rx) = mpsc::channel(seeds.len().max(1));
@@ -205,6 +218,23 @@ async fn crawl(common: &Common, data_dir: &Path, args: CrawlArgs) -> Result<()> 
 
 async fn fetch(common: &Common, data_dir: &Path, address: &str) -> Result<()> {
     let source = Source::parse(address)?;
+    if let Source::Magnet(magnet) = &source {
+        anyhow::ensure!(!common.no_dht, "magnet metadata comes from the DHT, which --no-dht turns off");
+        let dht = Dht::start(DhtConfig::default()).await.context("joining the DHT")?;
+        let meta = dht.metadata(magnet.info_hash).await?;
+        println!("network       magnet");
+        println!("address       {source}");
+        println!("name          {}", meta.name);
+        println!("peers         {} found", meta.peers);
+        println!("size          {} bytes in {} files", meta.total_size, meta.files.len());
+        for file in meta.files.iter().take(20) {
+            println!("  {:>14}  {}", file.size, file.path);
+        }
+        if meta.files.len() > 20 {
+            println!("  ... and {} more", meta.files.len() - 20);
+        }
+        return Ok(());
+    }
     let gateway = Gateway::new(gateway_config(common, data_dir)).map_err(|e| anyhow!("starting the gateway: {e}"))?;
     // The same content-type gate as the crawler: media is never downloaded.
     let opts = FetchOptions { accept: is_indexable_type, ..FetchOptions::default() };

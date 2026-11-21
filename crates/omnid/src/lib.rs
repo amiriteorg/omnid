@@ -9,8 +9,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use omnid_core::Source;
-use omnid_crawl::{CrawlConfig, CrawlControl, CrawlStore, Crawler, Job, SEED_TRUST, Safety, StatsSnapshot};
+use omnid_core::{Magnet, Source, now_secs};
+use omnid_crawl::{
+    CrawlConfig, CrawlControl, CrawlStore, Crawler, HARVESTED_TRUST, Job, SEED_TRUST, Safety, StatsSnapshot,
+};
+use omnid_dht::{Dht, DhtConfig};
 use omnid_index::{SCHEMA_VERSION, SearchIndex};
 use omnid_net::{Gateway, GatewayConfig};
 use tokio::sync::mpsc;
@@ -31,6 +34,13 @@ pub struct DaemonConfig {
     /// Where to serve the SOCKS5 proxy, if at all. It has no authentication:
     /// anything that can reach it can use it, so keep it on loopback.
     pub socks: Option<SocketAddr>,
+    /// The BitTorrent DHT, for magnets' file lists and swarm sizes. `None`
+    /// leaves magnets indexed from their links alone.
+    pub dht: Option<DhtConfig>,
+    /// Also index info hashes sampled from the whole DHT (BEP 51). This pulls
+    /// in torrents nobody linked to, whatever they are; the safety gate's
+    /// blocked terms are checked against their names and files.
+    pub dht_harvest: bool,
 }
 
 /// A running daemon: routers, crawler and the local API.
@@ -53,12 +63,28 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
     let safety = Arc::new(cfg.safety);
     tracing::info!(denylist = safety.denylist_len(), blocked_terms = safety.blocked_terms_len(), "safety gate loaded");
 
-    let crawler = Crawler::new(gateway.clone(), index.clone(), safety.clone(), store, cfg.crawl);
+    let dht = match cfg.dht {
+        Some(dht_cfg) => match Dht::start(dht_cfg).await {
+            Ok(dht) => Some(dht),
+            Err(e) => {
+                tracing::warn!("DHT disabled: {e}");
+                None
+            }
+        },
+        None => None,
+    };
+    let mut crawler = Crawler::new(gateway.clone(), index.clone(), safety.clone(), store.clone(), cfg.crawl);
+    if let Some(dht) = &dht {
+        crawler = crawler.with_dht(dht.clone());
+    }
     let control = crawler.control();
     control.set_paused(cfg.start_paused);
     let (jobs, rx) = mpsc::channel(1024);
     let shutdown = CancellationToken::new();
     let crawl = tokio::spawn(crawler.run(rx, shutdown.clone()));
+    if let (Some(dht), true) = (&dht, cfg.dht_harvest) {
+        tokio::spawn(harvest(dht.clone(), store, shutdown.clone()));
+    }
     let seeder = jobs.clone();
     tokio::spawn(async move {
         for job in cfg.seeds {
@@ -86,7 +112,7 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
         }
         None => None,
     };
-    let state = api::AppState { gateway, index, control: control.clone(), jobs, safety };
+    let state = api::AppState { gateway, index, control: control.clone(), jobs, safety, dht };
     let router = api::router(state, addr, cfg.api_token);
     let stop = shutdown.clone().cancelled_owned();
     let server = tokio::spawn(async move { axum::serve(listener, router).with_graceful_shutdown(stop).await });
@@ -123,6 +149,37 @@ impl Daemon {
         // The server stopping for any reason stops the crawl too.
         self.shutdown.cancel();
         Ok(self.crawl.await?)
+    }
+}
+
+/// Writes sampled info hashes to the crawl store, where the crawler picks
+/// them up like any other magnet.
+async fn harvest(dht: Dht, store: Arc<CrawlStore>, shutdown: CancellationToken) {
+    tracing::info!("harvesting info hashes from the DHT");
+    let mut hashes = dht.harvest();
+    let mut batch = Vec::new();
+    loop {
+        let received = tokio::select! {
+            _ = shutdown.cancelled() => return,
+            n = hashes.recv_many(&mut batch, 256) => n,
+        };
+        if received == 0 {
+            return;
+        }
+        let jobs: Vec<_> = batch
+            .drain(..)
+            .map(|info_hash| Job {
+                source: Source::Magnet(Magnet { info_hash, name: None }),
+                depth: 0,
+                trust: HARVESTED_TRUST,
+            })
+            .collect();
+        let store = store.clone();
+        match tokio::task::spawn_blocking(move || store.discover(&jobs, now_secs())).await {
+            Ok(Ok(added)) => tracing::debug!(added, "harvested"),
+            Ok(Err(e)) => tracing::error!("crawl store: {e}"),
+            Err(e) => tracing::error!("harvest write died: {e}"),
+        }
     }
 }
 

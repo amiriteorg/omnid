@@ -15,6 +15,7 @@ crate-type = ["cdylib", "rlib"]
 omnid.workspace = true
 omnid-core.workspace = true
 omnid-crawl.workspace = true
+omnid-dht.workspace = true
 omnid-net.workspace = true
 anyhow.workspace = true
 jni.workspace = true

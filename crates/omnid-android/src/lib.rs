@@ -45,7 +45,8 @@ pub fn start(data_dir: &Path, token: &str) -> Result<u16> {
     start_with(data_dir, token, true)
 }
 
-fn start_with(data_dir: &Path, token: &str, tor: bool) -> Result<u16> {
+/// `networks: false` leaves out Tor and the DHT, for tests.
+fn start_with(data_dir: &Path, token: &str, networks: bool) -> Result<u16> {
     let mut running = RUNNING.lock().expect("daemon lock poisoned");
     if let Some(running) = running.as_ref() {
         return Ok(running.daemon.addr().port());
@@ -75,13 +76,17 @@ fn start_with(data_dir: &Path, token: &str, tor: bool) -> Result<u16> {
     let daemon = runtime.block_on(omnid::start(DaemonConfig {
         data_dir: data_dir.to_owned(),
         listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-        gateway: GatewayConfig { tor_dir: tor.then(|| data_dir.join("tor")), ..GatewayConfig::default() },
+        gateway: GatewayConfig { tor_dir: networks.then(|| data_dir.join("tor")), ..GatewayConfig::default() },
         crawl: phone_crawl(),
         safety,
         seeds,
         api_token: Some(token.to_owned()),
         start_paused: true,
         socks: None,
+        // Magnets get their file lists; harvesting the whole DHT is a
+        // server's job, not a phone's.
+        dht: networks.then(|| omnid_dht::DhtConfig { max_peer_connections: 4, ..omnid_dht::DhtConfig::default() }),
+        dht_harvest: false,
     }))?;
     let port = daemon.addr().port();
     *running = Some(Running { runtime, daemon });
@@ -236,7 +241,7 @@ mod tests {
         let started = {
             let dir = dir.clone();
             tokio::task::spawn_blocking(move || {
-                // Without Tor, so the test stays off the network.
+                // Without Tor or the DHT, so the test stays off the network.
                 let first = start_with(&dir, "token", false).unwrap();
                 assert_eq!(start_with(&dir, "token", false).unwrap(), first, "a second start reuses the daemon");
                 first

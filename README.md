@@ -27,7 +27,8 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Tor fetch, HTTP and HTTPS, via embedded arti, gzip over Tor | done, live tested against real onion services |
 | I2P fetch via i2pd's HTTP proxy | written; tested against a stand-in, not a live router |
 | Hyphanet fetch via FProxy | written; not tested against a live node |
-| Magnets | harvested from pages and indexed by info hash; metadata needs the DHT module |
+| Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested |
+| DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
 | Index: stemming, accent folding, snippets, ranking, facets, paging, mirror folding | done, unit tested |
 | Crawler: persistent store, revisits, backoff, politeness, robots.txt, pause/resume | done, end-to-end tested |
 | Charset detection (BOM, header, `<meta>`) | done, unit tested |
@@ -36,8 +37,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | SOCKS5 proxy (`.onion`/`.i2p` for any browser) | done, live tested with curl over Tor |
 | Android app (arm64) | done, run on an Android 16 emulator |
 
-Not built yet: the DHT module (BEP 51 harvesting, BEP 9 metadata), router
-lifecycle management (starting i2pd and Hyphanet as child processes), index
+Not built yet: router lifecycle management (starting i2pd and Hyphanet as child processes), index
 sync between nodes, near-duplicate detection, a desktop app shell.
 
 ## Quick start
@@ -48,6 +48,7 @@ B=target/release/omnid
 
 $B fetch https://example.com/              # one fetch, routed by network
 $B fetch http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/
+$B fetch 'magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10'   # Sintel: name, files, peers
 $B crawl --max-pages 50 https://example.com/   # crawl until nothing is due, then exit
 $B crawl                                   # resume whatever the store has due
 $B search "tor browser" -n onion
@@ -59,7 +60,9 @@ curl --socks5-hostname 127.0.0.1:7172 http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlki
 Tor starts with the daemon and needs nothing installed. For I2P run i2pd
 (HTTP proxy on 4444); for Hyphanet run a node (FProxy on 8888). `--no-tor`,
 `--i2p-proxy` and `--fproxy` change that; `--clearnet-via-tor` sends
-clearnet traffic through Tor exits. Data lives in the platform data
+clearnet traffic through Tor exits. omnid joins the BitTorrent DHT as a
+read-only node to resolve magnets (`--no-dht` to stay out); `--dht-harvest`
+also indexes info hashes sampled from the whole DHT. Data lives in the platform data
 directory (`--data-dir` to override): the index in `index-v2/`, the crawl
 store in `crawl.sqlite`, Tor state in `tor/`.
 
@@ -104,6 +107,7 @@ services.
 | `crates/omnid-net` | `Gateway::fetch` and `Gateway::connect`: transports, redirects, the private-address guard |
 | `crates/omnid-index` | Tantivy schema, analyzer, ranking, snippets, mirror folding |
 | `crates/omnid-crawl` | crawl store, frontier, robots.txt, extraction, safety gate, crawl loop |
+| `crates/omnid-dht` | read-only DHT client: get_peers, BEP 9 metadata, BEP 51 sampling, own bencode |
 | `crates/omnid` | the daemon as a library (`omnid::start`) and the CLI; API, search page, SOCKS proxy |
 | `crates/omnid-android` | JNI bridge for the app |
 | `android/` | the Android app (Kotlin, platform APIs only) |
@@ -138,6 +142,10 @@ services.
 - **HTML is tokenized, not parsed into a tree.** A tree builder does work
   proportional to nesting depth on every element: a 600 KB page of nested
   `<div>`s took 11.5 s in release. The tokenizer is linear.
+- **Magnets** are resolved by a read-only DHT node (BEP 43 `ro`, rate
+  limited, private and low-port peers skipped). Only the info dictionary is
+  fetched over `ut_metadata` and checked against the info hash; no piece is
+  ever requested or uploaded. Liveness is the peers found over 20, capped at 1.
 - **Index format is versioned** by directory name (`index-v2`). A schema
   change opens a new index rather than misreading an old one.
 
@@ -152,6 +160,10 @@ services.
 - **Blocked terms** (`--blocked-terms`): a matching page is not indexed, its
   links are not followed, it is never revisited, and it is removed from the
   index if it was there before the list changed.
+- **DHT harvesting is opt-in.** It indexes the names and file lists of
+  torrents nobody linked to, whatever they are, so run it only with a
+  blocked-terms list, which is checked against names and every file path.
+  The Android app never harvests.
 - On Android, `denylist.txt` and `blocked-terms.txt` in the app's data
   directory are loaded the same way.
 - **Known-abuse media hashes are not checked yet.** PhotoDNA, NCMEC and IWF
