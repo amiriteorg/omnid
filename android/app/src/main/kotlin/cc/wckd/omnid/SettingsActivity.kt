@@ -136,6 +136,10 @@ class SettingsActivity : Activity() {
         toggle(R.string.settings_images, R.string.settings_images_about, Settings.IMAGES, default = true)
         divider()
         toggle(R.string.browser_allow_screenshots, R.string.settings_screenshots_about, Settings.SCREENSHOTS, default = false)
+        divider()
+        choice(R.string.settings_download_connections, connectionsName(Downloads.connections(prefs.getInt(Downloads.CONNECTIONS, Downloads.DEFAULT_CONNECTIONS)))) {
+            askConnections()
+        }
 
         section(R.string.settings_search)
         choice(R.string.settings_networks, networksName(Settings.networks(prefs.getString(Settings.SEARCH_NETWORKS, null)))) { askNetworks() }
@@ -372,6 +376,19 @@ class SettingsActivity : Activity() {
         }
     }
 
+    private fun connectionsName(n: Int) =
+        if (n == 1) getString(R.string.settings_download_connections_one) else getString(R.string.settings_download_connections_value, n)
+
+    private fun askConnections() {
+        val choices = Downloads.CONNECTION_CHOICES
+        val current = choices.indexOf(Downloads.connections(prefs().getInt(Downloads.CONNECTIONS, Downloads.DEFAULT_CONNECTIONS)))
+        val about = getString(R.string.settings_download_connections_about)
+        pickOne(getString(R.string.settings_download_connections), choices.map(::connectionsName), current, about) { which ->
+            prefs().edit().putInt(Downloads.CONNECTIONS, choices[which]).apply()
+            render()
+        }
+    }
+
     private fun askSpeed() {
         val speeds = Settings.CrawlSpeed.entries
         val about = listOf(R.string.settings_speed_gentle_about, R.string.settings_speed_normal_about, R.string.settings_speed_fast_about)
@@ -525,7 +542,7 @@ class SettingsActivity : Activity() {
     }
 
     private fun singleChoice(title: Int, items: List<CharSequence>, current: Int, chosen: (Int) -> Unit) =
-        pickOne(getString(title), items, current, chosen)
+        pickOne(getString(title), items, current, chosen = chosen)
 
     private fun textField(value: String, hint: Int) = EditText(this).apply {
         setText(value)
@@ -558,7 +575,13 @@ class SettingsActivity : Activity() {
  * a list of their own rather than the platform's single-choice list, which cuts off items of two
  * lines.
  */
-internal fun Activity.pickOne(title: CharSequence, items: List<CharSequence>, current: Int, chosen: (Int) -> Unit) {
+internal fun Activity.pickOne(
+    title: CharSequence,
+    items: List<CharSequence>,
+    current: Int,
+    message: CharSequence? = null,
+    chosen: (Int) -> Unit,
+) {
     fun dp(value: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
     val group = RadioGroup(this).apply { setPadding(dp(12), dp(8), dp(20), dp(8)) }
     var dialog: AlertDialog? = null
@@ -576,6 +599,14 @@ internal fun Activity.pickOne(title: CharSequence, items: List<CharSequence>, cu
                 chosen(i)
             }
         }, RadioGroup.LayoutParams(RadioGroup.LayoutParams.MATCH_PARENT, RadioGroup.LayoutParams.WRAP_CONTENT))
+    }
+    if (message != null) {
+        group.addView(TextView(this).apply {
+            text = message
+            setTextColor(getColor(R.color.ink_2))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(dp(12), 0, 0, dp(8))
+        }, 0)
     }
     dialog = AlertDialog.Builder(this)
         .setTitle(title)

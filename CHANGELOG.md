@@ -9,8 +9,14 @@
   hands the rest of its part to a new connection on new circuits. `If-Range` and the file's length
   are checked on every answer, so a file that changes meanwhile fails the download instead of
   being spliced. A server without ranges is read in one stream. The engine is
-  `omnid_net::Gateway::download`, with progress and cancellation for the app to use next. The
-  crawler still never downloads media.
+  `omnid_net::Gateway::download`. The crawler still never downloads media.
+- Downloads in the app's browser: a file the browser does not show is saved to the phone's
+  Downloads after it asks (name, size, site, and a warning that other apps opening it can go online
+  outside Tor), with a progress notification and Cancel. From 2 MB, a server that serves ranges
+  gets the daemon's parallel ranges (Settings → Download connections, 4 by default), each on
+  Tor circuits of its own; anything else, or an answer that is not the file the browser saw, comes
+  over the browser's own connection. `Native.download`, `downloadState`, `downloadError`,
+  `cancelDownload` and `forgetDownload` are new.
 - Fixed: Ahmia's blocklist kept the crawler off five of the default onion seeds. The list, published
   as onion services blocked for child sexual abuse material, names ProPublica, Proton, Qubes,
   Riseup and one more of them; on a phone running 0.1.2 their pages were refused and taken out of

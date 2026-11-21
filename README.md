@@ -228,7 +228,20 @@ Reopen closed tab (the last ten, kept in memory only), find in page, bookmarks
 Hyphanet page as its `freenet:` key), Desktop site (the page's computer layout,
 per tab) and the security level. Video plays in the page or full screen, its
 own controls' button hiding the toolbar and the system bars until Back; the
-levels below decide whether it waits for a tap:
+levels below decide whether it waits for a tap.
+
+A file the browser does not show (an archive, a package, a document) is a
+download, after it asks: the file's name, size and site, and a warning that
+another app opening it can go online outside Tor. It goes to the phone's
+Downloads, with a notification showing progress and Cancel; OMNId never opens
+it. A file of 2 MB or more from a server that serves byte ranges is fetched by
+the daemon in parallel ranges (Settings → Download connections, 4 by default),
+each on Tor circuits of its own, which on the emulator took a 21.8 MB file from
+an onion mirror in 60 seconds where one connection takes about two and a half
+minutes; a smaller file, or one from a server without ranges, comes over the
+browser's own connection. If the daemon's answer is not the file the browser
+saw (another size or version), the browser's copy is used instead. Either way
+nothing goes direct. The levels:
 
 - **Standard**: every site feature, with resist-fingerprinting.
 - **Safer**: no JIT, WebAssembly, MathML or SVG fonts; media plays only when
@@ -415,9 +428,9 @@ The Android app's browser:
   beacons and prefetching are off, lookalike names show as punycode, HTTPS only on the clearnet (onions are exempt, and a
   `.i2p` site without HTTPS is reloaded over HTTP: I2P, like Tor for onions,
   encrypts the whole way), strict tracking protection, no Safe Browsing lookups. Site permissions (camera,
-  microphone, location, notifications) are refused, downloads are off, and
-  screenshots and the recent-apps thumbnail are blocked unless allowed in
-  Settings.
+  microphone, location, notifications) are refused, a file is downloaded only
+  after you say yes to it, and screenshots and the recent-apps thumbnail are
+  blocked unless allowed in Settings.
 
 ## Known limitations
 

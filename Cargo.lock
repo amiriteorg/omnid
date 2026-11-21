@@ -3047,6 +3047,8 @@ dependencies = [
  "omnid-crawl",
  "omnid-dht",
  "omnid-net",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

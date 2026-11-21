@@ -94,6 +94,7 @@ class OmnidService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) stopSelf()
+        if (intent?.action == Downloader.ACTION_CANCEL) Downloader.cancel(intent.getIntExtra(Downloader.EXTRA_ID, 0))
         // Not sticky: a restart from the background may not start a foreground service.
         return START_NOT_STICKY
     }
