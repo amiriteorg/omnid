@@ -141,3 +141,30 @@ Ending the post-metadata peer count after 1 s without a new peer (cap still
 Big Buck Bunny's tail is dead peers (5 s connect, 10 s read timeouts), as
 in the baseline, so its median moves with whichever peers the DHT returns.
 Median peer counts did not drop (Sintel 274/344 -> 269/347).
+
+A peer that has not answered the handshake within 1 s gives its slot to the
+next one (at most 3x `max_peer_connections` attempts open), shared, builds
+alternated base, new, base, new; desktop numbers are from the commit message
+of "Give a peer's metadata slot to the next one when it is slow to answer".
+
+| Where | calls per side | median s | p90 s | max s | mean s |
+|---|---|---|---|---|---|
+| desktop | 45 | 2.45 -> 2.30 | 12.12 -> 7.15 | 23.94 -> 11.84 | |
+| Android emulator, emulated 3G (384 kbit/s, 35-200 ms), 4 slots | 30 | 2.54 -> 3.04 | 9.38 -> 4.53 | 41.23 -> 8.06 | 5.37 -> 3.42 |
+
+    adb emu network delay umts; adb emu network speed umts
+    adb shell 'cd /data/local/tmp && ./bench_metadata_base 5'   # aarch64 builds of the bench, pushed
+
+Emulator raw seconds, per torrent, base then new:
+
+    Sintel          15.15 2.87 2.85 2.54 9.12 6.07 1.53 2.16 1.66 3.63
+                    6.48 3.23 7.37 4.20 3.68 3.42 3.28 3.30 3.67 3.39
+    Big Buck Bunny  14.08 9.38 41.23 2.21 6.81 2.06 2.48 1.66 2.30 1.78
+                    2.83 4.53 4.26 3.79 2.04 3.92 2.84 2.77 2.26 8.06
+    Tears of Steel  2.55 1.61 1.98 1.02 1.12 2.36 7.44 5.87 2.66 2.87
+                    2.85 2.09 2.27 2.36 2.33 2.46 2.54 2.14 1.93 2.23
+
+The tail shrinks on both. On 3G the median rose 0.5 s, Sintel's most (2.86
+-> 3.54): not separated from noise at this N. A cause it could have, not
+checked: slow peers that answer late now fetch the metadata too, so more
+copies of it share the 47 KB/s link at once.
