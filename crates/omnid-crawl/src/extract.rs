@@ -32,6 +32,8 @@ pub struct Extracted {
     pub text: String,
     /// Link targets as written, unresolved.
     pub links: Vec<String>,
+    /// The language the page declares on `<html lang>`, as a primary subtag.
+    pub lang: Option<String>,
     /// `<meta name="robots">` asked not to index this page...
     pub noindex: bool,
     /// ...or not to follow its links.
@@ -153,6 +155,10 @@ impl Page {
         }
 
         match name {
+            "html" if self.out.lang.is_none() => {
+                self.out.lang =
+                    attr(tag, "lang").or_else(|| attr(tag, "xml:lang")).and_then(omnid_core::lang::primary_subtag);
+            }
             "title" if !self.title_done => self.in_title = true,
             "meta" => self.meta(tag),
             "a" if self.out.links.len() < MAX_LINKS => {
@@ -267,6 +273,16 @@ mod tests {
         assert_eq!(e.links, ["/a", "http://example.com/b#x"], "script and noscript bodies are not markup");
         assert_eq!(e.text, "Welcome Links A and B & more x");
         assert!(!e.noindex && !e.nofollow);
+    }
+
+    #[test]
+    fn reads_the_declared_language() {
+        let lang = |html: &str| extract(Some("text/html"), html.as_bytes()).lang;
+        assert_eq!(lang(r#"<html lang="tk"><title>Tor</title>"#).as_deref(), Some("tk"));
+        assert_eq!(lang(r#"<!doctype html><html xml:lang="pt-BR">"#).as_deref(), Some("pt"));
+        assert_eq!(lang(r#"<html lang="x-default">"#), None);
+        assert_eq!(lang("<p>no html tag</p>"), None);
+        assert_eq!(extract(Some("text/plain"), b"lang=en").lang, None);
     }
 
     #[test]

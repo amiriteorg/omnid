@@ -118,6 +118,7 @@ fn build(docs: usize) -> (tempfile::TempDir, SearchIndex) {
                 last_seen: 1_000,
                 liveness: (rng.next() % 100) as f32 / 100.0,
                 trust: 0.5,
+                lang: None,
             })
             .unwrap();
     }

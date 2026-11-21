@@ -78,7 +78,10 @@ async fn serve() -> (String, Arc<Visits>) {
 }
 
 fn hits(index: &SearchIndex, text: &str, networks: &[Network]) -> Vec<omnid_index::SearchHit> {
-    index.search(&SearchQuery { text: text.into(), networks: networks.to_vec(), offset: 0, limit: 10 }).unwrap().hits
+    index
+        .search(&SearchQuery { text: text.into(), networks: networks.to_vec(), limit: 10, ..SearchQuery::default() })
+        .unwrap()
+        .hits
 }
 
 fn crawler(index: Arc<SearchIndex>, store: Arc<CrawlStore>, max_pages: Option<u64>) -> Crawler {

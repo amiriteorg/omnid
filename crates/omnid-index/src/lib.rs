@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use omnid_core::{FileMeta, IndexedDoc, Network};
 use serde::Serialize;
@@ -26,7 +26,7 @@ pub type Result<T> = tantivy::Result<T>;
 
 /// The on-disk format version. Callers put it in the index directory name,
 /// so a schema change opens a fresh index instead of misreading an old one.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// Upper bound on the addresses listed for one piece of content.
 const MAX_ROUTES: usize = 16;
@@ -35,6 +35,14 @@ const SNIPPET_CHARS: usize = 220;
 /// Lowercase, fold accents ("café" finds "cafe") and stem English
 /// ("bananas" finds "banana").
 const TOKENIZER: &str = "omnid";
+/// Factor for a page in a language the reader did not ask for: it needs
+/// about 1.4x the text relevance to outrank a page in theirs.
+const OTHER_LANGUAGE: Score = 0.7;
+/// Each step down the reader's list of languages costs this much.
+const LATER_LANGUAGE: Score = 0.05;
+/// A site's root page is boosted by this much, falling off with depth: short
+/// queries more often mean a site than one of its pages.
+const ROOT_BOOST: Score = 0.2;
 
 #[derive(Debug, Clone, Default)]
 pub struct SearchQuery {
@@ -47,6 +55,10 @@ pub struct SearchQuery {
     /// Results to skip, counted in folded results, for paging.
     pub offset: usize,
     pub limit: usize,
+    /// The reader's languages, best first (from `Accept-Language`). Pages in
+    /// them rank above pages in other languages; pages whose language is
+    /// unknown are not penalised. Empty means no preference.
+    pub languages: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -82,6 +94,8 @@ pub struct SearchHit {
     pub info_hash: Option<String>,
     pub first_seen: i64,
     pub last_seen: i64,
+    /// Primary language subtag, declared by the page or detected.
+    pub lang: Option<String>,
 }
 
 /// A run of text, marked when it matched the query. Structured rather than
@@ -117,6 +131,8 @@ struct Fields {
     last_seen: Field,
     liveness: Field,
     trust: Field,
+    lang: Field,
+    prior: Field,
 }
 
 fn schema() -> (Schema, Fields) {
@@ -144,8 +160,12 @@ fn schema() -> (Schema, Fields) {
         files: b.add_text_field("files", STORED),
         first_seen: b.add_date_field("first_seen", STORED | FAST),
         last_seen: b.add_date_field("last_seen", STORED | FAST),
-        liveness: b.add_f64_field("liveness", STORED | FAST),
-        trust: b.add_f64_field("trust", STORED | FAST),
+        liveness: b.add_f64_field("liveness", STORED),
+        trust: b.add_f64_field("trust", STORED),
+        lang: b.add_text_field("lang", STRING | STORED | FAST),
+        // Trust, liveness and depth folded into one factor when the document
+        // is written, so ranking reads one column instead of three.
+        prior: b.add_f64_field("prior", FAST),
     };
     (b.build(), fields)
 }
@@ -234,6 +254,16 @@ impl SearchIndex {
         d.add_date(f.last_seen, DateTime::from_timestamp_secs(doc.last_seen));
         d.add_f64(f.liveness, doc.liveness.into());
         d.add_f64(f.trust, doc.trust.into());
+        let lang = match &doc.lang {
+            Some(lang) => Some(lang.clone()),
+            // A full body says it best; titles often keep an English brand name.
+            None if doc.body.len() >= 200 => omnid_core::lang::detect(&doc.body),
+            None => omnid_core::lang::detect(&format!("{} {} {}", doc.title, doc.description, doc.body)),
+        };
+        if let Some(lang) = lang {
+            d.add_text(f.lang, lang);
+        }
+        d.add_f64(f.prior, prior(doc).into());
 
         let writer = self.writer()?.lock().expect("index writer lock poisoned");
         writer.delete_term(Term::from_field_text(f.url, &doc.url));
@@ -300,7 +330,9 @@ impl SearchIndex {
         let text_query = self.parse(&q.text, conjunction);
         // Over-fetch so that folding mirrors together still fills the page.
         let window = (q.offset + limit) * 4;
-        let top_docs = TopDocs::with_limit(window).tweak_score(rank);
+        let languages: Arc<[String]> = q.languages.iter().cloned().collect();
+        let top_docs =
+            TopDocs::with_limit(window).tweak_score(move |segment: &SegmentReader| rank(segment, &languages));
 
         // The text query is the expensive part (phrases check positions in
         // every candidate), so it runs once: the same pass yields the top
@@ -346,6 +378,7 @@ impl SearchIndex {
                 info_hash: doc.get_first(f.info_hash).and_then(|v| v.as_str()).map(str::to_owned),
                 first_seen: date(&doc, f.first_seen),
                 last_seen: date(&doc, f.last_seen),
+                lang: doc.get_first(f.lang).and_then(|v| v.as_str()).map(str::to_owned),
                 title_spans: spans(&titles.snippet(&title), &title),
                 snippet: spans(&snippets.snippet(&text(&doc, f.body)), &description),
                 title,
@@ -457,7 +490,54 @@ impl SearchIndex {
             last_seen: date(doc, f.last_seen),
             liveness: number(doc, f.liveness),
             trust: number(doc, f.trust),
+            lang: doc.get_first(f.lang).and_then(|v| v.as_str()).map(str::to_owned),
         }
+    }
+
+    /// Copies every live document of an index written with an older schema
+    /// into this one, deriving what the old schema lacked (language, ranking
+    /// prior), and commits. Fields are matched by name. Returns how many
+    /// documents were copied.
+    pub fn migrate_from(&self, old_dir: &Path) -> Result<u64> {
+        let old = Index::open_in_dir(old_dir)?;
+        let schema = old.schema();
+        let field = |name: &str| schema.get_field(name).ok();
+        let (text_of, number_of, date_of) = (
+            |doc: &TantivyDocument, name: &str| field(name).map(|f| text(doc, f)).unwrap_or_default(),
+            |doc: &TantivyDocument, name: &str| field(name).map(|f| number(doc, f)).unwrap_or_default(),
+            |doc: &TantivyDocument, name: &str| field(name).map(|f| date(doc, f)).unwrap_or_default(),
+        );
+        let reader: IndexReader = old.reader_builder().reload_policy(ReloadPolicy::Manual).try_into()?;
+        let searcher = reader.searcher();
+        let mut copied = 0;
+        for segment in searcher.segment_readers() {
+            let store = segment.get_store_reader(64)?;
+            for doc in store.iter::<TantivyDocument>(segment.alive_bitset()) {
+                let doc = doc?;
+                self.upsert(&IndexedDoc {
+                    url: text_of(&doc, "url"),
+                    network: text_of(&doc, "network").parse().unwrap_or(Network::Clearnet),
+                    site: text_of(&doc, "site"),
+                    title: text_of(&doc, "title"),
+                    description: text_of(&doc, "description"),
+                    keywords: field("keywords")
+                        .map(|f| doc.get_all(f).filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                        .unwrap_or_default(),
+                    body: text_of(&doc, "body"),
+                    content_hash: text_of(&doc, "content_hash"),
+                    info_hash: Some(text_of(&doc, "info_hash")).filter(|h| !h.is_empty()),
+                    files: field("files").map(|f| files(&doc, f)).unwrap_or_default(),
+                    first_seen: date_of(&doc, "first_seen"),
+                    last_seen: date_of(&doc, "last_seen"),
+                    liveness: number_of(&doc, "liveness"),
+                    trust: number_of(&doc, "trust"),
+                    lang: field("lang").map(|f| text(&doc, f)).filter(|l| !l.is_empty()),
+                })?;
+                copied += 1;
+            }
+        }
+        self.commit()?;
+        Ok(copied)
     }
 
     fn writer(&self) -> Result<&Mutex<IndexWriter>> {
@@ -503,17 +583,55 @@ impl SegmentCollector for MatchedSegment {
     }
 }
 
-/// Relevance times provenance times reliability: an operator's seed that
-/// answers every time outranks a stray link that is usually down. The
-/// factors stay within 0.3..1.5, so text relevance still dominates.
-fn rank(segment: &SegmentReader) -> impl Fn(DocId, Score) -> Score + use<> {
-    let column =
-        |name: &str, default: f64| segment.fast_fields().f64(name).ok().map(|c| c.first_or_default_col(default));
-    let (trust, liveness) = (column("trust", 0.5), column("liveness", 0.0));
+/// Relevance times provenance, reliability, language and depth: an
+/// operator's seed that answers every time outranks a stray link that is
+/// usually down, a page in the reader's language outranks a translation, and
+/// a site's front page edges out its inner pages. Each factor is modest, so
+/// text relevance still dominates.
+fn rank(segment: &SegmentReader, languages: &[String]) -> impl Fn(DocId, Score) -> Score + use<> {
+    let fast = segment.fast_fields();
+    let prior = fast.f64("prior").ok().map(|c| c.first_or_default_col(1.0));
+    // The reader's languages as this segment's term ordinals, best first; a
+    // language with no document in the segment keeps its place as `None`.
+    let lang = fast.str("lang").ok().flatten().filter(|_| !languages.is_empty());
+    let preferred: Vec<Option<u64>> = match &lang {
+        Some(column) => languages.iter().map(|l| column.dictionary().term_ord(l).ok().flatten()).collect(),
+        None => vec![],
+    };
     move |doc, score| {
-        let trust = trust.as_ref().map_or(0.5, |c| c.get_val(doc));
-        let liveness = liveness.as_ref().map_or(0.0, |c| c.get_val(doc));
-        score * ((0.5 + trust) * (0.6 + 0.4 * liveness)) as Score
+        let prior = prior.as_ref().map_or(1.0, |c| c.get_val(doc)) as Score;
+        let language = match lang.as_ref().map(|c| c.term_ords(doc).next()) {
+            Some(Some(ord)) => match preferred.iter().position(|p| *p == Some(ord)) {
+                Some(rank) => 1.0 - LATER_LANGUAGE * rank as Score,
+                None => OTHER_LANGUAGE,
+            },
+            // No preference, or the page's language is unknown.
+            _ => 1.0,
+        };
+        score * prior * language
+    }
+}
+
+/// What a page's score is multiplied by before the reader's languages: its
+/// trust, whether it was alive when last checked, and how near its site's root
+/// it is.
+fn prior(doc: &IndexedDoc) -> Score {
+    let shallow = 1.0 + ROOT_BOOST / (1.0 + depth(&doc.url) as Score);
+    (0.5 + doc.trust) * (0.6 + 0.4 * doc.liveness) * shallow
+}
+
+/// How far below its site's root a page is: path segments for URLs, past the
+/// key and edition for freesites, 0 for magnets.
+fn depth(url: &str) -> u64 {
+    let segments = |path: &str| path.split('/').filter(|s| !s.is_empty()).count() as u64;
+    match omnid_core::Source::parse(url) {
+        Ok(omnid_core::Source::Hyphanet(key)) => {
+            // USK@key/site/edition/... and SSK@key/site-edition/...
+            let base = if key.starts_with("USK@") { 3 } else { 2 };
+            segments(&key).saturating_sub(base)
+        }
+        Ok(source) => source.url().map_or(0, |u| segments(u.path()) + u64::from(u.query().is_some())),
+        Err(_) => 0,
     }
 }
 
@@ -575,11 +693,12 @@ mod tests {
             last_seen: 1_000,
             liveness: 1.0,
             trust: 0.5,
+            lang: Some("en".into()),
         }
     }
 
     fn query(text: &str, networks: &[Network]) -> SearchQuery {
-        SearchQuery { text: text.into(), networks: networks.to_vec(), offset: 0, limit: 10 }
+        SearchQuery { text: text.into(), networks: networks.to_vec(), limit: 10, ..SearchQuery::default() }
     }
 
     fn index_of(docs: &[IndexedDoc]) -> SearchIndex {
@@ -696,6 +815,152 @@ mod tests {
         let index = index_of(&[dead, doc("http://found.example/", Network::Clearnet, "market", "h3"), seed]);
         let order: Vec<_> = hits(&index, "market").iter().map(|h| h.routes[0].url.clone()).collect();
         assert_eq!(order, ["http://seed.example/", "http://found.example/", "http://dead.example/"]);
+    }
+
+    fn in_language(url: &str, title: &str, content_hash: &str, lang: &str) -> IndexedDoc {
+        IndexedDoc { lang: Some(lang.into()), ..doc(url, Network::Clearnet, title, content_hash) }
+    }
+
+    fn urls(index: &SearchIndex, q: &SearchQuery) -> Vec<String> {
+        index.search(q).unwrap().hits.iter().map(|h| h.routes[0].url.clone()).collect()
+    }
+
+    #[test]
+    fn ranks_the_readers_languages_first() {
+        // On trust alone the Turkmen translation wins.
+        let mut turkmen = in_language("http://tor.example/tk/", "tor browser", "h1", "tk");
+        turkmen.trust = 0.7;
+        let index = index_of(&[
+            turkmen,
+            in_language("http://tor.example/de/", "tor browser", "h2", "de"),
+            in_language("http://tor.example/en/", "tor browser", "h3", "en"),
+        ]);
+        let ask = |languages: &[&str]| {
+            let languages = languages.iter().map(|l| (*l).to_owned()).collect();
+            urls(&index, &SearchQuery { languages, ..query("tor browser", &[]) })
+        };
+        assert_eq!(ask(&[])[0], "http://tor.example/tk/", "no preference: trust decides");
+        assert_eq!(ask(&["en"])[0], "http://tor.example/en/");
+        assert_eq!(
+            ask(&["de", "en"])[..2],
+            ["http://tor.example/de/", "http://tor.example/en/"],
+            "in the reader's order"
+        );
+        assert_eq!(ask(&["xx"]), ask(&[]), "a language no page has changes nothing");
+        assert_eq!(ask(&["en"]).len(), 3, "a preference reorders, never filters");
+    }
+
+    #[test]
+    fn does_not_demote_pages_of_unknown_language() {
+        let mut unknown = doc("http://a.example/x/", Network::Clearnet, "zq7", "h1");
+        unknown.lang = None;
+        let index = index_of(&[in_language("http://b.example/x/", "zq7", "h2", "fr"), unknown]);
+        let hits = index.search(&SearchQuery { languages: vec!["en".into()], ..query("zq7", &[]) }).unwrap().hits;
+        assert_eq!(hits[0].routes[0].url, "http://a.example/x/");
+        assert_eq!(hits[0].lang, None, "too little text to tell");
+    }
+
+    #[test]
+    fn detects_the_language_of_pages_that_declare_none() {
+        let mut english = doc("http://a.example/", Network::Clearnet, "history", "h1");
+        english.body = "The Tor Project began in the mid-1990s, when researchers asked whether there was a way \
+                        to create internet connections that do not reveal who is talking to whom, even to \
+                        someone watching the network. It grew into the network millions use today."
+            .into();
+        let mut japanese = doc("http://b.example/", Network::Clearnet, "history", "h2");
+        japanese.title = "Torの歴史".into();
+        japanese.description =
+            "Torプロジェクトは1990年代半ばに始まりました。誰が誰と話しているかを明かさない接続を作る研究です。".into();
+        english.lang = None;
+        japanese.lang = None;
+        let index = index_of(&[english, japanese]);
+        let lang_of = |url: &str| index.get(url).unwrap().unwrap().lang;
+        assert_eq!(lang_of("http://a.example/").as_deref(), Some("en"), "from the body");
+        assert_eq!(lang_of("http://b.example/").as_deref(), Some("ja"), "a short body: with title and description");
+    }
+
+    #[test]
+    fn ranks_a_sites_root_above_its_deeper_pages() {
+        // Deepest first, so insertion order cannot be what puts the root first.
+        let index = index_of(&[
+            doc("http://a.example/x/y/z/", Network::Clearnet, "market", "h1"),
+            doc("http://a.example/x/", Network::Clearnet, "market", "h2"),
+            doc("http://a.example/", Network::Clearnet, "market", "h3"),
+        ]);
+        assert_eq!(
+            urls(&index, &query("market", &[])),
+            ["http://a.example/", "http://a.example/x/", "http://a.example/x/y/z/"]
+        );
+    }
+
+    #[test]
+    fn measures_depth_below_a_sites_root() {
+        assert_eq!(depth("http://a.example/"), 0);
+        assert_eq!(depth("http://a.example/about/history/"), 2);
+        assert_eq!(depth("http://a.example/search?q=tor"), 2, "a query counts as a level");
+        assert_eq!(depth("USK@abc,def,AQACAAE/site/3/"), 0, "a USK's site and edition are its root");
+        assert_eq!(depth("USK@abc,def,AQACAAE/site/3/about/history.html"), 2);
+        assert_eq!(depth("SSK@abc,def,AQACAAE/site-3/page.html"), 1);
+        assert_eq!(depth("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"), 0);
+        assert_eq!(depth("not an address"), 0);
+    }
+
+    #[test]
+    fn migrates_an_older_index_and_detects_its_languages() {
+        // index-v2's stored fields: these, without `lang` and `depth`.
+        let mut b = Schema::builder();
+        for name in ["url", "network", "site", "content_hash", "info_hash"] {
+            b.add_text_field(name, STRING | STORED);
+        }
+        for name in ["title", "description", "keywords", "body", "files"] {
+            b.add_text_field(name, STORED);
+        }
+        for name in ["first_seen", "last_seen"] {
+            b.add_date_field(name, STORED);
+        }
+        for name in ["liveness", "trust"] {
+            b.add_f64_field(name, STORED);
+        }
+        let old_dir = tempfile::tempdir().unwrap();
+        let old = Index::create_in_dir(old_dir.path(), b.build()).unwrap();
+        let field = |name: &str| old.schema().get_field(name).unwrap();
+        let mut writer: IndexWriter = old.writer(15_000_000).unwrap();
+        let mut page = TantivyDocument::default();
+        page.add_text(field("url"), "http://tor.example/about/history/");
+        page.add_text(field("network"), "clearnet");
+        page.add_text(field("site"), "tor.example");
+        page.add_text(field("title"), "History");
+        page.add_text(field("keywords"), "tor");
+        page.add_text(field("keywords"), "history");
+        page.add_text(
+            field("body"),
+            "The Tor Project began in the mid-1990s, when researchers asked whether there was a way to create \
+             internet connections that do not reveal who is talking to whom, even to someone watching the network.",
+        );
+        page.add_text(field("content_hash"), "h1");
+        page.add_date(field("first_seen"), DateTime::from_timestamp_secs(1_000));
+        page.add_date(field("last_seen"), DateTime::from_timestamp_secs(2_000));
+        page.add_f64(field("liveness"), 0.5);
+        page.add_f64(field("trust"), 0.8);
+        writer.add_document(page).unwrap();
+        let mut gone = TantivyDocument::default();
+        gone.add_text(field("url"), "http://tor.example/gone/");
+        writer.add_document(gone).unwrap();
+        writer.delete_term(Term::from_field_text(field("url"), "http://tor.example/gone/"));
+        writer.commit().unwrap();
+        drop(writer);
+
+        let index = SearchIndex::in_memory().unwrap();
+        assert_eq!(index.migrate_from(old_dir.path()).unwrap(), 1, "deleted documents stay behind");
+        let doc = index.get("http://tor.example/about/history/").unwrap().unwrap();
+        assert_eq!(
+            (doc.title.as_str(), doc.keywords.as_slice()),
+            ("History", ["tor".to_owned(), "history".to_owned()].as_slice())
+        );
+        assert_eq!((doc.first_seen, doc.last_seen, doc.liveness, doc.trust), (1_000, 2_000, 0.5, 0.8));
+        assert_eq!(doc.lang.as_deref(), Some("en"), "detected on the way in");
+        assert_eq!(hits(&index, "researchers").len(), 1, "indexed with this version's analyzer");
+        assert!(index.migrate_from(&old_dir.path().join("missing")).is_err());
     }
 
     #[test]

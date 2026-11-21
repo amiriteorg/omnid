@@ -72,6 +72,10 @@ enum Command {
         networks: Vec<Network>,
         #[arg(long, default_value_t = 10)]
         limit: usize,
+        /// Languages to rank first, best first, e.g. `en` or `de,en`
+        /// [default: from LANG]
+        #[arg(long, value_delimiter = ',')]
+        lang: Vec<String>,
         /// Print JSON
         #[arg(long)]
         json: bool,
@@ -144,7 +148,7 @@ async fn main() -> Result<()> {
         Command::Serve(args) => serve(&cli.common, &data_dir, args).await,
         Command::Crawl(args) => crawl(&cli.common, &data_dir, args).await,
         Command::Fetch { address } => fetch(&cli.common, &data_dir, &address).await,
-        Command::Search { query, networks, limit, json } => search(&data_dir, query, networks, limit, json),
+        Command::Search { query, networks, limit, lang, json } => search(&data_dir, query, networks, limit, lang, json),
     }
 }
 
@@ -259,11 +263,24 @@ async fn fetch(common: &Common, data_dir: &Path, address: &str) -> Result<()> {
     Ok(())
 }
 
-fn search(data_dir: &Path, text: String, networks: Vec<Network>, limit: usize, json: bool) -> Result<()> {
+fn search(
+    data_dir: &Path,
+    text: String,
+    networks: Vec<Network>,
+    limit: usize,
+    lang: Vec<String>,
+    json: bool,
+) -> Result<()> {
     let dir = omnid::index_dir(data_dir);
     let index = SearchIndex::open_read_only(&dir)
         .with_context(|| format!("opening {}; run `omnid crawl` or `omnid serve` first", dir.display()))?;
-    let results = index.search(&SearchQuery { text, networks, offset: 0, limit })?;
+    // LANG=de_DE.UTF-8 means German; C and POSIX mean no preference.
+    let languages = if lang.is_empty() {
+        std::env::var("LANG").ok().and_then(|l| omnid_core::lang::primary_subtag(&l)).into_iter().collect()
+    } else {
+        lang.iter().filter_map(|l| omnid_core::lang::primary_subtag(l)).collect()
+    };
+    let results = index.search(&SearchQuery { text, networks, limit, languages, ..SearchQuery::default() })?;
     if json {
         println!("{}", serde_json::to_string_pretty(&results)?);
         return Ok(());

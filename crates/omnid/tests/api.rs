@@ -26,9 +26,9 @@ struct Api {
 
 fn api(token: Option<&str>) -> Api {
     let index = SearchIndex::in_memory().unwrap();
-    for (url, network, title) in [
-        ("http://forum.example/", Network::Clearnet, "Privacy forum"),
-        ("http://forum.i2p/", Network::I2p, "Privacy forum mirror"),
+    for (url, network, title, lang) in [
+        ("http://forum.example/", Network::Clearnet, "Privacy forum", "en"),
+        ("http://forum.i2p/", Network::I2p, "Privacy forum mirror", "de"),
     ] {
         index
             .upsert(&IndexedDoc {
@@ -46,6 +46,7 @@ fn api(token: Option<&str>) -> Api {
                 last_seen: 1,
                 liveness: 1.0,
                 trust: 0.5,
+                lang: Some(lang.into()),
             })
             .unwrap();
     }
@@ -134,6 +135,23 @@ async fn searches_with_counts_snippets_and_filters() {
     let (status, body) = send(&api.router, get("/api/search?network=gopher").body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body["error"].as_str().unwrap().contains("gopher"));
+}
+
+#[tokio::test]
+async fn ranks_the_readers_languages_first() {
+    let api = api(None);
+    let top = |accept_language: &str, query: &str| {
+        let request = get(&format!("/api/search?q=privacy{query}"))
+            .header(header::ACCEPT_LANGUAGE, accept_language)
+            .body(Body::empty())
+            .unwrap();
+        async { send(&api.router, request).await.1["hits"][0].clone() }
+    };
+    assert_eq!(top("en-US,en;q=0.9", "").await["routes"][0]["url"], "http://forum.example/");
+    let german = top("de-DE", "").await;
+    assert_eq!(german["routes"][0]["url"], "http://forum.i2p/");
+    assert_eq!(german["lang"], "de");
+    assert_eq!(top("en-US", "&lang=de").await["routes"][0]["url"], "http://forum.i2p/", "lang= overrides the header");
 }
 
 #[tokio::test]

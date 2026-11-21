@@ -63,7 +63,7 @@ Tor starts with the daemon and needs nothing installed. For I2P run i2pd
 clearnet traffic through Tor exits. omnid joins the BitTorrent DHT as a
 read-only node to resolve magnets (`--no-dht` to stay out); `--dht-harvest`
 also indexes info hashes sampled from the whole DHT. Data lives in the platform data
-directory (`--data-dir` to override): the index in `index-v2/`, the crawl
+directory (`--data-dir` to override): the index in `index-v3/`, the crawl
 store in `crawl.sqlite`, Tor state in `tor/`.
 
 Search syntax: words (all required, falling back to any word when nothing has
@@ -74,7 +74,7 @@ all of them), `"a phrase"`, `-exclude`, `title:word`, `site:host`,
 
 | | |
 |---|---|
-| `GET /api/search?q=…&network=onion,i2p&offset=0&limit=20` | hits with marked snippets, `total`, `network_counts`, `relaxed` |
+| `GET /api/search?q=…&network=onion,i2p&offset=0&limit=20&lang=de,en` | hits with marked snippets, `lang`, `total`, `network_counts`, `relaxed` |
 | `POST /api/submit` with `{"url": "…"}` | crawl an address now, even if known |
 | `POST /api/crawl` with `{"paused": true}` | pause or resume crawling |
 | `GET /api/status` | router states, index size, crawl counters, pause reason |
@@ -151,8 +151,15 @@ never harvests the DHT.
   limited, private and low-port peers skipped). Only the info dictionary is
   fetched over `ut_metadata` and checked against the info hash; no piece is
   ever requested or uploaded. Liveness is the peers found over 20, capped at 1.
-- **Index format is versioned** by directory name (`index-v2`). A schema
-  change opens a new index rather than misreading an old one.
+- **Pages in the reader's language rank first.** A page's language is the
+  one its `<html lang>` declares, or else what its text looks like. Searches
+  prefer the languages in `lang=` or the browser's `Accept-Language` (the CLI:
+  `--lang`, else `$LANG`); pages in other known languages score lower, and
+  pages nearer a site's root a little higher.
+- **Index format is versioned** by directory name (`index-v3`). A schema
+  change builds a new index rather than misreading an old one; the daemon
+  copies the previous version's pages into it on first start, then removes
+  the old directory.
 
 ## Safety
 

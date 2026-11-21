@@ -12,6 +12,7 @@ data-encoding.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 url.workspace = true
+whatlang.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

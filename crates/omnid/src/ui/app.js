@@ -40,6 +40,16 @@ function plural(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+// "Turkmen" for `tk`, named in the reader's own language where the browser can.
+const languageName = (() => {
+  try {
+    const names = new Intl.DisplayNames(navigator.languages, { type: "language" });
+    return (code) => names.of(code) ?? code;
+  } catch {
+    return (code) => code;
+  }
+})();
+
 // Only clearnet URLs and magnets get a link. Opening an onion or .i2p
 // address in an ordinary browser fails at best and leaks a DNS lookup at
 // worst, so those are shown for copying into the right browser.
@@ -66,14 +76,17 @@ function hitItem(hit) {
         el("ul", {}, ...hit.files.map((f) => el("li", {}, `${f.path} (${size(f.size)})`))))
     : null;
   const title = hit.title_spans.length ? marked(hit.title_spans) : [hit.routes[0]?.url || "(untitled)"];
-  const snippet = hit.snippet.some((s) => s.text) ? el("p", { class: "desc" }, ...marked(hit.snippet)) : null;
+  // The page's language on its own text, so fonts and screen readers follow it.
+  const lang = hit.lang ? { lang: hit.lang } : {};
+  const snippet = hit.snippet.some((s) => s.text) ? el("p", { class: "desc", ...lang }, ...marked(hit.snippet)) : null;
+  const meta = [plural(hit.routes.length, "route"), hit.lang && languageName(hit.lang),
+    `first seen ${date(hit.first_seen)}`, `last seen ${date(hit.last_seen)}`];
   return el("li", { class: "hit" },
-    el("h2", {}, ...title),
+    el("h2", lang, ...title),
     snippet,
     el("ul", { class: "routes" }, ...hit.routes.map(routeItem)),
     files,
-    el("p", { class: "meta" },
-      `${plural(hit.routes.length, "route")} · first seen ${date(hit.first_seen)} · last seen ${date(hit.last_seen)}`));
+    el("p", { class: "meta" }, meta.filter(Boolean).join(" · ")));
 }
 
 let inflight;

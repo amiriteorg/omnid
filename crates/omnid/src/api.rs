@@ -111,6 +111,8 @@ struct SearchParams {
     #[serde(default)]
     offset: usize,
     limit: Option<usize>,
+    /// Comma-separated languages to rank first; `Accept-Language` otherwise.
+    lang: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -122,8 +124,17 @@ struct SearchResponse {
 
 async fn search(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Query(params): Query<SearchParams>,
 ) -> Result<Json<SearchResponse>, ApiError> {
+    let languages = match &params.lang {
+        Some(lang) => omnid_core::lang::preferred(lang),
+        None => headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|h| h.to_str().ok())
+            .map(omnid_core::lang::preferred)
+            .unwrap_or_default(),
+    };
     let networks = params
         .network
         .split(',')
@@ -131,7 +142,8 @@ async fn search(
         .map(str::parse)
         .collect::<Result<Vec<Network>, _>>()
         .map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
-    let query = SearchQuery { text: params.q, networks, offset: params.offset, limit: params.limit.unwrap_or(20) };
+    let query =
+        SearchQuery { text: params.q, networks, offset: params.offset, limit: params.limit.unwrap_or(20), languages };
     let started = Instant::now();
     let index = state.index.clone();
     let results = tokio::task::spawn_blocking(move || index.search(&query))

@@ -410,6 +410,7 @@ impl Context {
             last_seen: now,
             liveness: 1.0,
             trust: job.trust,
+            lang: page.lang,
             url,
         };
         Outcome::Indexed { doc: Box::new(doc), links }
@@ -459,6 +460,7 @@ impl Context {
             // Unknown without the DHT; otherwise how many peers it found.
             liveness: meta.as_ref().map_or(0.0, |m| (m.peers as f32 / HEALTHY_SWARM).min(1.0)),
             trust: job.trust,
+            lang: None,
             url,
         };
         Outcome::Indexed { doc: Box::new(doc), links: vec![] }

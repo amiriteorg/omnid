@@ -50,8 +50,9 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
 
 ## Public compatibility
 
-- The index directory carries `omnid_index::SCHEMA_VERSION` (`index-v2`); a schema change bumps
-  it instead of migrating in place.
+- The index directory carries `omnid_index::SCHEMA_VERSION` (`index-v3`); a schema change bumps
+  it instead of migrating in place, and `SearchIndex::migrate_from` copies the previous version's
+  stored fields into the new one (`omnid::open_index`), so new fields need a default for old docs.
 - `crawl.sqlite`'s `pages` table, the HTTP API (`/api/search`, `/api/submit`, `/api/crawl`,
   `/api/status`) and its JSON fields, CLI flags and the JNI symbols `Java_cc_wckd_omnid_Native_*`
   are contracts; change them explicitly and update `README.md`.

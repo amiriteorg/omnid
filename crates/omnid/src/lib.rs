@@ -184,14 +184,34 @@ async fn harvest(dht: Dht, store: Arc<CrawlStore>, shutdown: CancellationToken) 
 }
 
 /// The index lives in a directory named for its schema version, so an
-/// upgrade starts a fresh index next to the old one.
+/// upgrade builds a new index next to the old one.
 pub fn index_dir(data_dir: &Path) -> PathBuf {
     data_dir.join(format!("index-v{SCHEMA_VERSION}"))
 }
 
+/// Opens the index, first carrying the previous version's pages over if
+/// this version has no index yet.
 pub fn open_index(data_dir: &Path) -> Result<SearchIndex> {
     let dir = index_dir(data_dir);
+    let previous = data_dir.join(format!("index-v{}", SCHEMA_VERSION - 1));
+    if !dir.exists() && previous.exists() {
+        migrate_index(&previous, &dir).with_context(|| format!("migrating {}", previous.display()))?;
+    }
     SearchIndex::open(&dir).with_context(|| format!("opening {} (is `omnid serve` already running?)", dir.display()))
+}
+
+/// Builds the new index aside and renames it into place once committed, so
+/// an interrupted upgrade starts over and never leaves half an index.
+fn migrate_index(previous: &Path, dir: &Path) -> Result<()> {
+    let staging = dir.with_extension("migrating");
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging)?;
+    }
+    let copied = SearchIndex::open(&staging)?.migrate_from(previous)?;
+    std::fs::rename(&staging, dir)?;
+    std::fs::remove_dir_all(previous)?;
+    tracing::info!(copied, "carried the index over from {}", previous.display());
+    Ok(())
 }
 
 pub fn open_store(data_dir: &Path) -> Result<CrawlStore> {
@@ -211,4 +231,51 @@ pub fn read_seeds(path: &Path) -> Result<Vec<Job>> {
             Ok(Job { source, depth: 0, trust: SEED_TRUST })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn page(url: &str) -> omnid_core::IndexedDoc {
+        omnid_core::IndexedDoc {
+            url: url.into(),
+            network: omnid_core::Network::Clearnet,
+            site: "a.example".into(),
+            title: "kept across versions".into(),
+            description: String::new(),
+            keywords: vec![],
+            body: String::new(),
+            content_hash: url.into(),
+            info_hash: None,
+            files: vec![],
+            first_seen: 1,
+            last_seen: 1,
+            liveness: 1.0,
+            trust: 0.5,
+            lang: None,
+        }
+    }
+
+    #[test]
+    fn carries_the_previous_index_over_once() {
+        let data = tempfile::tempdir().unwrap();
+        let previous = data.path().join(format!("index-v{}", SCHEMA_VERSION - 1));
+        let staging = index_dir(data.path()).with_extension("migrating");
+        {
+            let old = SearchIndex::open(&previous).unwrap();
+            old.upsert(&page("http://a.example/")).unwrap();
+            old.commit().unwrap();
+        }
+        // What an upgrade killed halfway leaves behind.
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("meta.json"), "{").unwrap();
+
+        let index = open_index(data.path()).unwrap();
+        assert!(index.get("http://a.example/").unwrap().is_some());
+        assert!(!previous.exists(), "the old index goes once it is copied");
+        assert!(!staging.exists());
+        drop(index);
+        assert_eq!(open_index(data.path()).unwrap().num_docs(), 1, "the next start opens it as it is");
+    }
 }

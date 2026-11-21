@@ -7,6 +7,7 @@
 //! them.
 
 mod doc;
+pub mod lang;
 mod source;
 
 pub use doc::{FileMeta, IndexedDoc, now_secs};

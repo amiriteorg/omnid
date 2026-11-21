@@ -62,7 +62,10 @@ async fn crawl(gateway: GatewayConfig, dht: Option<Dht>, seed: &str, max_pages: 
 }
 
 fn hits(index: &SearchIndex, text: &str, network: Network) -> Vec<SearchHit> {
-    index.search(&SearchQuery { text: text.into(), networks: vec![network], offset: 0, limit: 20 }).unwrap().hits
+    index
+        .search(&SearchQuery { text: text.into(), networks: vec![network], limit: 20, ..SearchQuery::default() })
+        .unwrap()
+        .hits
 }
 
 #[tokio::test]

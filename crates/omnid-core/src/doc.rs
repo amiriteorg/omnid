@@ -32,6 +32,9 @@ pub struct IndexedDoc {
     pub liveness: f32,
     /// 0..1, provenance: operator seeds rank above discovered links.
     pub trust: f32,
+    /// Primary language subtag (`en`, `ja`), as the page declares it. `None`
+    /// lets the index detect it from the text.
+    pub lang: Option<String>,
 }
 
 /// A file inside a torrent.
