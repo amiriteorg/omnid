@@ -316,14 +316,7 @@ impl Gateway {
     /// through Tor with `clearnet_via_tor`). This is what the SOCKS proxy
     /// serves. Tor streams buffer writes: flush after writing a request.
     pub async fn connect(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
-        let host = host.trim_end_matches('.').to_ascii_lowercase();
-        let network = if host.ends_with(".onion") {
-            Network::Onion
-        } else if host.ends_with(".i2p") {
-            Network::I2p
-        } else {
-            Network::Clearnet
-        };
+        let (host, network) = stream_target(host);
         let tor = || self.tor.as_ref().ok_or_else(|| unavailable(network, "Tor is disabled"));
         let transport = |error: BoxError| FetchError::Transport { network, error };
         let over_tor = network == Network::Onion || (network == Network::Clearnet && self.cfg.clearnet_via_tor);
@@ -345,6 +338,32 @@ impl Gateway {
             }
         };
         tokio::time::timeout(timeout, connect).await.map_err(|_| FetchError::Timeout(timeout))?
+    }
+
+    /// A stream for the built-in browser, which is on `site`: `.onion` and
+    /// the clearnet through Tor, on circuits no other site and not the
+    /// crawler uses; `.i2p` through i2pd. Never a direct connection, whatever
+    /// `clearnet_via_tor` says: without Tor the clearnet is unavailable.
+    pub async fn connect_browser(&self, host: &str, port: u16, site: &str) -> Result<BoxStream, FetchError> {
+        let (host, network) = stream_target(host);
+        let timeout = self.cfg.overlay_timeout;
+        let connect = async {
+            if network == Network::I2p {
+                return self.i2p_tunnel(&host, port).await;
+            }
+            let tor = self.tor.as_ref().ok_or_else(|| unavailable(network, "Tor is disabled"))?;
+            let transport = |error: BoxError| FetchError::Transport { network, error };
+            tor.ready().await.map_err(transport)?;
+            Ok(Box::new(tor.isolated_stream(&host, port, site).await.map_err(transport)?) as BoxStream)
+        };
+        tokio::time::timeout(timeout, connect).await.map_err(|_| FetchError::Timeout(timeout))?
+    }
+
+    /// New Tor circuits for every site the browser visits from now on.
+    pub fn new_identity(&self) {
+        if let Some(tor) = &self.tor {
+            tor.new_identity();
+        }
     }
 
     /// A direct TCP connection, refusing non-public addresses unless allowed;
@@ -412,6 +431,20 @@ impl Gateway {
             _ => location,
         }
     }
+}
+
+/// A stream target's host, lower case without a trailing dot, and the network
+/// its name puts it on.
+fn stream_target(host: &str) -> (String, Network) {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    let network = if host.ends_with(".onion") {
+        Network::Onion
+    } else if host.ends_with(".i2p") {
+        Network::I2p
+    } else {
+        Network::Clearnet
+    };
+    (host, network)
 }
 
 fn unavailable(network: Network, reason: &str) -> FetchError {

@@ -83,6 +83,8 @@ fn start_with(data_dir: &Path, token: &str, networks: bool) -> Result<u16> {
         api_token: Some(token.to_owned()),
         start_paused: true,
         socks: None,
+        // The app's browser, behind the same secret as the API.
+        browser_proxy: Some(token.to_owned()),
         // Magnets get their file lists; harvesting the whole DHT is a
         // server's job, not a phone's.
         dht: networks.then(|| omnid_dht::DhtConfig { max_peer_connections: 4, ..omnid_dht::DhtConfig::default() }),
@@ -105,6 +107,20 @@ pub fn stop() {
         Err(_) => tracing::warn!("timed out waiting for the crawl to stop"),
     }
     runtime.shutdown_timeout(Duration::from_secs(2));
+}
+
+/// The port of the browser's SOCKS5 listener, which wants the API token as
+/// its password; 0 when the daemon is not running.
+pub fn browser_proxy_port() -> u16 {
+    let running = RUNNING.lock().expect("daemon lock poisoned");
+    running.as_ref().and_then(|r| r.daemon.browser_proxy_addr()).map_or(0, |a| a.port())
+}
+
+/// New Tor circuits for every site the browser visits from now on.
+pub fn new_identity() {
+    if let Some(running) = RUNNING.lock().expect("daemon lock poisoned").as_ref() {
+        running.daemon.new_identity();
+    }
 }
 
 /// Pauses or resumes crawling. A non-empty `reason` is shown in the UI.
@@ -181,6 +197,27 @@ pub extern "system" fn Java_cc_wckd_omnid_Native_setPaused<'local>(
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cc_wckd_omnid_Native_browserProxyPort<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) -> jint {
+    env.with_env(|_| -> Result<jint, NativeError> { Ok(jint::from(browser_proxy_port())) })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cc_wckd_omnid_Native_newIdentity<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) {
+    env.with_env(|_| -> Result<(), NativeError> {
+        new_identity();
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
 fn init_logging() {
     let filter = tracing_subscriber::EnvFilter::new("info,tantivy=warn,tor_dirmgr=warn,tor_guardmgr=warn");
     #[cfg(target_os = "android")]
@@ -244,6 +281,8 @@ mod tests {
                 // Without Tor or the DHT, so the test stays off the network.
                 let first = start_with(&dir, "token", false).unwrap();
                 assert_eq!(start_with(&dir, "token", false).unwrap(), first, "a second start reuses the daemon");
+                assert_ne!(browser_proxy_port(), 0, "the browser's proxy is up");
+                new_identity();
                 first
             })
             .await
@@ -258,6 +297,7 @@ mod tests {
             let mut body = String::new();
             stream.read_to_string(&mut body).unwrap();
             stop();
+            assert_eq!(browser_proxy_port(), 0, "and down again");
             body
         })
         .await

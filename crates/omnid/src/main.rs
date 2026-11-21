@@ -163,6 +163,7 @@ async fn serve(common: &Common, data_dir: &Path, args: ServeArgs) -> Result<()> 
         api_token: args.api_token,
         start_paused: args.paused,
         socks: args.socks,
+        browser_proxy: None,
         dht: (!common.no_dht).then(DhtConfig::default),
         dht_harvest: args.crawl.dht_harvest,
     })

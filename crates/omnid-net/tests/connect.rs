@@ -100,3 +100,42 @@ async fn tunnels_i2p_through_the_router_proxy() {
     let error = no_router.connect("stats.i2p", 80).await.err().expect("refused");
     assert!(error.to_string().contains("is the router running"), "{error}");
 }
+
+/// Counts the connections a listener accepts.
+async fn counting_server() -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = accepted.clone();
+    tokio::spawn(async move {
+        while listener.accept().await.is_ok() {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    });
+    (port, accepted)
+}
+
+#[tokio::test]
+async fn the_browser_never_connects_directly() {
+    // Everything a direct connection would need is allowed, and clearnet is
+    // not sent through Tor for the crawler; Tor itself is off.
+    let (port, accepted) = counting_server().await;
+    let gateway = gateway(GatewayConfig { allow_private_addresses: true, ..GatewayConfig::default() });
+    for host in ["127.0.0.1", "localhost", "example.com", "x.onion"] {
+        let error = gateway.connect_browser(host, port, "example.com").await.err().expect("refused");
+        assert!(matches!(error, FetchError::Unavailable { .. }), "{host}: {error}");
+    }
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 0, "no connection reached the server");
+}
+
+#[tokio::test]
+async fn the_browser_reaches_i2p_through_the_router() {
+    let echo = echo_server().await;
+    let i2pd = fake_i2pd(echo).await;
+    let gateway = gateway(GatewayConfig {
+        i2p_proxy: Some(format!("http://127.0.0.1:{i2pd}").parse().unwrap()),
+        ..GatewayConfig::default()
+    });
+    let mut stream = gateway.connect_browser("stats.i2p", 80, "stats.i2p").await.unwrap();
+    assert_eq!(round_trip(&mut stream).await, "ping");
+}

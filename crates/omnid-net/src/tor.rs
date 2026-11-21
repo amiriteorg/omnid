@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use arti_client::config::{BoolOrAuto, TorClientConfigBuilder};
-use arti_client::{BootstrapBehavior, DataStream, StreamPrefs, TorClient};
+use arti_client::{BootstrapBehavior, DataStream, IsolationToken, StreamPrefs, TorClient};
 use rustls::pki_types::ServerName;
 use tokio_rustls::TlsConnector;
 use tor_rtcompat::PreferredRuntime;
@@ -19,6 +19,9 @@ use crate::{BoxError, FetchOptions, RouterState, RouterStatus};
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// A site is fetched one page at a time, so one spare is plenty.
 const MAX_IDLE_PER_SITE: usize = 2;
+/// Sites with circuits of their own; past this many, every site starts over
+/// on new circuits rather than the map growing without bound.
+const MAX_ISOLATED_SITES: usize = 4_096;
 
 pub(crate) struct TorTransport {
     client: Arc<TorClient<PreferredRuntime>>,
@@ -26,6 +29,34 @@ pub(crate) struct TorTransport {
     tls: TlsConnector,
     user_agent: String,
     pool: Pool,
+    isolation: Isolation,
+}
+
+/// One isolation token per site the browser is on, as Tor Browser does:
+/// streams for different sites never share a circuit, so an exit or an
+/// onion service cannot link them by circuit.
+#[derive(Default)]
+struct Isolation(Mutex<HashMap<String, IsolationToken>>);
+
+impl Isolation {
+    fn token(&self, site: &str) -> IsolationToken {
+        let mut tokens = self.0.lock().expect("isolation lock poisoned");
+        if tokens.len() >= MAX_ISOLATED_SITES && !tokens.contains_key(site) {
+            tokens.clear();
+        }
+        *tokens.entry(site.to_owned()).or_insert_with(IsolationToken::new)
+    }
+
+    /// A fresh token for `site`, replacing the one it had.
+    fn renew(&self, site: &str) -> IsolationToken {
+        let token = IsolationToken::new();
+        self.0.lock().expect("isolation lock poisoned").insert(site.to_owned(), token);
+        token
+    }
+
+    fn reset(&self) {
+        self.0.lock().expect("isolation lock poisoned").clear();
+    }
 }
 
 /// Idle keep-alive connections by `scheme://host:port`. Reusing one skips
@@ -79,7 +110,14 @@ impl TorTransport {
 
         let mut prefs = StreamPrefs::new();
         prefs.connect_to_onion_services(BoolOrAuto::Explicit(true));
-        Ok(Self { client, prefs, tls: tls_connector()?, user_agent: user_agent.to_owned(), pool: Pool::default() })
+        Ok(Self {
+            client,
+            prefs,
+            tls: tls_connector()?,
+            user_agent: user_agent.to_owned(),
+            pool: Pool::default(),
+            isolation: Isolation::default(),
+        })
     }
 
     pub(crate) fn status(&self) -> RouterStatus {
@@ -108,6 +146,30 @@ impl TorTransport {
     /// clearnet through an exit.
     pub(crate) async fn stream(&self, host: &str, port: u16) -> Result<DataStream, BoxError> {
         Ok(self.client.connect_with_prefs((host, port), &self.prefs).await?)
+    }
+
+    /// A stream on circuits that only streams for `site` use, and never the
+    /// crawler's. If it fails, the site's circuit may be what failed (an exit
+    /// that stopped resolving or reaching the host keeps failing every stream
+    /// put on it), so it is tried once more on a new one.
+    pub(crate) async fn isolated_stream(&self, host: &str, port: u16, site: &str) -> Result<DataStream, BoxError> {
+        let connect = |token: IsolationToken| {
+            let mut prefs = self.prefs.clone();
+            prefs.set_isolation(token);
+            async move { self.client.connect_with_prefs((host, port), &prefs).await }
+        };
+        match connect(self.isolation.token(site)).await {
+            Ok(stream) => Ok(stream),
+            Err(e) => {
+                tracing::debug!(host, "tor: {e}; trying a new circuit for {site}");
+                Ok(connect(self.isolation.renew(site)).await?)
+            }
+        }
+    }
+
+    /// Every site gets new circuits from its next stream on.
+    pub(crate) fn new_identity(&self) {
+        self.isolation.reset();
     }
 
     pub(crate) async fn get(&self, url: &Url, opts: &FetchOptions) -> Result<RawResponse, BoxError> {
@@ -151,4 +213,35 @@ fn tls_connector() -> Result<TlsConnector, BoxError> {
         .with_root_certificates(roots)
         .with_no_client_auth();
     Ok(TlsConnector::from(Arc::new(config)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn isolates_sites_from_each_other_until_a_new_identity() {
+        let isolation = Isolation::default();
+        let first = isolation.token("example.com");
+        assert_eq!(isolation.token("example.com"), first, "one site keeps its circuits");
+        assert_ne!(isolation.token("example.org"), first, "another site gets its own");
+        let renewed = isolation.renew("example.com");
+        assert_ne!(renewed, first, "a failing site moves to a new circuit");
+        assert_eq!(isolation.token("example.com"), renewed, "and stays on it");
+        isolation.reset();
+        assert_ne!(isolation.token("example.com"), renewed, "a new identity gets new circuits");
+    }
+
+    #[test]
+    fn forgets_every_site_rather_than_growing_without_bound() {
+        let isolation = Isolation::default();
+        let first = isolation.token("site0");
+        for i in 1..MAX_ISOLATED_SITES {
+            isolation.token(&format!("site{i}"));
+        }
+        assert_eq!(isolation.token("site0"), first, "still remembered at the cap");
+        isolation.token("one-too-many");
+        assert_eq!(isolation.0.lock().unwrap().len(), 1);
+        assert_ne!(isolation.token("site0"), first);
+    }
 }

@@ -34,6 +34,11 @@ pub struct DaemonConfig {
     /// Where to serve the SOCKS5 proxy, if at all. It has no authentication:
     /// anything that can reach it can use it, so keep it on loopback.
     pub socks: Option<SocketAddr>,
+    /// Serves the app's built-in browser, on a free loopback port
+    /// ([`Daemon::browser_proxy_addr`]), to clients that send this password:
+    /// everything through Tor or i2pd, never direct, each site on circuits of
+    /// its own.
+    pub browser_proxy: Option<String>,
     /// The BitTorrent DHT, for magnets' file lists and swarm sizes. `None`
     /// leaves magnets indexed from their links alone.
     pub dht: Option<DhtConfig>,
@@ -47,6 +52,8 @@ pub struct DaemonConfig {
 pub struct Daemon {
     addr: SocketAddr,
     socks: Option<SocketAddr>,
+    browser_proxy: Option<SocketAddr>,
+    gateway: Arc<Gateway>,
     control: Arc<CrawlControl>,
     shutdown: CancellationToken,
     crawl: JoinHandle<StatsSnapshot>,
@@ -106,18 +113,31 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
                 .await
                 .with_context(|| format!("binding the SOCKS proxy to {addr}"))?;
             let bound = listener.local_addr()?;
-            tokio::spawn(socks::serve(listener, gateway.clone(), shutdown.clone()));
+            tokio::spawn(socks::serve(listener, gateway.clone(), Arc::new(socks::Access::Open), shutdown.clone()));
             tracing::info!("SOCKS5 proxy on {bound}");
             Some(bound)
         }
         None => None,
     };
-    let state = api::AppState { gateway, index, control: control.clone(), jobs, safety, dht };
+    let browser_proxy = match cfg.browser_proxy {
+        Some(password) => {
+            let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+                .await
+                .context("binding the browser's proxy")?;
+            let bound = listener.local_addr()?;
+            let access = Arc::new(socks::Access::Browser { password });
+            tokio::spawn(socks::serve(listener, gateway.clone(), access, shutdown.clone()));
+            tracing::info!("browser proxy on {bound}");
+            Some(bound)
+        }
+        None => None,
+    };
+    let state = api::AppState { gateway: gateway.clone(), index, control: control.clone(), jobs, safety, dht };
     let router = api::router(state, addr, cfg.api_token);
     let stop = shutdown.clone().cancelled_owned();
     let server = tokio::spawn(async move { axum::serve(listener, router).with_graceful_shutdown(stop).await });
     tracing::info!("omnid {} listening on http://{addr}", env!("CARGO_PKG_VERSION"));
-    Ok(Daemon { addr, socks, control, shutdown, crawl, server })
+    Ok(Daemon { addr, socks, browser_proxy, gateway, control, shutdown, crawl, server })
 }
 
 impl Daemon {
@@ -127,6 +147,15 @@ impl Daemon {
 
     pub fn socks_addr(&self) -> Option<SocketAddr> {
         self.socks
+    }
+
+    pub fn browser_proxy_addr(&self) -> Option<SocketAddr> {
+        self.browser_proxy
+    }
+
+    /// New Tor circuits for every site the browser visits from now on.
+    pub fn new_identity(&self) {
+        self.gateway.new_identity();
     }
 
     pub fn control(&self) -> &Arc<CrawlControl> {
