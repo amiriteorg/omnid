@@ -170,6 +170,22 @@ pub fn load_blocklist(safety: &Safety, data_dir: &Path) -> usize {
     }
 }
 
+/// With the published blocklist turned off: what was blocked while it was on
+/// is due again, once (the held copy of the list goes; turned back on, it is
+/// fetched anew), unless the operator's own lists refuse the site. A page
+/// with a blocked term is refused again when it is fetched. Returns how many
+/// addresses are due again.
+pub fn release_blocklist(store: &CrawlStore, safety: &Safety, data_dir: &Path) -> Result<usize> {
+    let held = data_dir.join(BLOCKLIST_FILE);
+    if !held.exists() {
+        return Ok(0);
+    }
+    let sites = store.blocked_sites()?;
+    let released = store.unblock_sites(sites.iter().filter(|site| safety.operator_allows(site)), now_secs())?;
+    std::fs::remove_file(&held).with_context(|| format!("removing {}", held.display()))?;
+    Ok(released)
+}
+
 /// Fetches Ahmia's blocklist over Tor, puts it into the safety gate and
 /// keeps a copy in `data_dir`. Returns how many sites it holds.
 pub async fn refresh_blocklist(gateway: &Gateway, safety: &Safety, data_dir: &Path) -> Result<usize> {
@@ -245,6 +261,11 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
     if cfg.abuse_blocklist {
         let held = load_blocklist(&safety, &cfg.data_dir);
         tracing::info!(sites = held, "abuse blocklist loaded from the last copy");
+    } else {
+        let released = release_blocklist(&store, &safety, &cfg.data_dir)?;
+        if released > 0 {
+            tracing::info!(released, "abuse blocklist off: what it blocked is due again");
+        }
     }
     tracing::info!(denylist = safety.denylist_len(), blocked_terms = safety.blocked_terms_len(), "safety gate loaded");
 
@@ -558,6 +579,31 @@ mod tests {
         let list: String = (0..MIN_BLOCKLIST).map(|i| format!("{i:032x}\n")).collect();
         std::fs::write(dir.join(BLOCKLIST_FILE), &list).unwrap();
         assert_eq!(load_blocklist(&safety, &dir), MIN_BLOCKLIST);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn turning_the_blocklist_off_releases_what_it_blocked_once() {
+        let dir = std::env::temp_dir().join(format!("omnid-release-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = CrawlStore::in_memory().unwrap();
+        let urls = ["http://listed.example/", "http://denied.example/page"];
+        let jobs: Vec<Job> = urls
+            .iter()
+            .map(|url| Job { source: Source::parse(url).unwrap(), depth: 0, site_depth: 0, trust: SEED_TRUST })
+            .collect();
+        store.discover(&jobs, 0).unwrap();
+        store.take_due(0, 10).unwrap();
+        for url in urls {
+            store.finish(url, Network::Clearnet, omnid_crawl::Visit::Blocked, 0).unwrap();
+        }
+        let safety = Safety::from_lists("denied.example", "");
+        assert_eq!(release_blocklist(&store, &safety, &dir).unwrap(), 0, "no list was held: nothing it blocked");
+        std::fs::write(dir.join(BLOCKLIST_FILE), "0123456789abcdef0123456789abcdef\n").unwrap();
+        assert_eq!(release_blocklist(&store, &safety, &dir).unwrap(), 1, "the operator's own denylist still holds");
+        assert!(!dir.join(BLOCKLIST_FILE).exists(), "the held copy goes");
+        assert_eq!(release_blocklist(&store, &safety, &dir).unwrap(), 0, "once");
+        assert_eq!(store.blocked_sites().unwrap(), ["denied.example"]);
         let _ = std::fs::remove_dir_all(dir);
     }
 

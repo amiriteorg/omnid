@@ -136,6 +136,8 @@
     <string name="settings_speed_fast">Fast</string>
     <string name="settings_speed_fast_about">Twice the connections. Each site still gets one request at a time.</string>
     <string name="settings_anytime_about">While off, OMNId crawls only while the phone charges on Wi-Fi. Search works either way.</string>
+    <string name="settings_blocklist">Ahmia\'s blocklist</string>
+    <string name="settings_blocklist_about">Skips onion sites Ahmia lists for child sexual abuse material. It also lists ordinary ones (Tor\'s blog, Debian, the Guardian); your seeds are crawled whatever it says. Turned off, what it blocked is crawled again; your blocked words and sites still apply.</string>
     <string name="settings_routers">Networks</string>
     <string name="settings_router_phone">On this phone</string>
     <string name="settings_app_proxy">Proxy for other apps</string>

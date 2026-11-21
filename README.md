@@ -194,7 +194,8 @@ phone at 127.0.0.1:8888, which is also the fallback.
   `denylist.txt` in the app's data directory.
 - **Crawling**: crawl speed (Gentle halves the connections per network, Fast
   doubles them; each site still gets one request at a time with its usual
-  pause) and "Crawl on battery and mobile data".
+  pause), "Crawl on battery and mobile data", and Ahmia's blocklist (on by
+  default; see Safety; `--no-blocklist` on a computer).
 - **Networks**: the I2P router and Hyphanet node elsewhere.
 - **Proxy for other apps**: other apps on the phone reach Tor, I2P and Hyphanet
   through OMNId at 127.0.0.1:7172, as SOCKS5 or HTTP, the private proxy above:
@@ -374,7 +375,9 @@ A new level reloads every open tab.
   overrules your seeds (the default ones and `--seeds`): they and their
   subdomains are crawled whatever it says, and what it blocked on them before
   is crawled again at the next start. Your own `--denylist` still applies to
-  them. A bare top-level name in it ("onion") is ignored, so one bad line
+  them. Turned off (`--no-blocklist`, or Settings → Ahmia's blocklist in the
+  app), the held copy is deleted and what it blocked is crawled again, once;
+  your own lists still decide, and turned back on it is fetched anew. A bare top-level name in it ("onion") is ignored, so one bad line
   cannot shut a whole network.
 - **Blocked terms** (`--blocked-terms`): a matching page is not indexed, its
   links are not followed, it is never revisited, and it is removed from the

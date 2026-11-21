@@ -159,6 +159,8 @@ class SettingsActivity : Activity() {
         choice(R.string.settings_crawl_speed, speedName(Settings.crawlSpeed(prefs.getString(Settings.CRAWL_SPEED, null)))) { askSpeed() }
         divider()
         toggle(R.string.crawl_anytime, R.string.settings_anytime_about, CrawlPolicy.KEY_ANYTIME, default = false)
+        divider()
+        toggle(R.string.settings_blocklist, R.string.settings_blocklist_about, Settings.ABUSE_BLOCKLIST, default = true) { restartDaemon() }
 
         section(R.string.settings_routers)
         choice(R.string.i2p_router, prefs.getString(I2pRouter.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_phone) }) {
