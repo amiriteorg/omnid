@@ -70,6 +70,7 @@ class BrowserConfigTest {
         assertEquals("www.bbcweb3h…ccrad.onion/news", BrowserConfig.displayAddress("https://www.bbcweb3hytmzhn5d532owbu6oqadra5z3ar726vq5kgwwn6aucdccrad.onion/news/"))
         assertEquals("example.com/a?b=c", BrowserConfig.displayAddress("https://example.com/a?b=c"))
         assertEquals("stats.i2p", BrowserConfig.displayAddress("http://stats.i2p"))
+        assertEquals("7j74tcia…lswva.b32.i2p/x", BrowserConfig.displayAddress("http://7j74tciapju2shi3a337dl62zqcuqotha47y32ux4jbqgkzlswva.b32.i2p/x"))
         assertEquals("about:blank", BrowserConfig.displayAddress("about:blank"))
     }
 

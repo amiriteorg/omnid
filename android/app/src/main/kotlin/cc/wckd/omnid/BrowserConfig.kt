@@ -115,13 +115,15 @@ internal object BrowserConfig {
 
     /**
      * The address bar's text while it is not being edited: host and path, no scheme (the badge
-     * beside it says how the page arrived), and an onion's 56 characters cut to both ends, which
-     * is what people compare.
+     * beside it says how the page arrived), and an onion's 56 characters or a .b32.i2p host's 52
+     * cut to both ends, which is what people compare.
      */
     fun displayAddress(url: String): String {
         val bare = url.substringAfter("://", url).trimEnd('/')
-        return Regex("""^((?:[a-z0-9-]+\.)*)([a-z2-7]{8})[a-z2-7]{43}([a-z2-7]{5})\.onion""", RegexOption.IGNORE_CASE)
+        val onion = Regex("""^((?:[a-z0-9-]+\.)*)([a-z2-7]{8})[a-z2-7]{43}([a-z2-7]{5})\.onion""", RegexOption.IGNORE_CASE)
             .replace(bare) { m -> "${m.groupValues[1]}${m.groupValues[2]}…${m.groupValues[3]}.onion" }
+        return Regex("""^([a-z2-7]{8})[a-z2-7]{39,}([a-z2-7]{5})\.b32\.i2p""", RegexOption.IGNORE_CASE)
+            .replace(onion) { m -> "${m.groupValues[1]}…${m.groupValues[2]}.b32.i2p" }
     }
 
     /**

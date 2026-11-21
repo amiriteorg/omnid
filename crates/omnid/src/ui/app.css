@@ -99,9 +99,10 @@ svg.icon { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: no
   transition: border-color 160ms var(--ease);
 }
 .trust:hover, .trust[aria-expanded="true"] { border-color: var(--accent); }
-.trust-routers { display: flex; gap: 0.75rem; min-width: 0; overflow: hidden; }
+/* Larger text wraps the routers onto a second line; no name is ever cut. */
+.trust-routers { display: flex; flex-wrap: wrap; gap: 0.15rem 0.75rem; min-width: 0; }
 .trust-router { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
-.trust-crawl { margin-left: auto; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trust-crawl { flex: none; margin-left: auto; color: var(--muted); white-space: nowrap; }
 .trust-chevron { display: inline-flex; color: var(--muted); transition: transform 200ms var(--ease); }
 .trust-chevron svg.icon { width: 16px; height: 16px; }
 .trust[aria-expanded="true"] .trust-chevron { transform: rotate(180deg); }

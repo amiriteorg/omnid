@@ -110,13 +110,42 @@ function primaryRoute(hit) {
   return hit.routes.filter((r) => linkable(r) && r.network !== "magnet").sort((a, b) => rank(a) - rank(b))[0];
 }
 
-// Onion hosts are 56 characters of noise: keep both ends, which is what
-// people compare, and the path.
+// Onion and .b32.i2p hosts are 56 and 52 characters of noise: keep both
+// ends, which is what people compare, and the path. A Hyphanet key keeps its
+// type, the start of the key, and the site's own name and path.
 function shortAddress(url) {
   const magnet = url.match(/^magnet:\?xt=urn:btih:([0-9a-f]{40})/i);
   if (magnet) return `btih:${magnet[1].slice(0, 12)}…`;
+  const key = url.match(/^(?:freenet:|hyphanet:)?([A-Z]{3})@([A-Za-z0-9~-]{8})[^/]*(\/.*?)?\/?$/);
+  if (key) return `${key[1]}@${key[2]}…${key[3] ?? ""}`;
   const bare = url.replace(/^[a-z]+:\/\//i, "").replace(/\/$/, "");
-  return bare.replace(/^((?:[a-z0-9-]+\.)*)([a-z2-7]{8})[a-z2-7]{43}([a-z2-7]{5})\.onion/i, "$1$2…$3.onion");
+  return bare
+    .replace(/^((?:[a-z0-9-]+\.)*)([a-z2-7]{8})[a-z2-7]{43}([a-z2-7]{5})\.onion/i, "$1$2…$3.onion")
+    .replace(/^([a-z2-7]{8})[a-z2-7]{39,}([a-z2-7]{5})\.b32\.i2p/i, "$1…$2.b32.i2p");
+}
+
+// A title that is only an address says nothing a title should.
+function looksLikeAddress(text) {
+  const t = text.trim();
+  return /^https?:\/\/\S+$/i.test(t) || /^(?:freenet:|hyphanet:)?(?:USK|SSK|CHK|KSK)@\S+$/.test(t);
+}
+
+// What to call a page with no title: its address, short; for a Hyphanet key,
+// the site's own name and path.
+function untitled(url) {
+  const short = shortAddress(url);
+  return short.replace(/^[A-Z]{3}@[^/]*\//, "") || short;
+}
+
+// One row per site in Explore: a site's other pages are a "See all" away.
+function siteKey(url) {
+  const key = url.match(/^(?:freenet:|hyphanet:)?([A-Z]{3}@[^/]*\/[^/]*)/);
+  if (key) return key[1];
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }
 
 function sealed(route) {
@@ -153,7 +182,10 @@ function routeItem(route) {
 
 function hitItem(hit) {
   const lang = hit.lang ? { lang: hit.lang } : {};
-  const heading = hit.title_spans.length ? marked(hit.title_spans) : [shortAddress(hit.routes[0]?.url || "Untitled")];
+  const titleText = hit.title_spans.map((s) => s.text).join("");
+  const heading = titleText.trim() && !looksLikeAddress(titleText)
+    ? marked(hit.title_spans)
+    : [untitled(hit.routes[0]?.url || "Untitled")];
   const primary = primaryRoute(hit);
   const title = primary
     ? el("a", { href: primary.url, rel: "noreferrer noopener", target: "_blank" }, ...heading)
@@ -184,11 +216,25 @@ function checkedNetworks() {
   return [...document.querySelectorAll("#networks input:checked")].map((i) => i.value);
 }
 
+// Networks with the most results first, so the ones that have any are on
+// screen; ties keep the usual order.
+const NETWORK_ORDER = ["onion", "clearnet", "magnet", "i2p", "hyphanet"];
+const byCount = (counts) => (a, b) => (counts[b] ?? 0) - (counts[a] ?? 0) || NETWORK_ORDER.indexOf(a) - NETWORK_ORDER.indexOf(b);
+
 function showCounts(counts) {
-  for (const count of document.querySelectorAll(".chip .count")) {
+  const chips = [...document.querySelectorAll("#networks .chip")];
+  for (const chip of chips) {
+    const count = chip.querySelector(".count");
     const n = counts[count.dataset.network] ?? 0;
     count.textContent = n.toLocaleString();
-    count.closest(".chip").classList.toggle("zero", n === 0);
+    chip.classList.toggle("zero", n === 0);
+  }
+  const network = (chip) => chip.querySelector("input").value;
+  const order = byCount(counts);
+  const sorted = [...chips].sort((a, b) => order(network(a), network(b)));
+  if (sorted.some((chip, i) => chip !== chips[i])) {
+    $("networks").append(...sorted);
+    $("networks").scrollLeft = 0;
   }
 }
 
@@ -313,10 +359,11 @@ async function explore(networks) {
   try {
     const all = await (await fetch("/api/search?q=&limit=1", { signal: inflight.signal })).json();
     showCounts(all.network_counts);
-    const order = ["onion", "clearnet", "magnet", "i2p", "hyphanet"];
-    const present = order.filter((n) => networks.includes(n) && (all.network_counts[n] ?? 0) > 0);
+    const present = [...NETWORK_ORDER].sort(byCount(all.network_counts))
+      .filter((n) => networks.includes(n) && (all.network_counts[n] ?? 0) > 0);
     const groups = await Promise.all(present.map(async (network) => {
-      const params = new URLSearchParams({ q: "", limit: "5", network });
+      // Enough pages to find five sites among them.
+      const params = new URLSearchParams({ q: "", limit: "20", network });
       const body = await (await fetch(`/api/search?${params}`, { signal: inflight.signal })).json();
       return exploreGroup(network, all.network_counts[network], body.hits);
     }));
@@ -338,11 +385,19 @@ function exploreGroup(network, count, hits) {
     search();
     scrollTo({ top: 0 });
   });
-  const sites = hits.map((hit) => {
+  const seen = new Set();
+  const sites = hits.flatMap((hit) => {
     // The group's own network first: a mirror listed under the web shows its web address.
     const primary = hit.routes.find((r) => r.network === network) ?? primaryRoute(hit) ?? hit.routes[0];
-    const name = hit.title || shortAddress(primary.url);
-    const body = [el("span", { class: "dot" }), el("b", {}, name), el("small", {}, shortAddress(primary.url))];
+    const site = siteKey(primary.url);
+    if (seen.has(site)) return [];
+    seen.add(site);
+    return [[hit, primary]];
+  }).slice(0, 5).map(([hit, primary]) => {
+    const name = hit.title && !looksLikeAddress(hit.title) ? hit.title : untitled(primary.url);
+    const address = shortAddress(primary.url);
+    // An untitled site is named by its address; once is enough.
+    const body = [el("span", { class: "dot" }), el("b", {}, name), name === address ? null : el("small", {}, address)];
     const row = linkable(primary)
       ? el("a", { href: primary.url, rel: "noreferrer noopener", target: "_blank" }, ...body)
       : el("div", { title: primary.url }, ...body);
@@ -369,7 +424,7 @@ function filteredOut() {
 function emptyIndex() {
   return el("div", { class: "empty" },
     el("h2", {}, "Your index is empty so far"),
-    el("p", {}, "omnid fills it by crawling: it starts from a few well-known onion sites and follows their links. Add an address below to start somewhere else."));
+    el("p", {}, "omnid fills it by crawling: it starts from a few well-known onion and I2P sites and follows their links. Add an address below to start somewhere else."));
 }
 
 // The trust strip: each network's state in plain words.
@@ -393,6 +448,15 @@ window.omnidApp = {
   },
 };
 
+// Where a router's detail says it listens, in words: on this device, or the
+// other machine's address.
+function whereIs(detail) {
+  const url = detail.match(/https?:\/\/[^\s/]+/)?.[0];
+  if (!url) return "";
+  const host = new URL(url).hostname;
+  return ["127.0.0.1", "localhost", "[::1]"].includes(host) ? "on this device" : `at ${host}`;
+}
+
 function explain(network, router) {
   const state = router?.state ?? "disabled";
   const detail = router?.detail ?? "";
@@ -402,17 +466,17 @@ function explain(network, router) {
       if (state === "starting") return `Connecting to Tor (${detail}). Onion sites open once it is ready.`;
       return "Tor is off, so onion sites cannot be reached.";
     case "magnet":
-      if (state === "ready") return `Finds torrent names and file lists from the BitTorrent network (${detail.replace(/^DHT, /, "")}). Files themselves are never downloaded.`;
+      if (state === "ready") return "Finds torrent names and file lists on the BitTorrent network. Files themselves are never downloaded.";
       if (state === "starting") return "Joining the BitTorrent network to look up torrents.";
       return "Torrent lookups are off.";
     case "i2p":
-      if (state === "ready") return `.i2p sites go through the I2P router (${detail}).`;
+      if (state === "ready") return `I2P sites go through the I2P router ${whereIs(detail) || "on this device"}.`;
       if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and omnid uses it right away.";
       if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router on this phone: the free i2pd app, from F-Droid. omnid uses it as soon as it runs, with nothing to set up.";
       return "Reaching .i2p sites needs an I2P router, such as the i2pd app, running on this device.";
     case "hyphanet":
-      if (state === "ready") return `Hyphanet sites go through the Hyphanet node (${detail}).`;
-      if (EMBEDDED) return `No Hyphanet node answers at ${detail.replace(/^no FProxy at /, "")}. Run one on this phone, or use one on your own computer over Tailscale: ⋮ → Hyphanet node.`;
+      if (state === "ready") return `Hyphanet sites come through the Hyphanet node ${whereIs(detail) || "on this device"}.`;
+      if (EMBEDDED) return `No Hyphanet node answers ${whereIs(detail) || "on this device"}. Use one on your own computer, over Tailscale for instance: ⋮ → Hyphanet node.`;
       return "Hyphanet sites need a Hyphanet node running on this device.";
     case "clearnet":
       return EMBEDDED
@@ -439,7 +503,10 @@ async function refreshStatus() {
       el("span", { class: `trust-router ${byNetwork[network]?.state ?? "disabled"}` }, el("span", { class: "state-dot" }), name)));
     // The dots carry state by colour alone; a screen reader hears it in words.
     const spoken = strip.map(({ network, name }) => `${name}: ${STATE_WORDS[byNetwork[network]?.state ?? "disabled"]}`);
-    $("trust").setAttribute("aria-label", `${spoken.join(", ")}. ${status.crawl.paused ? "Crawling paused" : "Crawling"}. Show details`);
+    const c = status.crawl;
+    // Crawling while there is anything to fetch, not only at the instant a page is loading.
+    const crawlWord = c.paused ? "Paused" : c.inflight || c.queued ? "Crawling" : "Idle";
+    $("trust").setAttribute("aria-label", `${spoken.join(", ")}. Crawler: ${crawlWord}. Show details`);
     $("router-list").replaceChildren(...ROUTERS.map(({ network, name }) => {
       const state = byNetwork[network]?.state ?? "disabled";
       return el("li", { class: state },
@@ -449,12 +516,11 @@ async function refreshStatus() {
         routerAction(network, state));
     }));
 
-    const c = status.crawl;
     const reason = status.pause_reason ? `: ${status.pause_reason}` : "";
-    $("trust-crawl").textContent = c.paused ? "Paused" : c.inflight ? "Crawling" : "Idle";
+    $("trust-crawl").textContent = crawlWord;
     $("crawl-detail").textContent =
-      `${c.paused ? `Crawling is paused${reason}.` : c.inflight ? `Crawling, ${plural(c.inflight, "page")} in flight.` : "The crawler is on and waiting for pages to fetch."} ` +
-      `${plural(status.index.documents, "page")} indexed, ${plural(c.known, "address", "addresses")} known.`;
+      `${c.paused ? `Crawling is paused${reason}.` : crawlWord === "Crawling" ? "Crawling now." : "Waiting for new addresses to crawl."} ` +
+      `${plural(status.index.documents, "page")} indexed, ${plural(c.known, "address", "addresses")} found.`;
     const pause = $("pause");
     pause.hidden = false;
     pause.replaceChildren(icon(c.paused ? "play" : "pause"), c.paused ? "Resume" : "Pause");
