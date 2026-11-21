@@ -27,7 +27,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Tor fetch, HTTP and HTTPS, via embedded arti, gzip over Tor | done, live tested against real onion services |
 | I2P via i2pd: fetching, crawling and the SOCKS tunnel | done, live tested against i2pd 3.0 (stats.i2p, reg.i2p, notbob.i2p) |
 | Hyphanet via FProxy: fetching, crawling, newer-edition redirects | done, live tested against a Hyphanet 1507 node |
-| Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested |
+| Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested; 30-minute soak: 30/30 lookups, flat 11–12 MB |
 | DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
 | Index: stemming, accent folding, snippets, ranking, facets, paging, mirror folding | done, unit tested |
 | Crawler: persistent store, revisits, backoff, politeness, robots.txt, pause/resume | done, end-to-end tested |
