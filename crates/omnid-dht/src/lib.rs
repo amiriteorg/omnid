@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 
 use omnid_core::FileMeta;
 use serde::Serialize;
-use tokio::sync::mpsc;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio::task::{AbortHandle, JoinSet};
 
 use crate::krpc::NodeInfo;
@@ -56,6 +56,16 @@ const COUNT_QUIET: Duration = Duration::from_secs(1);
 const READY_WAIT: Duration = Duration::from_secs(15);
 /// The longest one peer gets to deliver the metadata.
 const PEER_TIME: Duration = Duration::from_secs(30);
+/// How long a peer has to take the connection and answer the BitTorrent
+/// handshake before its attempt stops taking one of the
+/// `max_peer_connections` slots. A dead peer would hold its slot for the
+/// whole connect or read timeout, so in a swarm of mostly dead peers the
+/// live ones would wait their turn a few at a time. A slow peer still gets
+/// every timeout, and may still win.
+const PEER_PATIENCE: Duration = Duration::from_secs(1);
+/// Attempts open at once, slow ones included, are at most this many times
+/// `max_peer_connections`, however many peers the lookup finds.
+const PEER_CEILING: usize = 3;
 const HARVEST_BUFFER: usize = 1024;
 
 #[derive(Debug, Clone)]
@@ -70,7 +80,10 @@ pub struct DhtConfig {
     pub metadata_timeout: Duration,
     /// Info dicts larger than this are refused before they are downloaded.
     pub max_metadata_bytes: usize,
-    /// Peers asked for the metadata at once, per [`Dht::metadata`] call.
+    /// Peers asked for the metadata at once, per [`Dht::metadata`] call. A
+    /// peer that has not answered the handshake within a second stops
+    /// counting, so dead peers do not hold up live ones, but no more than
+    /// three times this many are ever asked at once.
     pub max_peer_connections: usize,
 }
 
@@ -239,9 +252,11 @@ impl Dht {
 
     /// Runs the lookup as a task of its own and asks each peer it finds for
     /// the metadata as soon as it is found, up to `max_peer_connections` at
-    /// once. The first verified info dict closes the other connections; the
-    /// lookup then counts peers until none has come for [`COUNT_QUIET`], for
-    /// at most [`COUNT_TIME`], and is stopped.
+    /// once, not counting peers slower than [`PEER_PATIENCE`] to answer, and
+    /// [`PEER_CEILING`] times that many at most. The first verified info
+    /// dict closes the other connections; the lookup then counts peers until
+    /// none has come for [`COUNT_QUIET`], for at most [`COUNT_TIME`], and is
+    /// stopped.
     async fn fetch_metadata(
         &self,
         info_hash: [u8; 20],
@@ -266,16 +281,21 @@ impl Dht {
         let (mut peers, mut searching) = (0, true);
         let mut untried: Vec<SocketAddrV4> = Vec::new();
         let mut tasks = JoinSet::new();
+        // An attempt holds a slot until it has its handshake or runs out of
+        // patience; `tasks` counts the slow ones too.
+        let max = core.cfg.max_peer_connections.clamp(1, Semaphore::MAX_PERMITS);
+        let (slots, ceiling) = (Arc::new(Semaphore::new(max)), max.saturating_mul(PEER_CEILING));
         let (mut tried, mut too_large, mut last) = (0, None, String::from("no peer answered"));
         let (peer, info) = loop {
-            while tasks.len() < core.cfg.max_peer_connections.max(1) && !untried.is_empty() {
+            while tasks.len() < ceiling && !untried.is_empty() {
+                let Ok(slot) = slots.clone().try_acquire_owned() else { break };
                 // At random, not in the order found, so a node that sends a
                 // flood of peers does not get them all tried first.
                 let peer = untried.swap_remove(rand::random_range(0..untried.len()));
                 tried += 1;
-                let (peer_id, max) = (core.peer_id, core.cfg.max_metadata_bytes);
+                let (peer_id, max_size) = (core.peer_id, core.cfg.max_metadata_bytes);
                 tasks.spawn(async move {
-                    let fetch = peer::fetch_metadata(SocketAddr::V4(peer), &info_hash, &peer_id, max);
+                    let fetch = ask(peer, info_hash, peer_id, max_size, slot);
                     (peer, tokio::time::timeout(PEER_TIME, fetch).await.unwrap_or(Err(PeerError::Timeout)))
                 });
             }
@@ -307,6 +327,8 @@ impl Dht {
                     }
                     Err(e) => last = format!("peer task failed: {e}"),
                 },
+                // A slow attempt let go of its slot: go round and use it.
+                _ = slots.acquire(), if tasks.len() < ceiling && !untried.is_empty() => {}
                 _ = tokio::time::sleep_until(deadline.into()) => {
                     return Err(DhtError::Timeout(core.cfg.metadata_timeout));
                 }
@@ -343,6 +365,27 @@ impl Dht {
         meta.peers = peers;
         Ok(meta)
     }
+}
+
+/// Asks one peer for the metadata. `slot` is held until the peer has
+/// answered the handshake or [`PEER_PATIENCE`] is up, and to the end if the
+/// peer answered in time.
+async fn ask(
+    peer: SocketAddrV4,
+    info_hash: [u8; 20],
+    peer_id: [u8; 20],
+    max_size: usize,
+    slot: OwnedSemaphorePermit,
+) -> Result<Vec<u8>, PeerError> {
+    let mut connect = std::pin::pin!(peer::connect(SocketAddr::V4(peer), &info_hash, &peer_id));
+    let stream = match tokio::time::timeout(PEER_PATIENCE, &mut connect).await {
+        Ok(stream) => stream?,
+        Err(_) => {
+            drop(slot);
+            connect.await?
+        }
+    };
+    peer::exchange(stream, &info_hash, max_size).await
 }
 
 fn log_lookup(info_hash: &[u8; 20], outcome: &lookup::Outcome) {
@@ -672,6 +715,7 @@ mod tests {
 
     #[tokio::test]
     async fn never_opens_more_than_max_peer_connections() {
+        // Peers that hang up within the patience keep their slots to the end.
         let (info, info_hash) = fixture();
         let log = Arc::new(PeerLog::default());
         let mut peers = Vec::new();
@@ -683,6 +727,70 @@ mod tests {
         let meta = dht.metadata(info_hash).await.unwrap();
         assert_eq!(meta.peers, 7);
         assert!(log.most_open.load(Ordering::SeqCst) <= 2, "{} at once", log.most_open.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn dead_peers_do_not_hold_up_a_live_one() {
+        // Sixteen peers that never answer the handshake are found first and
+        // take every slot, then the one with the metadata. Each dead peer
+        // would hold its slot for the 10 s read timeout: two rounds of eight.
+        let (info, info_hash) = fixture();
+        let log = Arc::new(PeerLog::default());
+        let mut dead = Vec::new();
+        for _ in 0..16 {
+            dead.push(fake_peer(&info, info_hash, Behavior::Stall(HOUR), log.clone()).await);
+        }
+        let good = fake_peer(&info, info_hash, Behavior::Good, log.clone()).await;
+        let nodes = chain(info_hash, vec![dead, vec![good]], Duration::from_millis(100)).await;
+        let dht = client(nodes, &Arc::new(Seen::default()), DhtConfig::default()).await;
+
+        let start = Instant::now();
+        let meta = dht.metadata(info_hash).await.unwrap();
+        let elapsed = start.elapsed();
+        assert!(elapsed < Duration::from_secs(5), "waited out dead peers: {elapsed:?}");
+        assert_eq!((meta.name.as_str(), meta.peers), ("Fixture Film", 17));
+        assert!(log.all_closed().await, "{} connections left open", log.open.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn a_slow_peer_still_delivers() {
+        // The only peer with the metadata answers the handshake after 3 s,
+        // past its patience but well inside the timeouts. It gives up its
+        // slot to the stalled peer and goes on.
+        let (info, info_hash) = fixture();
+        let log = Arc::new(PeerLog::default());
+        let peers = vec![
+            fake_peer(&info, info_hash, Behavior::Slow(Duration::from_secs(3)), log.clone()).await,
+            fake_peer(&info, info_hash, Behavior::Stall(HOUR), log.clone()).await,
+        ];
+        let dht = one_node(info_hash, peers, DhtConfig { max_peer_connections: 1, ..DhtConfig::default() }).await;
+
+        let start = Instant::now();
+        let meta = dht.metadata(info_hash).await.unwrap();
+        let elapsed = start.elapsed();
+        assert_eq!(meta.name, "Fixture Film");
+        assert!(elapsed >= Duration::from_secs(3) && elapsed < Duration::from_secs(6), "{elapsed:?}");
+        assert_eq!(log.most_open.load(Ordering::SeqCst), 2, "the slow peer kept its slot");
+        assert!(log.all_closed().await, "{} connections left open", log.open.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn never_opens_more_than_the_ceiling() {
+        // Forty peers that never answer the handshake. Every second the two
+        // slots go to fresh ones, until six are open; none of them gives up
+        // before the 10 s read timeout.
+        let (info, info_hash) = fixture();
+        let log = Arc::new(PeerLog::default());
+        let mut peers = Vec::new();
+        for _ in 0..40 {
+            peers.push(fake_peer(&info, info_hash, Behavior::Stall(HOUR), log.clone()).await);
+        }
+        let cfg =
+            DhtConfig { max_peer_connections: 2, metadata_timeout: Duration::from_secs(5), ..DhtConfig::default() };
+        let result = one_node(info_hash, peers, cfg).await.metadata(info_hash).await;
+        assert!(matches!(result, Err(DhtError::Timeout(_))), "{result:?}");
+        assert_eq!(log.most_open.load(Ordering::SeqCst), 2 * PEER_CEILING, "most open at once");
+        assert!(log.all_closed().await, "{} connections left open", log.open.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

@@ -68,27 +68,27 @@ pub(crate) fn peer_id() -> [u8; 20] {
     id
 }
 
-/// Connects to a peer and fetches the info dict for `info_hash`, verified.
-pub(crate) async fn fetch_metadata(
+/// Connects to a peer and exchanges handshakes: once this returns, the peer
+/// serves `info_hash` and speaks the extension protocol. [`exchange`] then
+/// fetches the metadata.
+pub(crate) async fn connect(
     addr: SocketAddr,
     info_hash: &[u8; 20],
     peer_id: &[u8; 20],
-    max_size: usize,
-) -> Result<Vec<u8>, PeerError> {
-    let stream =
+) -> Result<TcpStream, PeerError> {
+    let mut stream =
         tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await.map_err(|_| PeerError::Timeout)??;
     let _ = stream.set_nodelay(true);
-    exchange(stream, info_hash, peer_id, max_size).await
+    greet(&mut stream, info_hash, peer_id).await?;
+    Ok(stream)
 }
 
-/// The metadata exchange over any stream. The stream is dropped, and the
-/// connection closed, as soon as the metadata is complete.
-pub(crate) async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
-    mut stream: S,
+/// The BEP 3 handshake, both ways, over any stream.
+pub(crate) async fn greet<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: &mut S,
     info_hash: &[u8; 20],
     peer_id: &[u8; 20],
-    max_size: usize,
-) -> Result<Vec<u8>, PeerError> {
+) -> Result<(), PeerError> {
     stream.write_all(&handshake(info_hash, peer_id)).await?;
     let mut theirs = [0; 68];
     timed(stream.read_exact(&mut theirs)).await?;
@@ -99,6 +99,17 @@ pub(crate) async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
     if !theirs.extensions {
         return Err(PeerError::NoExtensions);
     }
+    Ok(())
+}
+
+/// The metadata exchange over any stream that [`greet`] has been through,
+/// verified. The stream is dropped, and the connection closed, as soon as
+/// the metadata is complete.
+pub(crate) async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
+    mut stream: S,
+    info_hash: &[u8; 20],
+    max_size: usize,
+) -> Result<Vec<u8>, PeerError> {
     stream.write_all(&extended_handshake()).await?;
 
     let mut buf = Vec::new();
@@ -351,6 +362,8 @@ pub(crate) mod testing {
         Stall(Duration),
         /// Answers the handshake with bytes that are not one.
         Garbage,
+        /// Answers the handshake after this long, then serves like `Good`.
+        Slow(Duration),
     }
 
     /// The ID the fake peer asks for on ut_metadata messages.
@@ -376,6 +389,7 @@ pub(crate) mod testing {
                 let _ = stream.read_to_end(&mut Vec::new()).await;
                 return Ok(Vec::new());
             }
+            Behavior::Slow(delay) => tokio::time::sleep(delay).await,
             _ => {}
         }
 
@@ -469,9 +483,14 @@ mod tests {
 
     async fn run(behavior: Behavior) -> (Result<Vec<u8>, PeerError>, Vec<u8>) {
         let (info, hash) = fixture();
-        let (client, server) = tokio::io::duplex(8 * 1024);
+        let (mut client, server) = tokio::io::duplex(8 * 1024);
         let peer = tokio::spawn(serve(server, hash, info, behavior));
-        let result = exchange(client, &hash, &peer_id(), 10 << 20).await;
+        // `client` moves in, so a failed handshake hangs up and the peer ends.
+        let result = async move {
+            greet(&mut client, &hash, &peer_id()).await?;
+            exchange(client, &hash, 10 << 20).await
+        }
+        .await;
         let forbidden = peer.await.unwrap().unwrap();
         (result, forbidden)
     }
