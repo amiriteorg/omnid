@@ -24,8 +24,9 @@ HYPHANET_BUILD=1507
 HYPHANET_DEB=freenet_0.7.5+${HYPHANET_BUILD}-1_amd64.deb
 HYPHANET_URL=https://github.com/hyphanet/fred/releases/download/build0${HYPHANET_BUILD}
 HYPHANET_DEB_SHA256=0dda10df155be6eac88a6124c060e9a21ab9a85b346d034e382a6f65c75bb4d4
-# Arne Babenhauserheide (freenet releases); published on hyphanet.org.
-HYPHANET_KEY=B30C3D91069F81ECFEFED0B1B41A6047FD6C57F9
+# Fingerprint of the release signing key, Arne Babenhauserheide (freenet
+# releases), as published on hyphanet.org. Public, not a secret.
+HYPHANET_SIGNER_FINGERPRINT=B30C3D91069F81ECFEFED0B1B41A6047FD6C57F9
 # The bundled JNA 4.5.2 has no arm64 macOS library; 5.x is API compatible here.
 JNA_VERSION=5.19.1
 JNA_SHA256=4fb141dd8ef6b0585ffceea4bc49602fbc6312fa977e2c488794ea3e6aafecae
@@ -87,10 +88,10 @@ install_hyphanet() {
   # the signature must be valid for exactly that key.
   local gnupg
   gnupg=$(mktemp -d "$CACHE/gpg.XXXXXX")
-  curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x$HYPHANET_KEY" \
+  curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x$HYPHANET_SIGNER_FINGERPRINT" \
     | GNUPGHOME=$gnupg gpg --batch --quiet --import 2>/dev/null
   GNUPGHOME=$gnupg gpg --batch --status-fd 1 --verify "$CACHE/$HYPHANET_DEB.sig" "$CACHE/$HYPHANET_DEB" 2>/dev/null \
-    | grep -q "VALIDSIG $HYPHANET_KEY" || { rm -rf "$gnupg"; die "Hyphanet signature did not verify"; }
+    | grep -q "VALIDSIG $HYPHANET_SIGNER_FINGERPRINT" || { rm -rf "$gnupg"; die "Hyphanet signature did not verify"; }
   rm -rf "$gnupg"
   mkdir -p "$pkg/extract"
   (cd "$pkg/extract" && tar -xf "$CACHE/$HYPHANET_DEB" && tar -xf data.tar.* -C "$pkg")
