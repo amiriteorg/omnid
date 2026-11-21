@@ -277,6 +277,27 @@ impl CrawlStore {
         Ok(retried)
     }
 
+    /// Makes the blocked addresses on `sites` (as `Source::site_key`) and
+    /// their subdomains due now: a list blocked them that no longer does, such
+    /// as a published blocklist naming a seed the operator chose. Returns how
+    /// many.
+    pub fn unblock_sites<S: AsRef<str>>(
+        &self,
+        sites: impl IntoIterator<Item = S>,
+        now: i64,
+    ) -> rusqlite::Result<usize> {
+        let db = self.db();
+        let mut unblock = db.prepare_cached(
+            "UPDATE pages SET state = 0, next_visit = ?1
+             WHERE state = 2 AND (site = ?2 OR (length(site) > length(?2) AND substr(site, -length(?2) - 1) = '.' || ?2))",
+        )?;
+        let mut unblocked = 0;
+        for site in sites {
+            unblocked += unblock.execute(params![now, site.as_ref().to_ascii_lowercase()])?;
+        }
+        Ok(unblocked)
+    }
+
     fn db(&self) -> MutexGuard<'_, Connection> {
         self.db.lock().expect("crawl store lock poisoned")
     }
@@ -487,6 +508,24 @@ mod tests {
         store.finish(url, Network::Clearnet, Visit::Blocked, 0).unwrap();
         store.schedule(&[job(url, 0, 0.8)], 0).unwrap();
         assert!(store.take_due(i64::MAX - 1, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_site_is_unblocked_with_its_subdomains_only() {
+        let store = CrawlStore::in_memory().unwrap();
+        let urls =
+            ["http://seed.example/", "http://doc.seed.example/a", "http://notseed.example/", "http://other.example/"];
+        let jobs: Vec<Job> = urls.iter().map(|url| job(url, 0, 0.5)).collect();
+        store.discover(&jobs, 0).unwrap();
+        store.take_due(0, 10).unwrap();
+        for url in urls {
+            store.finish(url, Network::Clearnet, Visit::Blocked, 0).unwrap();
+        }
+        assert_eq!(store.unblock_sites(["Seed.Example"], 5).unwrap(), 2);
+        let mut due: Vec<String> = store.take_due(5, 10).unwrap().into_iter().map(|j| j.source.to_string()).collect();
+        due.sort();
+        assert_eq!(due, ["http://doc.seed.example/a", "http://seed.example/"]);
+        assert_eq!(store.unblock_sites(["seed.example"], 6).unwrap(), 0, "nothing left blocked there");
     }
 
     #[test]

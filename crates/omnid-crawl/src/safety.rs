@@ -13,7 +13,11 @@
 //!   followed, so a matching directory page does not lead the crawler deeper.
 //! * **A published blocklist** of MD5-hashed hostnames (Ahmia's list of
 //!   onion services reported for abuse) can be swapped in while the crawler
-//!   runs, as the daemon refreshes it ([`Safety::set_published`]).
+//!   runs, as the daemon refreshes it ([`Safety::set_published`]). It is
+//!   someone else's judgement and has named sites that are plainly not abuse
+//!   (ProPublica, Proton, Qubes and Riseup in November 2026), so it does not
+//!   overrule the sites the operator chose, their seeds
+//!   ([`Safety::choose_sites`]); the operator's own denylist still does.
 //!
 //! What it does not do yet: match media against known-abuse hash lists
 //! (PhotoDNA, NCMEC, IWF). Those lists are licensed to vetted operators and
@@ -46,6 +50,9 @@ pub struct Safety {
     site_md5s: HashSet<[u8; 16]>,
     /// From a published blocklist, replaced whole as it is refreshed.
     published: RwLock<HashSet<[u8; 16]>>,
+    /// Sites the operator chose: the published blocklist does not apply to
+    /// them or their subdomains.
+    chosen: HashSet<String>,
     /// Lowercase.
     terms: Vec<String>,
 }
@@ -81,6 +88,22 @@ impl Safety {
         safety
     }
 
+    /// Exempts the sites the operator chose to crawl (as `Source::site_key`)
+    /// and their subdomains from the published blocklist.
+    pub fn choose_sites<S: AsRef<str>>(&mut self, sites: impl IntoIterator<Item = S>) {
+        self.chosen.extend(sites.into_iter().map(|site| site.as_ref().to_ascii_lowercase()));
+    }
+
+    /// Whether the operator's own denylist lets `site` (as `Source::site_key`)
+    /// through, whatever a published list says.
+    pub fn operator_allows(&self, site: &str) -> bool {
+        let site = site.to_ascii_lowercase();
+        !parent_domains(&site).any(|candidate| {
+            self.sites.contains(candidate)
+                || self.site_md5s.contains(&<[u8; 16]>::from(Md5::digest(candidate.as_bytes())))
+        })
+    }
+
     pub fn denylist_len(&self) -> usize {
         self.sites.len() + self.site_md5s.len() + self.published().len()
     }
@@ -111,9 +134,14 @@ impl Safety {
             return Verdict::Allow;
         }
         let site = source.site_key().to_ascii_lowercase();
+        let chosen = parent_domains(&site).any(|candidate| self.chosen.contains(candidate));
         let denied = parent_domains(&site).any(|candidate| {
             let digest = <[u8; 16]>::from(Md5::digest(candidate.as_bytes()));
-            self.sites.contains(candidate) || self.site_md5s.contains(&digest) || published.contains(&digest)
+            self.sites.contains(candidate)
+                || self.site_md5s.contains(&digest)
+                // A bare top-level name ("onion") is never taken from a
+                // published list: one such line would shut a whole network.
+                || (!chosen && candidate.contains('.') && published.contains(&digest))
         });
         if denied { Verdict::DeniedSite } else { Verdict::Allow }
     }
@@ -205,6 +233,33 @@ mod tests {
         // A newer list replaces it.
         assert_eq!(safety.set_published(""), 0);
         assert_eq!(safety.check_source(&source(&format!("http://{ONION}/"))), Verdict::Allow);
+    }
+
+    fn md5(text: &str) -> String {
+        Md5::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn a_published_list_does_not_overrule_the_operators_choice() {
+        const OTHER: &str = "juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion";
+        let mut safety = Safety::from_lists("denied.example", "");
+        safety.choose_sites([ONION.to_uppercase().as_str(), "denied.example"]);
+        safety.set_published(&format!("{}\n{}\n{}\n", md5(ONION), md5(OTHER), md5("onion")));
+        assert_eq!(safety.check_source(&source(&format!("http://{ONION}/"))), Verdict::Allow, "a seed");
+        assert_eq!(safety.check_source(&source(&format!("http://www.{ONION}/"))), Verdict::Allow, "and its subdomains");
+        assert_eq!(safety.check_source(&source(&format!("http://{OTHER}/"))), Verdict::DeniedSite, "anything else");
+        assert_eq!(
+            safety.check_source(&source("http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/")),
+            Verdict::Allow,
+            "a listed top-level name does not shut the network"
+        );
+        assert_eq!(
+            safety.check_source(&source("https://denied.example/")),
+            Verdict::DeniedSite,
+            "the operator's own denylist still applies"
+        );
+        assert!(safety.operator_allows(ONION) && safety.operator_allows(OTHER));
+        assert!(!safety.operator_allows("www.denied.example"));
     }
 
     #[test]

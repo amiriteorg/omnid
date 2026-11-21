@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: Ahmia's blocklist kept the crawler off five of the default onion seeds. The list, published
+  as onion services blocked for child sexual abuse material, names ProPublica, Proton, Qubes,
+  Riseup and one more of them; on a phone running 0.1.2 their pages were refused and taken out of
+  the index. The list no longer overrules the seeds (the default ones and `--seeds`) or their
+  subdomains, and what it blocked on them is crawled again at the next start; the operator's own
+  denylist still applies. A bare top-level name in a published list is ignored, so one bad line
+  cannot shut a whole network.
+
 ## 0.1.2 (2026-11-21)
 
 - Fixed: on the phone, every clearnet page over HTTPS failed. reqwest checked certificates with

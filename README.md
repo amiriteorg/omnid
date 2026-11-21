@@ -253,7 +253,14 @@ A new level reloads every open tab.
   abuse (about 60,000, as MD5 digests), is kept in the denylist: the last copy
   from the data directory at start, then fetched over Tor from Ahmia's onion
   site and refreshed daily; a list of fewer than 1,000 entries is taken for a
-  broken answer and the held one kept. `--no-blocklist` leaves it out.
+  broken answer and the held one kept. `--no-blocklist` leaves it out. It is
+  someone else's judgement and is not always right: in November 2026 it named
+  the onion sites of ProPublica, Proton, Qubes and Riseup. So it never
+  overrules your seeds (the default ones and `--seeds`): they and their
+  subdomains are crawled whatever it says, and what it blocked on them before
+  is crawled again at the next start. Your own `--denylist` still applies to
+  them. A bare top-level name in it ("onion") is ignored, so one bad line
+  cannot shut a whole network.
 - **Blocked terms** (`--blocked-terms`): a matching page is not indexed, its
   links are not followed, it is never revisited, and it is removed from the
   index if it was there before the list changed.

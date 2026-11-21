@@ -181,7 +181,19 @@ pub async fn start(cfg: DaemonConfig) -> Result<Daemon> {
     let gateway = Arc::new(Gateway::new(cfg.gateway).map_err(|e| anyhow!("starting the gateway: {e}"))?);
     let index = Arc::new(open_index(&cfg.data_dir)?);
     let store = Arc::new(open_store(&cfg.data_dir)?);
-    let safety = Arc::new(cfg.safety);
+    // The seeds are the operator's choice: a published blocklist does not
+    // overrule it, and what one blocked on those sites before is due again.
+    let mut safety = cfg.safety;
+    let seeds: Vec<&Source> = cfg.seeds.iter().map(|job| &job.source).collect();
+    let defaults = default_seeds();
+    let chosen: Vec<String> =
+        seeds.into_iter().chain(defaults.iter().map(|job| &job.source)).map(Source::site_key).collect();
+    safety.choose_sites(&chosen);
+    let unblocked = store.unblock_sites(chosen.iter().filter(|site| safety.operator_allows(site)), now_secs())?;
+    if unblocked > 0 {
+        tracing::info!(unblocked, "addresses on seed sites that a blocklist had refused are due again");
+    }
+    let safety = Arc::new(safety);
     if cfg.abuse_blocklist {
         let held = load_blocklist(&safety, &cfg.data_dir);
         tracing::info!(sites = held, "abuse blocklist loaded from the last copy");
