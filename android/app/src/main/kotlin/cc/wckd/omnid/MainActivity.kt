@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -203,7 +205,9 @@ class MainActivity : Activity() {
                 text = getString(R.string.app_name)
                 setTextColor(getColor(R.color.ink))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 21.6f)
-                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                // The wordmark: Space Mono Bold, set tight.
+                typeface = resources.getFont(R.font.space_mono_bold)
+                letterSpacing = -0.04f
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(12) })
         }
     }
@@ -332,9 +336,10 @@ class MainActivity : Activity() {
         val onAccent = getColor(R.color.accent_ink)
         startingTitle = TextView(this).apply {
             setTextColor(getColor(R.color.ink))
-            // The type ramp's head size (21.6), as on the search page.
+            // The type ramp's head size (21.6), in the search page's Space Mono.
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 21.6f)
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            typeface = resources.getFont(R.font.space_mono_bold)
+            letterSpacing = -0.04f
             gravity = Gravity.CENTER
         }
         startingDetail = TextView(this).apply {
@@ -349,9 +354,14 @@ class MainActivity : Activity() {
         }
         retry = Button(this).apply {
             text = getString(R.string.retry)
-            isAllCaps = false
+            // The page's primary button: a square accent block, its label in capitals.
+            typeface = resources.getFont(R.font.space_mono_bold)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            letterSpacing = 0.04f
             setTextColor(onAccent)
-            backgroundTintList = ColorStateList.valueOf(getColor(R.color.accent))
+            background = RippleDrawable(ColorStateList.valueOf(getColor(R.color.ink)), ColorDrawable(getColor(R.color.accent)), null)
+            minHeight = dp(48)
+            setPadding(dp(20), 0, dp(20), 0)
             visibility = View.GONE
             setOnClickListener { restartService() }
         }

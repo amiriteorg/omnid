@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-21T06:55:45Z",
-  "title": "Design System: omnid",
+  "generatedAt": "2026-11-21T16:05:33Z",
+  "title": "Design System: OMNId",
   "extensions": {
     "colorMeta": {
       "ground": {
@@ -17,21 +17,6 @@
           "#989db6",
           "#c0c3d3",
           "#edeef3"
-        ]
-      },
-      "surface": {
-        "role": "neutral",
-        "displayName": "Raised Navy (dark)",
-        "canonical": "#131736",
-        "tonalRamp": [
-          "#090b11",
-          "#1f2334",
-          "#373d5d",
-          "#535b80",
-          "#727ba1",
-          "#939cc4",
-          "#bdc3dc",
-          "#eceef5"
         ]
       },
       "surface-2": {
@@ -154,19 +139,19 @@
           "#e6effe"
         ]
       },
-      "focus": {
+      "hi": {
         "role": "primary",
-        "displayName": "Focus Ring (dark)",
-        "canonical": "rgb(74 135 251 / 0.55)",
+        "displayName": "Highlighter (dark)",
+        "canonical": "rgb(149 174 251 / 0.42)",
         "tonalRamp": [
-          "#030a1c",
-          "#041f55",
-          "#013496",
-          "#1a54c3",
-          "#3b76e9",
-          "#699cfb",
-          "#a6c5fc",
-          "#e6effe"
+          "#05091c",
+          "#192244",
+          "#303e6f",
+          "#4a5d9d",
+          "#6a7fc1",
+          "#90a3db",
+          "#b9c8f4",
+          "#e8eeff"
         ]
       },
       "mark": {
@@ -349,21 +334,6 @@
           "#eeeeef"
         ]
       },
-      "surface-light": {
-        "role": "neutral",
-        "displayName": "Paper White (light)",
-        "canonical": "#FFFFFF",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#242424",
-          "#404040",
-          "#5d5d5d",
-          "#7d7d7d",
-          "#9e9e9e",
-          "#c4c4c4",
-          "#eeeeee"
-        ]
-      },
       "surface-2-light": {
         "role": "neutral",
         "displayName": "Lifted Navy (light)",
@@ -484,19 +454,19 @@
           "#e7effe"
         ]
       },
-      "focus-light": {
+      "hi-light": {
         "role": "primary",
-        "displayName": "Focus Ring (light)",
-        "canonical": "rgb(47 91 230 / 0.45)",
+        "displayName": "Highlighter (light)",
+        "canonical": "rgb(47 91 230 / 0.22)",
         "tonalRamp": [
-          "#03091f",
-          "#081a5d",
-          "#0f2aa4",
-          "#234ad5",
-          "#3f6ffb",
-          "#719afc",
-          "#aac4fd",
-          "#e7effe"
+          "#01062b",
+          "#091c5e",
+          "#193695",
+          "#2b53cf",
+          "#4977f7",
+          "#7ca2fb",
+          "#b1c9fe",
+          "#e7efff"
         ]
       },
       "mark-light": {
@@ -532,16 +502,16 @@
       "ok-light": {
         "role": "secondary",
         "displayName": "Signal Green (light)",
-        "canonical": "#128A52",
+        "canonical": "#0F7A49",
         "tonalRamp": [
-          "#020f06",
-          "#002d16",
-          "#054d2b",
-          "#0d7041",
-          "#23945b",
-          "#4eb67b",
-          "#9bd4af",
-          "#e4f3e8"
+          "#000f05",
+          "#012e18",
+          "#064f2e",
+          "#197347",
+          "#429667",
+          "#76b68e",
+          "#a7d7b8",
+          "#d9f8e3"
         ]
       },
       "warn-light": {
@@ -637,16 +607,16 @@
       "i2p-light": {
         "role": "tertiary",
         "displayName": "I2P Teal (light)",
-        "canonical": "#0B7F86",
+        "canonical": "#0A7279",
         "tonalRamp": [
-          "#020e0f",
-          "#012a2d",
-          "#07494d",
-          "#006b71",
-          "#268d94",
-          "#4fafb6",
-          "#9bcfd3",
-          "#e4f2f3"
+          "#000e10",
+          "#012b2e",
+          "#064b50",
+          "#196e74",
+          "#429096",
+          "#75b1b6",
+          "#a6d3d6",
+          "#d9f5f7"
         ]
       },
       "hyphanet-light": {
@@ -668,43 +638,60 @@
     "typographyMeta": {
       "headline": {
         "displayName": "Headline",
-        "purpose": "Section heads (Onion sites, Add an address) and the brand name; 21.6sp medium natively."
+        "purpose": "The wordmark (line-height 1), Explore group heads and \"Add an address\"; 21.6sp natively for the action-bar wordmark, start-screen title and error head."
       },
       "title": {
         "displayName": "Title",
-        "purpose": "Result titles and empty-state heads; the search field's text at this size, weight 400."
+        "purpose": "Empty-state heads."
+      },
+      "input": {
+        "displayName": "Input",
+        "purpose": "The search line's typed text."
+      },
+      "title-small": {
+        "displayName": "Title Small",
+        "purpose": "Result titles and Explore site names (at 1.4), under the highlighter while unread."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Snippets (max 70ch, three lines), explanations, inputs, the browser address."
-      },
-      "body-strong": {
-        "displayName": "Body Strong",
-        "purpose": "Buttons, router names, Explore site names."
+        "purpose": "Paragraphs only: snippets (70ch, three lines), router explanations, the crawl detail, empty-state and Add copy; the platform sans natively."
       },
       "label": {
         "displayName": "Label",
-        "purpose": "Trust strip, summary, meta lines, file lists; tabular figures for numbers."
+        "purpose": "Capitals for controls: chips, buttons, text buttons, router names in the trust panel, the files disclosure."
       },
-      "label-strong": {
-        "displayName": "Label Strong",
-        "purpose": "Route badges; the browser's kind label natively (12sp medium)."
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "The summary, meta lines and counts, with tabular figures; submit results."
       },
-      "mono": {
-        "displayName": "Mono",
-        "purpose": "Addresses and hashes only, one ellipsised line."
+      "address": {
+        "displayName": "Address",
+        "purpose": "Every address, one line, ellipsised and shortened at both ends."
+      },
+      "state": {
+        "displayName": "State",
+        "purpose": "The trust strip's router names and the crawler's word, in capitals."
+      },
+      "badge": {
+        "displayName": "Badge",
+        "purpose": "Route and kind badges, NOT ENCRYPTED, state words in the trust panel; small buttons at 0.04em."
       }
     },
     "shadows": [
       {
-        "name": "focus-ring",
-        "value": "0 0 0 4px var(--focus)",
-        "purpose": "Around a focused search or address field, with the border turning glow. Spread without blur; the only coloured shadow."
+        "name": "focus-line",
+        "value": "inset 0 -2px 0 var(--glow)",
+        "purpose": "With the field's 2px bottom rule turned glow, thickens a focused text line to 4px. Draws a line; never light."
       },
       {
-        "name": "hollow-dot",
+        "name": "hollow-square",
         "value": "inset 0 0 0 1.5px var(--net)",
-        "purpose": "Draws an unselected chip's 8px network dot as a ring; removed when the chip is selected."
+        "purpose": "Draws an 8px square as an outline: a chip's network square while the chip is off, or var(--off) for a router that is not running."
+      },
+      {
+        "name": "ground-frame",
+        "value": "inset 0 0 0 1px var(--ground)",
+        "purpose": "A 1px ground edge on a selected chip's filled network square, so every hue stays visible on the ink block."
       }
     ],
     "motion": [
@@ -716,12 +703,12 @@
       {
         "name": "duration-state",
         "value": "160ms",
-        "purpose": "Border, background and colour changes on chips, buttons, the trust strip and fields."
+        "purpose": "Border, background and colour changes on chips, buttons, the trust strip and field lines; the ink block arriving on hover."
       },
       {
         "name": "duration-reveal",
         "value": "200ms",
-        "purpose": "Trust panel opening (fade and 6px drop), chevron turns, the focus ring appearing."
+        "purpose": "The trust panel opening (fade and 6px drop), chevrons turning 180 degrees, the focus line thickening."
       },
       {
         "name": "duration-enter",
@@ -739,14 +726,14 @@
         "purpose": "Skeleton rows appear only when a search takes longer than this; there is no spinner."
       },
       {
-        "name": "skeleton-shimmer",
-        "value": "1.2s linear infinite",
-        "purpose": "Surface to surface-2 highlight travelling across skeleton bars."
+        "name": "skeleton-blink",
+        "value": "1.2s steps(2, jump-none) infinite alternate",
+        "purpose": "Skeleton bars blink to 0.45 opacity in two steps, like a copier's lamp, not a smooth shimmer."
       },
       {
         "name": "connecting-breathe",
         "value": "1.6s ease-in-out infinite",
-        "purpose": "A connecting router's dot dims to 0.35 opacity and back."
+        "purpose": "A connecting router's square dims to 0.35 opacity and back."
       },
       {
         "name": "copied-confirm",
@@ -765,8 +752,8 @@
       },
       {
         "name": "reduced-motion",
-        "value": "none",
-        "purpose": "Under prefers-reduced-motion every animation and transition is removed."
+        "value": "animation: none; transition: none",
+        "purpose": "Every animation and transition is off under prefers-reduced-motion."
       }
     ],
     "breakpoints": [
@@ -778,156 +765,190 @@
   },
   "components": [
     {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Square, outlined in ink-2, capitals; becomes the ink block on hover. Pause/Resume, Show more, Add to index.",
+      "html": "<button class=\"ds-btn\" type=\"button\"><svg class=\"ds-btn-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 6v12\"/><path d=\"M15 6v12\"/></svg>Pause</button>",
+      "css": ".ds-btn { display:inline-flex; align-items:center; justify-content:center; gap:0.45rem; min-height:48px; padding:0 1.1rem; border:1px solid var(--ink-2, #b2bbdf); border-radius:0; background:transparent; color:var(--ink, #eef2ff); font:700 0.78125rem/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.04em; cursor:pointer; transition:background 160ms cubic-bezier(0.16, 1, 0.3, 1), border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn:hover { border-color:var(--ink, #eef2ff); background:var(--ink, #eef2ff); color:var(--ground, #0b0d1f); } .ds-btn:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-btn-icon { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; stroke-width:2.25; }"
+    },
+    {
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "The one thing to do on a view, such as adding an address to crawl.",
-      "html": "<button class=\"ds-btn-primary\" type=\"button\"><svg class=\"ds-btn-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5v14\"/><path d=\"M5 12h14\"/></svg>Add</button>",
-      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:0.4rem; min-height:48px; padding:0 1.1rem; border:1px solid transparent; border-radius:14px; background:var(--accent, #95aefb); color:var(--accent-ink, #0b0d1f); font:600 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; transition:background 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background:color-mix(in srgb, var(--accent, #95aefb) 88%, var(--ink, #eef2ff)); } .ds-btn-primary:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-btn-primary .ds-btn-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:18px; height:18px; }"
+      "description": "The one thing to do on a view: an accent block with accent-ink capitals; the ink block on hover.",
+      "html": "<button class=\"ds-btn-primary\" type=\"submit\"><svg class=\"ds-btn-primary-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5v14\"/><path d=\"M5 12h14\"/></svg>Add</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:0.45rem; min-height:48px; padding:0 1.1rem; border:1px solid var(--accent, #95aefb); border-radius:0; background:var(--accent, #95aefb); color:var(--accent-ink, #0b0d1f); font:700 0.78125rem/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.04em; cursor:pointer; transition:background 160ms cubic-bezier(0.16, 1, 0.3, 1), border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { border-color:var(--ink, #eef2ff); background:var(--ink, #eef2ff); color:var(--ground, #0b0d1f); } .ds-btn-primary:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-btn-primary-icon { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; stroke-width:2.25; }"
     },
     {
-      "name": "Secondary Button",
-      "kind": "button",
-      "refersTo": "button-secondary",
-      "description": "Every other button: Show more, Pause, and in-context actions that widen a search.",
-      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Show more</button>",
-      "css": ".ds-btn-secondary { display:inline-flex; align-items:center; justify-content:center; gap:0.4rem; min-height:48px; padding:0 1.1rem; border:1px solid var(--line, #262c57); border-radius:14px; background:var(--surface, #131736); color:var(--ink, #eef2ff); font:600 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; transition:border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), background 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-secondary:hover { border-color:var(--accent, #95aefb); } .ds-btn-secondary:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; }"
-    },
-    {
-      "name": "Text Button",
-      "kind": "button",
-      "refersTo": "button-text",
-      "description": "Bare accent word at the end of a heading row: See all, Back to Explore.",
-      "html": "<button class=\"ds-btn-text\" type=\"button\">See all</button>",
-      "css": ".ds-btn-text { min-height:48px; padding:0 0.75rem; border:0; border-radius:14px; background:none; color:var(--accent, #95aefb); font:600 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; } .ds-btn-text:hover { text-decoration:underline; text-underline-offset:3px; } .ds-btn-text:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; }"
-    },
-    {
-      "name": "Search Field",
+      "name": "Search Line",
       "kind": "input",
-      "refersTo": "search-field",
-      "description": "The 52px search field with its icon and clear button; results update as you type.",
-      "html": "<div class=\"ds-field\"><svg class=\"ds-field-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z\"/><path d=\"M20 20l-4-4\"/></svg><input class=\"ds-input-search\" type=\"search\" placeholder=\"Search every network\" aria-label=\"Search\"><button class=\"ds-field-clear\" type=\"button\" aria-label=\"Clear search\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 6l12 12\"/><path d=\"M18 6L6 18\"/></svg></button></div>",
-      "css": ".ds-field { position:relative; display:flex; align-items:center; width:100%; max-width:46rem; } .ds-field-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; position:absolute; left:1rem; color:var(--muted, #8690bd); pointer-events:none; } .ds-input-search { width:100%; height:52px; padding:0 3rem 0 2.9rem; border:1px solid var(--line, #262c57); border-radius:16px; background:var(--surface, #131736); color:var(--ink, #eef2ff); font:400 1.125rem/1.3 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; outline:none; caret-color:var(--glow, #4a87fb); transition:border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-input-search::placeholder { color:var(--muted, #8690bd); } .ds-input-search::-webkit-search-cancel-button { display:none; } .ds-input-search:focus { border-color:var(--glow, #4a87fb); box-shadow:0 0 0 4px var(--focus, rgb(74 135 251 / 0.55)); } .ds-field-clear { position:absolute; right:0.15rem; display:grid; place-items:center; width:48px; height:48px; border:0; border-radius:50%; background:none; color:var(--muted, #8690bd); cursor:pointer; } .ds-field-clear:hover { color:var(--ink, #eef2ff); } .ds-field-clear:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-field-clear .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; }"
+      "refersTo": "search-line",
+      "description": "Typed on a 2px ink rule with no box; focus turns the rule glow and thickens it to 4px.",
+      "html": "<div class=\"ds-field\"><svg class=\"ds-field-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z\"/><path d=\"M20 20l-4-4\"/></svg><input class=\"ds-search\" type=\"search\" placeholder=\"Search every network\" aria-label=\"Search\"></div>",
+      "css": ".ds-field { position:relative; display:flex; align-items:center; max-width:30rem; } .ds-field-icon { position:absolute; left:0.1rem; width:20px; height:20px; color:var(--muted, #8690bd); pointer-events:none; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; } .ds-search { width:100%; height:52px; padding:0 1rem 0 2.1rem; border:0; border-bottom:2px solid var(--ink, #eef2ff); border-radius:0; background:transparent; color:var(--ink, #eef2ff); caret-color:var(--glow, #4a87fb); font:400 1.125rem \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; letter-spacing:-0.02em; outline:none; transition:border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-search::placeholder { color:var(--muted, #8690bd); } .ds-search:focus { border-color:var(--glow, #4a87fb); box-shadow:inset 0 -2px 0 var(--glow, #4a87fb); }"
     },
     {
-      "name": "Network Chip",
+      "name": "Network Chips",
       "kind": "chip",
       "refersTo": "chip",
-      "description": "Multi-select network filter with a count; selection is one shared accent treatment, the network hue stays in the dot.",
-      "html": "<div class=\"ds-chips\"><label class=\"ds-chip\" style=\"--net: var(--onion, #a98bff)\"><input type=\"checkbox\" checked><span class=\"ds-chip-check\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></span><span class=\"ds-chip-dot\"></span>Onion<span class=\"ds-chip-count\">942</span></label><label class=\"ds-chip\" style=\"--net: var(--magnet, #f5b65b)\"><input type=\"checkbox\"><span class=\"ds-chip-check\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></span><span class=\"ds-chip-dot\"></span>Torrents<span class=\"ds-chip-count\">37</span></label></div>",
-      "css": ".ds-chips { display:flex; gap:0.5rem; flex-wrap:wrap; } .ds-chip { position:relative; display:inline-flex; align-items:center; gap:0.45rem; min-height:40px; margin:4px 0; padding:0 0.85rem 0 0.7rem; border:1px solid var(--line, #262c57); border-radius:999px; background:transparent; color:var(--muted, #8690bd); font:500 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; user-select:none; transition:background 160ms cubic-bezier(0.16, 1, 0.3, 1), border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-chip input { position:absolute; inset:-4px 0; opacity:0; margin:0; cursor:pointer; } .ds-chip-dot { width:8px; height:8px; border-radius:50%; background:transparent; box-shadow:inset 0 0 0 1.5px var(--net); } .ds-chip-check { display:none; margin-right:-0.2rem; color:var(--accent, #95aefb); } .ds-chip-check .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:16px; height:16px; stroke-width:2.25; } .ds-chip-count { color:var(--muted, #8690bd); font-variant-numeric:tabular-nums; } .ds-chip:has(input:checked) { border-color:color-mix(in srgb, var(--accent, #95aefb) 45%, var(--line, #262c57)); background:color-mix(in srgb, var(--accent, #95aefb) 13%, var(--surface, #131736)); color:var(--ink, #eef2ff); } .ds-chip:has(input:checked) .ds-chip-dot { background:var(--net); box-shadow:none; } .ds-chip:has(input:checked) .ds-chip-check { display:inline-flex; } .ds-chip:has(input:focus-visible) { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; }"
+      "description": "Multi-select network filters: dashed outline when off, the ink block with a check and a framed hue square when on.",
+      "html": "<div class=\"ds-chips\"><label class=\"ds-chip\" style=\"--net:var(--onion, #a98bff)\"><input type=\"checkbox\" checked><span class=\"ds-chip-check\"><svg class=\"ds-chip-check-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></span><span class=\"ds-chip-dot\"></span>Onion<span class=\"ds-chip-count\">1,798</span></label><label class=\"ds-chip\" style=\"--net:var(--i2p, #45d3d9)\"><input type=\"checkbox\"><span class=\"ds-chip-check\"><svg class=\"ds-chip-check-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg></span><span class=\"ds-chip-dot\"></span>I2P<span class=\"ds-chip-count\">12</span></label></div>",
+      "css": ".ds-chips { display:flex; gap:0.5rem; flex-wrap:wrap; } .ds-chip { position:relative; display:inline-flex; align-items:center; gap:0.5rem; min-height:40px; margin:4px 0; padding:0 0.8rem 0 0.7rem; border:1px dashed var(--ink-2, #b2bbdf); border-radius:0; background:transparent; color:var(--ink-2, #b2bbdf); font:700 0.78125rem/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.04em; cursor:pointer; user-select:none; transition:background 160ms cubic-bezier(0.16, 1, 0.3, 1), border-color 160ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-chip input { position:absolute; inset:-4px 0; opacity:0; margin:0; cursor:pointer; } .ds-chip-dot { width:8px; height:8px; box-shadow:inset 0 0 0 1.5px var(--net); } .ds-chip-check { display:none; margin-right:-0.15rem; } .ds-chip-check-icon { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; stroke-width:2.25; } .ds-chip-count { font-weight:400; font-variant-numeric:tabular-nums; } .ds-chip:has(input:checked) { border:1px solid var(--ink, #eef2ff); background:var(--ink, #eef2ff); color:var(--ground, #0b0d1f); } .ds-chip:has(input:checked) .ds-chip-dot { background:var(--net); box-shadow:inset 0 0 0 1px var(--ground, #0b0d1f); } .ds-chip:has(input:checked) .ds-chip-check { display:inline-flex; } .ds-chip:has(input:focus-visible) { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; }"
+    },
+    {
+      "name": "Route",
+      "kind": "custom",
+      "refersTo": "route-badge",
+      "description": "One way to reach a page: the badge outlined in its network's hue, the short address, NOT ENCRYPTED for plain HTTP, and copy.",
+      "html": "<ul class=\"ds-routes\"><li class=\"ds-route\"><span class=\"ds-badge\" style=\"--net:var(--onion, #a98bff)\"><svg class=\"ds-badge-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Onion</span><span class=\"ds-addr\">2gzyxa5i…53wid.onion</span><button class=\"ds-icon-btn\" type=\"button\" aria-label=\"Copy address\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 9h10v11H9z\"/><path d=\"M5 15V4h10\"/></svg></button></li><li class=\"ds-route\"><span class=\"ds-badge\" style=\"--net:var(--clearnet, #c9d6f5)\"><svg class=\"ds-badge-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 6.8-1.2\"/></svg>Web</span><span class=\"ds-addr\">example.org/zine</span><span class=\"ds-plain\">not encrypted</span><button class=\"ds-icon-btn\" type=\"button\" aria-label=\"Copy address\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 9h10v11H9z\"/><path d=\"M5 15V4h10\"/></svg></button></li></ul>",
+      "css": ".ds-routes { margin:0; padding:0; list-style:none; display:grid; max-width:30rem; } .ds-route { display:flex; align-items:center; gap:0.6rem; min-width:0; min-height:48px; } .ds-badge { display:inline-flex; align-items:center; gap:0.3rem; flex:none; padding:0.2rem 0.45rem 0.2rem 0.35rem; border:1px solid var(--net); border-radius:0; color:var(--net); font:700 0.6875rem/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.06em; } .ds-badge-icon { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; stroke-width:2.25; } .ds-addr { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-2, #b2bbdf); font:400 0.78125rem/1.4 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; } .ds-plain { flex:none; color:var(--warn, #f5b65b); font:700 0.6875rem/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.06em; } .ds-icon-btn { display:grid; place-items:center; flex:none; width:48px; height:48px; margin-right:-12px; border:0; border-radius:0; background:none; color:var(--muted, #8690bd); cursor:pointer; } .ds-icon-btn:hover { background:var(--surface-2, #1a1f45); color:var(--ink, #eef2ff); } .ds-icon-btn:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-icon { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; }"
     },
     {
       "name": "Trust Strip",
-      "kind": "nav",
+      "kind": "custom",
       "refersTo": "trust-strip",
-      "description": "Router and crawler state in plain words, first on the page; tap for the explanation panel.",
-      "html": "<button class=\"ds-trust\" type=\"button\" aria-expanded=\"false\"><span class=\"ds-trust-routers\"><span class=\"ds-router is-ready\"><span class=\"ds-dot\"></span>Tor</span><span class=\"ds-router is-starting\"><span class=\"ds-dot\"></span>Torrents</span><span class=\"ds-router is-unreachable\"><span class=\"ds-dot\"></span>I2P</span><span class=\"ds-router is-unreachable\"><span class=\"ds-dot\"></span>Hyphanet</span></span><span class=\"ds-trust-crawl\">Idle</span><span class=\"ds-trust-chevron\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\"/></svg></span></button>",
-      "css": ".ds-trust { display:flex; align-items:center; gap:0.75rem; width:100%; max-width:46rem; min-height:48px; padding:0.45rem 0.75rem; border:1px solid var(--line, #262c57); border-radius:999px; background:var(--surface, #131736); color:var(--ink-2, #b2bbdf); font:400 0.78125rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; cursor:pointer; transition:border-color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-trust:hover, .ds-trust[aria-expanded=\"true\"] { border-color:var(--accent, #95aefb); } .ds-trust:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-trust-routers { display:flex; gap:0.75rem; min-width:0; overflow:hidden; } .ds-router { display:inline-flex; align-items:center; gap:0.35rem; white-space:nowrap; } .ds-dot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--off, #59628f); } .is-ready .ds-dot { background:var(--ok, #4fd18b); } .is-starting .ds-dot { background:var(--warn, #f5b65b); animation:ds-breathe 1.6s ease-in-out infinite; } .is-unreachable .ds-dot { background:transparent; border:1.5px solid var(--off, #59628f); } @keyframes ds-breathe { 50% { opacity:0.35; } } .ds-trust-crawl { margin-left:auto; color:var(--muted, #8690bd); white-space:nowrap; } .ds-trust-chevron { display:inline-flex; color:var(--muted, #8690bd); transition:transform 200ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-trust-chevron .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:16px; height:16px; } .ds-trust[aria-expanded=\"true\"] .ds-trust-chevron { transform:rotate(180deg); } @media (prefers-reduced-motion: reduce) { .is-starting .ds-dot { animation:none; } }"
+      "description": "The routers' state on a line ruled above and below: square state dots, names in capitals, the crawler's word, a chevron to the panel.",
+      "html": "<button class=\"ds-trust\" type=\"button\" aria-expanded=\"false\" aria-label=\"Tor: Ready, Torrents: Connecting, I2P: Not running, Hyphanet: Off. Crawler: Crawling. Show details\"><span class=\"ds-trust-routers\"><span class=\"ds-trust-router ds-ready\"><span class=\"ds-state\"></span>Tor</span><span class=\"ds-trust-router ds-starting\"><span class=\"ds-state\"></span>Torrents</span><span class=\"ds-trust-router ds-unreachable\"><span class=\"ds-state\"></span>I2P</span><span class=\"ds-trust-router ds-disabled\"><span class=\"ds-state\"></span>Hyphanet</span></span><span class=\"ds-trust-crawl\">Crawling</span><span class=\"ds-trust-chevron\"><svg class=\"ds-chevron\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\"/></svg></span></button>",
+      "css": ".ds-trust { display:flex; align-items:center; gap:0.75rem; width:100%; max-width:34rem; min-height:48px; padding:0.45rem 0; border:0; border-block:1px solid var(--ink-2, #b2bbdf); border-radius:0; background:transparent; color:var(--ink-2, #b2bbdf); font:400 0.6875rem/1.5 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.06em; cursor:pointer; transition:border-color 160ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-trust:hover, .ds-trust[aria-expanded=\"true\"] { border-color:var(--accent, #95aefb); } .ds-trust:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-trust-routers { display:flex; flex-wrap:wrap; gap:0.15rem 0.85rem; min-width:0; } .ds-trust-router { display:inline-flex; align-items:center; gap:0.4rem; white-space:nowrap; } .ds-state { width:8px; height:8px; flex:none; background:var(--off, #59628f); } .ds-ready .ds-state { background:var(--ok, #4fd18b); } .ds-starting .ds-state { background:var(--warn, #f5b65b); animation:ds-breathe 1.6s ease-in-out infinite; } .ds-unreachable .ds-state { background:transparent; box-shadow:inset 0 0 0 1.5px var(--off, #59628f); } .ds-disabled { color:var(--muted, #8690bd); } .ds-trust-crawl { flex:none; margin-left:auto; color:var(--muted, #8690bd); white-space:nowrap; } .ds-trust-chevron { display:inline-flex; color:var(--muted, #8690bd); transition:transform 200ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-trust[aria-expanded=\"true\"] .ds-trust-chevron { transform:rotate(180deg); } .ds-chevron { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; } @keyframes ds-breathe { 50% { opacity:0.35; } } @media (prefers-reduced-motion: reduce) { .ds-starting .ds-state { animation:none; } }"
     },
     {
-      "name": "Result Row",
+      "name": "Result",
       "kind": "custom",
       "refersTo": "result-row",
-      "description": "One result: title into the private browser, snippet with matched terms, one route line per network with badge, mono address and copy, then meta.",
-      "html": "<article class=\"ds-hit\"><h2 class=\"ds-hit-title\"><a href=\"#\"><mark class=\"ds-mark\">Tor</mark> Project | Anonymity Online</a></h2><p class=\"ds-snippet\">Your traffic is relayed and encrypted three times as it passes over the <mark class=\"ds-mark\">Tor</mark> network.</p><div class=\"ds-route\"><span class=\"ds-badge\" style=\"--net: var(--onion, #a98bff)\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Onion</span><span class=\"ds-addr\">2gzyxa5i…53wid.onion</span><button class=\"ds-icon-btn\" type=\"button\" aria-label=\"Copy address\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 9h10v11H9z\"/><path d=\"M5 15V4h10\"/></svg></button></div><p class=\"ds-meta\">English · 2 routes · seen today</p></article>",
-      "css": ".ds-hit { max-width:46rem; padding:1rem 0 1.05rem; border-top:1px solid var(--line, #262c57); font:400 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; color:var(--ink, #eef2ff); } .ds-hit-title { margin:0; font-size:1.125rem; font-weight:600; line-height:1.3; } .ds-hit-title a { color:var(--ink, #eef2ff); text-decoration:none; } .ds-hit-title a:hover { text-decoration:underline; text-decoration-color:var(--accent, #95aefb); text-underline-offset:3px; } .ds-hit-title a:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; border-radius:8px; } .ds-mark { background:var(--mark, rgb(149 174 251 / 0.22)); color:var(--mark-ink, #cfecfb); border-radius:4px; padding:0 2px; } .ds-snippet { max-width:70ch; margin:0.3rem 0 0; color:var(--ink-2, #b2bbdf); } .ds-route { display:flex; align-items:center; gap:0.5rem; min-height:48px; margin-top:0.4rem; font-size:0.78125rem; } .ds-badge { display:inline-flex; align-items:center; gap:0.3rem; flex:none; padding:0.15rem 0.5rem 0.15rem 0.4rem; border-radius:999px; background:color-mix(in srgb, var(--net) 14%, transparent); color:var(--net); font-size:0.78125rem; font-weight:600; } .ds-badge .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:14px; height:14px; stroke-width:2; } .ds-addr { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink-2, #b2bbdf); font:400 0.78125rem/1.4 ui-monospace, \"Roboto Mono\", SFMono-Regular, Menlo, monospace; } .ds-icon-btn { display:grid; place-items:center; flex:none; width:48px; height:48px; margin-right:-12px; border:0; border-radius:50%; background:none; color:var(--muted, #8690bd); cursor:pointer; } .ds-icon-btn:hover { background:var(--surface-2, #1a1f45); color:var(--ink, #eef2ff); } .ds-icon-btn:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-icon-btn .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; } .ds-meta { margin:0.1rem 0 0; font-size:0.78125rem; color:var(--muted, #8690bd); font-variant-numeric:tabular-nums; }"
+      "description": "One result under a dashed rule: a highlighted mono title, a sans snippet with matched terms washed, a route, a mono meta line.",
+      "html": "<ol class=\"ds-results\"><li class=\"ds-hit\"><h2 class=\"ds-hit-title\"><a href=\"#\"><mark class=\"ds-hit-mark\">Tor</mark> Project | Anonymity Online</a></h2><p class=\"ds-hit-snippet\">Defend yourself against tracking and surveillance. Download <mark class=\"ds-hit-mark\">Tor</mark> Browser to experience real private browsing.</p><div class=\"ds-hit-route\"><span class=\"ds-hit-badge\"><svg class=\"ds-hit-badge-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Onion</span><span class=\"ds-hit-addr\">2gzyxa5i…53wid.onion</span></div><p class=\"ds-hit-meta\">English · 2 routes · seen Nov 18 – today</p></li></ol>",
+      "css": ".ds-results { margin:0; padding:0; list-style:none; max-width:34rem; } .ds-hit { padding:1rem 0 0.95rem; border-top:1px dashed var(--ink-2, #b2bbdf); } .ds-hit-title { margin:0; font:700 0.9375rem/1.45 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; letter-spacing:-0.02em; } .ds-hit-title a { color:var(--ink, #eef2ff); text-decoration:underline; text-decoration-color:var(--hi, rgb(149 174 251 / 0.42)); text-decoration-thickness:0.5em; text-underline-offset:-0.35em; text-decoration-skip-ink:none; } .ds-hit-title a:hover { text-decoration-color:var(--accent, #95aefb); } .ds-hit-title a:visited { color:var(--ink-2, #b2bbdf); text-decoration-color:transparent; } .ds-hit-title a:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-hit-mark { background:var(--mark, rgb(149 174 251 / 0.22)); color:var(--mark-ink, #cfecfb); padding:0 2px; } .ds-hit-snippet { max-width:70ch; margin:0.35rem 0 0; color:var(--ink-2, #b2bbdf); font:400 0.9375rem/1.5 system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; } .ds-hit-route { display:flex; align-items:center; gap:0.6rem; min-height:48px; margin-top:0.35rem; } .ds-hit-badge { display:inline-flex; align-items:center; gap:0.3rem; padding:0.2rem 0.45rem 0.2rem 0.35rem; border:1px solid var(--onion, #a98bff); color:var(--onion, #a98bff); font:700 0.6875rem/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.06em; } .ds-hit-badge-icon { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; stroke-width:2.25; } .ds-hit-addr { color:var(--ink-2, #b2bbdf); font:400 0.78125rem/1.4 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .ds-hit-meta { margin:0.1rem 0 0; color:var(--muted, #8690bd); font:400 0.78125rem/1.5 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; font-variant-numeric:tabular-nums; }"
     },
     {
       "name": "Explore Site Row",
       "kind": "custom",
-      "refersTo": "result-row",
-      "description": "The compact row in Explore: network dot, site name, mono address, hairline above.",
-      "html": "<a class=\"ds-site\" href=\"#\" style=\"--net: var(--onion, #a98bff)\"><span class=\"ds-site-dot\"></span><b>Tor Project | Anonymity Online</b><small>2gzyxa5i…53wid.onion</small></a>",
-      "css": ".ds-site { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:0 0.75rem; align-items:center; max-width:46rem; padding:0.7rem 0; border-top:1px solid var(--line, #262c57); color:var(--ink, #eef2ff); text-decoration:none; font-family:system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; } .ds-site:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; border-radius:8px; } .ds-site-dot { grid-row:span 2; width:8px; height:8px; border-radius:50%; background:var(--net); } .ds-site b { font-size:0.9375rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ds-site small { font:400 0.78125rem/1.4 ui-monospace, \"Roboto Mono\", SFMono-Regular, Menlo, monospace; color:var(--muted, #8690bd); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }"
+      "refersTo": "site-row",
+      "description": "Explore's compact row: a filled hue square over two lines, the site name under the highlighter, the short address; dashed muted rules between.",
+      "html": "<ul class=\"ds-sites\"><li class=\"ds-site\"><a href=\"#\"><span class=\"ds-site-dot\"></span><b>Ahmia — Search Tor Hidden Services</b><small>juhanurm…4csyd.onion</small></a></li><li class=\"ds-site\"><a href=\"#\"><span class=\"ds-site-dot\"></span><b>Share and accept documents securely</b><small>sdolvtfh…fzvyd.onion</small></a></li></ul>",
+      "css": ".ds-sites { margin:0; padding:0; list-style:none; max-width:34rem; border-top:1px solid var(--ink-2, #b2bbdf); } .ds-site + .ds-site { border-top:1px dashed var(--muted, #8690bd); } .ds-site a { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:0.1rem 0.75rem; align-items:center; padding:0.7rem 0; color:var(--ink, #eef2ff); text-decoration:none; } .ds-site a:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-site-dot { grid-row:span 2; width:8px; height:8px; background:var(--onion, #a98bff); } .ds-site b { font:700 0.9375rem/1.4 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; letter-spacing:-0.02em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-decoration:underline; text-decoration-color:var(--hi, rgb(149 174 251 / 0.42)); text-decoration-thickness:0.5em; text-underline-offset:-0.35em; text-decoration-skip-ink:none; } .ds-site a:hover b { text-decoration-color:var(--accent, #95aefb); } .ds-site small { font:400 0.78125rem/1.4 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; color:var(--muted, #8690bd); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }"
     },
     {
       "name": "Browser Toolbar",
       "kind": "nav",
       "refersTo": "browser-toolbar",
-      "description": "The Android browser's native toolbar (approximated in HTML): back, address pill with network kind and lock, reload, more.",
-      "html": "<div class=\"ds-toolbar\"><button class=\"ds-tool\" type=\"button\" aria-label=\"Back\" disabled><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M15 5L8 12L15 19\"/></svg></button><div class=\"ds-pill\" tabindex=\"0\"><span class=\"ds-kind\" style=\"--net: var(--onion, #a98bff)\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Onion</span><span class=\"ds-pill-addr\">2gzyxa5i…53wid.onion</span></div><button class=\"ds-tool\" type=\"button\" aria-label=\"Reload\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M19 12A7 7 0 1 1 16.9 7\"/><path d=\"M19 4V8H15\"/></svg></button><button class=\"ds-tool ds-more\" type=\"button\" aria-label=\"More\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5.5v.1\"/><path d=\"M12 12v.1\"/><path d=\"M12 18.5v.1\"/></svg></button></div>",
-      "css": ".ds-toolbar { display:flex; align-items:center; gap:2px; padding:6px 2px; background:var(--ground, #0b0d1f); font-family:system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif; } .ds-tool { display:grid; place-items:center; flex:none; width:48px; height:48px; border:0; border-radius:50%; background:none; color:var(--ink, #eef2ff); cursor:pointer; } .ds-tool:hover { background:var(--surface-2, #1a1f45); } .ds-tool:disabled { opacity:0.31; cursor:default; background:none; } .ds-tool:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-tool .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:24px; height:24px; } .ds-more .ds-icon { stroke-width:2.75; } .ds-pill { display:flex; align-items:center; flex:1; min-width:0; height:48px; padding:0 12px 0 14px; border:1px solid var(--line, #262c57); border-radius:24px; background:var(--surface, #131736); } .ds-pill:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:2px; } .ds-kind { display:inline-flex; align-items:center; gap:4px; padding-right:6px; color:var(--net); font-size:12px; font-weight:500; } .ds-kind .ds-icon { width:20px; height:20px; flex:none; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; width:16px; height:16px; } .ds-pill-addr { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink, #eef2ff); font-size:15px; }"
+      "description": "Android's browser chrome as HTML: back, the address on a 2dp ink line with the outlined kind badge and reload, the tab count square, the menu.",
+      "html": "<div class=\"ds-bar\"><button class=\"ds-bar-btn\" type=\"button\" aria-label=\"Back\" disabled><svg class=\"ds-bar-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M15 5L8 12l7 7\"/></svg></button><div class=\"ds-bar-line\"><span class=\"ds-bar-kind\"><svg class=\"ds-bar-kind-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Tor</span><span class=\"ds-bar-addr\">check.torproject.org</span><button class=\"ds-bar-btn ds-bar-reload\" type=\"button\" aria-label=\"Reload\"><svg class=\"ds-bar-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M19 12A7 7 0 1 1 16.9 7\"/><path d=\"M19 4v4h-4\"/></svg></button></div><button class=\"ds-bar-btn\" type=\"button\" aria-label=\"Tabs: 3 open\"><span class=\"ds-bar-count\">3</span></button><button class=\"ds-bar-btn\" type=\"button\" aria-label=\"Menu\"><svg class=\"ds-bar-dots\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5.5v.1\"/><path d=\"M12 12v.1\"/><path d=\"M12 18.5v.1\"/></svg></button></div><div class=\"ds-bar-progress\"></div>",
+      "css": ".ds-bar { display:flex; align-items:center; gap:2px; max-width:26rem; padding:6px 2px; background:var(--ground, #0b0d1f); color:var(--ink, #eef2ff); } .ds-bar-btn { display:grid; place-items:center; flex:none; width:48px; height:48px; padding:0; border:0; border-radius:0; background:none; color:var(--ink, #eef2ff); cursor:pointer; } .ds-bar-btn:disabled { opacity:0.31; cursor:default; } .ds-bar-btn:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:-2px; } .ds-bar-icon { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; } .ds-bar-dots { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:2.75; stroke-linecap:square; } .ds-bar-line { display:flex; align-items:center; flex:1; min-width:0; height:48px; padding-left:4px; border-bottom:2px solid var(--ink, #eef2ff); } .ds-bar-kind { display:inline-flex; align-items:center; gap:4px; flex:none; margin-right:6px; padding:4px 5px 4px 4px; border:1px solid var(--ok, #4fd18b); color:var(--ok, #4fd18b); font:700 11px/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.06em; } .ds-bar-kind-icon { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; } .ds-bar-addr { flex:1; min-width:0; overflow:hidden; white-space:nowrap; font:400 13px/1.4 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 20px), transparent); mask-image:linear-gradient(to right, #000 calc(100% - 20px), transparent); } .ds-bar-reload { width:40px; height:40px; } .ds-bar-count { display:grid; place-items:center; width:22px; height:22px; border:1.75px solid currentColor; font:700 12px/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; } .ds-bar-progress { max-width:26rem; height:2px; background:linear-gradient(to right, var(--glow, #4a87fb) 40%, var(--ground, #0b0d1f) 40%); }"
+    },
+    {
+      "name": "Tab Rows",
+      "kind": "custom",
+      "refersTo": "tab-row",
+      "description": "The browser's tab list: title, kind badge and short address per row, dashed rules between, and the shown tab as the ink block.",
+      "html": "<ul class=\"ds-tabs\"><li class=\"ds-tab\"><div class=\"ds-tab-text\"><b>Tor Project | Anonymity Online</b><span class=\"ds-tab-sub\"><span class=\"ds-tab-kind\" style=\"--net:var(--onion, #a98bff)\"><svg class=\"ds-tab-kind-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Onion</span><span class=\"ds-tab-addr\">2gzyxa5i…53wid.onion</span></span></div><button class=\"ds-tab-close\" type=\"button\" aria-label=\"Close tab\"><svg class=\"ds-tab-x\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 6l12 12\"/><path d=\"M18 6L6 18\"/></svg></button></li><li class=\"ds-tab ds-tab-current\"><div class=\"ds-tab-text\"><b>ProPublica — Investigative Journalism</b><span class=\"ds-tab-sub\"><span class=\"ds-tab-kind\" style=\"--net:var(--onion, #a98bff)\"><svg class=\"ds-tab-kind-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 11h12v9H6z\"/><path d=\"M8.5 11V8a3.5 3.5 0 0 1 7 0v3\"/></svg>Onion</span><span class=\"ds-tab-addr\">p53lf57q…u5uqd.onion</span></span></div><button class=\"ds-tab-close\" type=\"button\" aria-label=\"Close tab\"><svg class=\"ds-tab-x\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 6l12 12\"/><path d=\"M18 6L6 18\"/></svg></button></li></ul>",
+      "css": ".ds-tabs { margin:0; padding:0 8px; list-style:none; max-width:26rem; background:var(--ground, #0b0d1f); } .ds-tab { display:flex; align-items:center; min-height:60px; margin:2px 0; padding:6px 2px 6px 12px; color:var(--ink, #eef2ff); } .ds-tab + .ds-tab { border-top:1px dashed var(--ink-2, #b2bbdf); } .ds-tab-text { flex:1; min-width:0; display:grid; gap:4px; } .ds-tab-text b { font:700 14px/1.3 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; letter-spacing:-0.02em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ds-tab-sub { display:flex; align-items:center; gap:8px; min-width:0; } .ds-tab-kind { display:inline-flex; align-items:center; gap:4px; flex:none; padding:4px 5px 4px 4px; border:1px solid var(--net); color:var(--net); font:700 11px/1 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; text-transform:uppercase; letter-spacing:0.06em; } .ds-tab-kind-icon { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; } .ds-tab-addr { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted, #8690bd); font:400 12px/1.3 \"Space Mono\", ui-monospace, \"Roboto Mono\", Menlo, monospace; } .ds-tab-close { display:grid; place-items:center; flex:none; width:48px; height:48px; border:0; border-radius:0; background:none; color:inherit; cursor:pointer; } .ds-tab-close:focus-visible { outline:2px solid var(--glow, #4a87fb); outline-offset:-2px; } .ds-tab-x { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:square; stroke-linejoin:miter; flex:none; } .ds-tab-current { background:var(--ink, #eef2ff); color:var(--ground, #0b0d1f); } .ds-tab-current .ds-tab-kind { --net:var(--ground, #0b0d1f) !important; } .ds-tab-current .ds-tab-addr { color:var(--ground, #0b0d1f); }"
     }
   ],
   "narrative": {
-    "northStar": "The Night Switchboard",
-    "overview": "omnid is one board that every network plugs into: onion sites, I2P, Hyphanet, torrents and the open web, each line labelled with where it leads and lit to show whether it is live and whether the way there is sealed. The board sits on the icon's deep navy and is lit only by the icon's own blues. The metaphor shapes structure, never imagery: there are no cables, sockets or retro hardware anywhere, and the system rejects both a themed \"dark web\" costume and the generic grey search app.\n\nThe feel is calm and quick, built to the bar of Arc Search, Signal and Proton. Density is phone-first and moderate: one column, hairline-separated rows, a single large search field, and a trust strip that states router health in plain words before anything else. Colour is spent on meaning. One accent carries action and selection, glow blue carries focus, and each network owns a hue that appears only as a small dot or a route badge. Depth comes from tone, not shadow.\n\nLight and dark are one token set expressed twice, shared by the web page (`crates/omnid/src/ui/app.css`) and the Android chrome (`res/values*/colors.xml`). Dark is the brand's home: navy ground, moonlit ink. Light is cool paper with navy ink and a stronger blue, so every accent role keeps its contrast. Where the icon's pale glow would vanish on the light ground, the brand mark changes rendition instead of the palette changing hue.",
+    "northStar": "The Network Zine",
+    "overview": "OMNId looks like a zine someone photocopied about the networks they explore. It has one monospace face, ruled lines, square marks, and a highlighter run through the titles worth reading. It is meant to look made, not themed. It rejects two looks: the soft rounded app the first build shipped (pills, tonal cards, rounded fields) and the black-and-neon \"dark web\" costume. It keeps the icon's navy palette in both schemes, so it is still recognisably the same product.\n\nStructure is drawn with lines. A ruled strip carries the routers' state, the search is typed on a line, results are separated by dashed rules, and the only boxes left are controls: outlined buttons, dashed chips, and badges outlined in their network's hue. Wherever something is selected, it becomes a solid ink block. Space Mono sets everything that labels, counts, addresses or heads, and the platform sans is kept for paragraphs. There are no corners, no shadows and no raised surfaces.\n\nThe layout is phone first and moderately dense: one column, 48px rows for anything you touch, and capitals only for state and controls. The search page (crates/omnid/src/ui) and the Android chrome (res/values*/colors.xml, MainActivity.kt, BrowserActivity.kt) share one token set, one typeface and one set of rules, so the browser's toolbar and tab list read as more pages of the same zine.",
     "keyCharacteristics": [
-      "One navy ground shared by the window, system bars, toolbars and page.",
-      "One accent for action and selection; glow blue only for focus, the caret and progress.",
-      "Network hues confined to 8px dots, route badges and the browser's kind label.",
-      "The platform sans on four sizes 1.2 apart; mono only for addresses; tabular figures for data.",
-      "Flat tonal surfaces with 1px hairlines; the focus ring is the only coloured shadow.",
-      "Pills for state and filters, 14px rounded rectangles for actions, 16px corners for surfaces.",
-      "Every touch target at least 48px (48dp).",
-      "Short, decelerating motion; results update in place."
+      "The icon's navy palette, with one value per token in each scheme, shared by app.css and colors.xml.",
+      "Space Mono Bold for the wordmark, heads, titles, chips and buttons. Space Mono Regular for addresses, labels and meta. The platform sans for paragraphs.",
+      "Five text sizes: 11, 12.5, 15, 18 and 21.6px (the same in sp natively).",
+      "No corners anywhere: border-radius 0 on every field, control, block and dot.",
+      "Rules instead of boxes: a solid rule opens a section, dashed rules separate items, and a 2px ink line runs under every text field.",
+      "Selection is a solid ink block with ground-coloured text.",
+      "A periwinkle highlighter behind unread titles. Network hues are kept to squares and outlined badges.",
+      "Flat: no shadows and no tonal cards. Motion is short and decelerating, and results update in place.",
+      "Every touch target is at least 48px (48dp)."
     ],
     "rules": [
       {
-        "name": "The Dots-and-Badges Rule",
-        "body": "A network's hue appears only as an 8px dot, a route badge (the hue at 14% behind text in the hue) or the browser's kind label. It is never a chip fill, a row tint, a button or a border.",
+        "name": "The Ink Block Rule",
+        "body": "Selection and \"on\" look the same everywhere: a solid block of ink with ground text. This covers a selected chip, the shown tab in the tab list, selected text, and a hovered button. Anything inside the block, network badges included, turns to the ground colour. No hue, tint or accent fill marks selection.",
         "section": "colors"
       },
       {
-        "name": "The One Accent Rule",
-        "body": "Selection looks the same on every network: accent at 13% over surface, an accent-tinted border and an accent check. The `glow` token marks focus, the caret and progress, and nothing else.",
+        "name": "The Squares-and-Outlines Rule",
+        "body": "A network's hue appears only as an 8px square, as a 1px outline around its badge (with the badge's label in the same hue), and in the browser's kind badge. It is never a fill, a row tint or a rule.",
         "section": "colors"
       },
       {
         "name": "The Shared Ground Rule",
-        "body": "The window, status bar, navigation bar, action bar, browser toolbar and page all paint `ground`, so the app reads as one surface. app.css and colors.xml carry the same value for the same name in each scheme; a token added on one side takes the other side's value.",
+        "body": "The window, status bar, navigation bar, action bar, browser toolbar and page all paint ground, so the app reads as one sheet. app.css and colors.xml carry the same value for the same name in each scheme. A token added on one side takes the other side's value.",
         "section": "colors"
       },
       {
-        "name": "The Four Sizes Rule",
-        "body": "Every piece of text sits on one of four sizes 1.2 apart: 12.5, 15, 18 and 21.6px, the same values in sp natively. A fifth size is a bug.",
+        "name": "The Name Rule",
+        "body": "The product is written OMNId wherever people read it, OMN in capitals and the d lower case: in the wordmark, the launcher label, notifications and running copy (\"OMNId crawls it next\"). omnid in lower case is only the command, the package and code.",
         "section": "typography"
       },
       {
-        "name": "The Mono-Means-Address Rule",
-        "body": "Monospace sets addresses and hashes only, never labels, counts or headings; numbers in the sans use tabular figures instead.",
+        "name": "The Two Voices Rule",
+        "body": "Space Mono sets everything that heads, labels, counts or addresses, including one-line status such as the summary and submit results. The platform sans sets paragraphs and nothing else.",
+        "section": "typography"
+      },
+      {
+        "name": "The Capitals Rule",
+        "body": "Capitals are for state and controls only: router names and states, the crawler's word, badges, chips, buttons, NOT ENCRYPTED, and the tab list's count. Titles, heads, addresses and paragraphs keep their own case. Capitals are tracked 0.04em at 12.5px and 0.06em at 11px.",
+        "section": "typography"
+      },
+      {
+        "name": "The Five Sizes Rule",
+        "body": "Every piece of text uses one of five sizes: 11, 12.5, 15, 18 and 21.6px (sp natively). The upper four are 1.2 apart, and 11 exists for capitals. A sixth size is a bug.",
         "section": "typography"
       },
       {
         "name": "The 48 Floor Rule",
-        "body": "Every touch target is at least 48px (48dp). When the visual is smaller, the hit area grows and the shape does not: a 40px chip's input reaches 4px above and below it, and 48px icon buttons sit 12px into the margin so their glyphs align with the text edge.",
+        "body": "Every touch target is at least 48px (48dp). When the visual is smaller, the hit area grows and the shape does not. A 40px chip's input reaches 4px above and below it. 48px icon buttons sit 12px into the margin so their glyphs align with the text edge. Text buttons are 48px tall and pulled 0.75rem into the right margin so the word ends on the column edge.",
         "section": "layout"
       },
       {
-        "name": "The Flat Night Rule",
-        "body": "Surfaces are flat at rest and separated by tone and 1px hairlines. The focus ring is the only coloured shadow, status dots carry no halos, and the glow belongs to the icon art alone.",
+        "name": "The Flat Paper Rule",
+        "body": "Surfaces are paper and nothing floats. Shadows exist only to draw lines and hollow squares, status squares carry no halo, and no element glows.",
         "section": "elevation"
       },
       {
-        "name": "The Pill Carries State Rule",
-        "body": "Fully rounded shapes are kept for things that show or set state: chips, the trust strip, route badges and the address pill. Actions are 14px rounded rectangles and surfaces 16px; a pill-shaped button breaks the language.",
+        "name": "The No Corners Rule",
+        "body": "border-radius is 0 everywhere. A rounded field, pill, circle dot or rounded button is a bug. The platform's dialogs, menus, borderless ripples and the launcher-mask icon on the start screen are known exceptions that have not been restyled yet; they are not a licence.",
         "section": "shapes"
       },
       {
+        "name": "The Rules Not Boxes Rule",
+        "body": "Groups are separated by lines, not enclosed. If something needs a border, it is a control. If it is content, it gets a rule above or below it.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Highlighter Rule",
+        "body": "An unread title carries the highlighter: a hi underline 0.5em thick, offset -0.35em so it sits behind the lower half of the letters, with skip-ink off. On hover the stroke turns solid accent. Once the link is visited the stroke is gone and the title drops to ink-2. Explore site names carry the same stroke.",
+        "section": "components"
+      },
+      {
         "name": "The In-Place Rule",
-        "body": "Results replace each other where they stand: rows already showing stay still, only new rows fade in (from 0.4 opacity, 4px lower, over 220ms), there is no spinner, and skeleton rows appear only when the index takes more than 150ms.",
+        "body": "Results replace each other where they stand. Rows already showing stay still, only new rows fade in (from 0.4 opacity, 4px lower, over 220ms), there is no spinner, and skeleton rows appear only when the index takes more than 150ms.",
         "section": "components"
       }
     ],
     "dos": [
-      "Do keep a network's hue to its 8px dot, its route badge (the hue at 14% behind 12.5px/600 hue text) and the browser's kind label.",
-      "Do show selection with the one accent treatment on every network: accent at 13% over surface, a border of accent 45% into line, ink text and a 16px accent check.",
-      "Do make every touch target at least 48px (48dp); when the visual is smaller, as with the 40px chips, extend the hit area instead of the shape.",
-      "Do paint the window, system bars, action bar, browser toolbar and page with the same `ground`, and give a new colour the same value in app.css and colors.xml for each scheme.",
-      "Do set addresses in mono at 12.5px on one ellipsised line, with onion hosts shortened to both ends, and set counts, timings and dates in tabular figures.",
-      "Do divide list items with 1px `line` hairlines and let tone (ground, surface, surface-2) carry depth.",
-      "Do draw icons on a 24-unit grid with a 1.75 stroke, round caps and joins and no fill, stepping the stroke up only below 20px.",
+      "Do mark selection and \"on\" with the ink block: ink fill and ground text, for chips, the shown tab, selected text and hovered buttons.",
+      "Do keep a network's hue to its 8px square, its outlined badge (a 1px hue outline and 11px bold capitals in the hue) and the browser's kind badge.",
+      "Do separate content with rules: solid 1px ink-2 to open a section, dashed 1px ink-2 between results, dashed 1px muted between Explore sites and router rows, and a 2px ink line under every text field.",
+      "Do keep every corner square (border-radius 0) on fields, buttons, chips, badges, blocks, frames and dots.",
+      "Do set heads, labels, counts, addresses and status lines in Space Mono, and paragraphs in the platform sans.",
+      "Do keep text on the five sizes (11, 12.5, 15, 18, 21.6), with capitals tracked 0.04em at 12.5px and 0.06em at 11px.",
+      "Do make every touch target at least 48px (48dp). When the visual is smaller, extend the hit area, not the shape.",
+      "Do paint the window, system bars, action bar, browser toolbar and page with the same ground, and give a new colour the same value in app.css and colors.xml for each scheme.",
+      "Do draw icons on a 24-unit grid with a 1.75 stroke, square caps, miter joins and no fill, stepping up to 2.25 only for 16px icons in buttons and chips and 12px badge icons.",
+      "Do shorten onion and .b32.i2p hosts to their first eight and last five characters, and Hyphanet keys to the type, the key's first eight characters and the site's name and path.",
       "Do keep motion short and decelerating (cubic-bezier(0.16, 1, 0.3, 1), 160 to 240ms), update results in place, and turn all motion off under reduced motion.",
-      "Do use the accent vector rings for the brand mark on the light ground and the glowing raster on the dark ground."
+      "Do serve any font from the daemon's own origin, as Space Mono is (font-src 'self')."
     ],
     "donts": [
-      "Don't fill a chip, tint a row, or colour a button or border with a network hue.",
-      "Don't add coloured glow shadows or halos to UI elements or status dots; the 4px focus ring is the only coloured shadow, and the glow belongs to the icon art.",
-      "Don't put results or Explore sites in cards.",
-      "Don't add a text size off the four-step ramp, or a web font: the page's content policy loads nothing from outside its own origin.",
-      "Don't use mono for anything but addresses and hashes.",
-      "Don't use the `glow` token as a fill; it marks focus, the caret and progress only.",
+      "Don't round a corner, draw a pill or a circle dot, or put content in a card or a tonal box.",
+      "Don't fill a chip, tint a row or colour a rule with a network hue.",
+      "Don't add a shadow, glow or halo to anything. Box-shadow only draws lines and hollow squares.",
+      "Don't load a font, script or image from another origin.",
+      "Don't use glow as a fill. It marks focus, the caret and load progress only.",
+      "Don't set a paragraph in Space Mono, or a head, label, address or status line in the sans.",
+      "Don't set titles, heads, addresses or paragraphs in capitals.",
+      "Don't add a text size off the five-step ramp.",
       "Don't show a spinner while searching.",
       "Don't give the action bar or browser toolbar a colour band or elevation of its own."
     ]

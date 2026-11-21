@@ -218,8 +218,14 @@ async fn reports_status_for_every_network() {
 #[tokio::test]
 async fn serves_the_page_with_a_strict_policy() {
     let api = api(None);
-    let pages =
-        [("/", "text/html"), ("/app.js", "text/javascript"), ("/app.css", "text/css"), ("/icon.png", "image/png")];
+    let pages = [
+        ("/", "text/html"),
+        ("/app.js", "text/javascript"),
+        ("/app.css", "text/css"),
+        ("/icon.png", "image/png"),
+        ("/space-mono-regular.woff", "font/woff"),
+        ("/space-mono-bold.woff", "font/woff"),
+    ];
     for (path, content_type) in pages {
         let response = api.router.clone().oneshot(get(path).body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK, "{path}");
@@ -228,6 +234,7 @@ async fn serves_the_page_with_a_strict_policy() {
         let csp = headers[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
         assert!(csp.contains("default-src 'none'") && csp.contains("script-src 'self'"), "{csp}");
         assert!(csp.contains("img-src 'self';"), "the page's own icon, and no other image: {csp}");
+        assert!(csp.contains("font-src 'self';"), "the page's own font, and no other: {csp}");
         assert_eq!(headers[header::REFERRER_POLICY], "no-referrer");
     }
 }

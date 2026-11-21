@@ -33,8 +33,8 @@ nothing sent to a search provider.
 
 - The daemon runs in a foreground service; crawling follows the charger and unmetered networks
   unless the user allows crawling anytime.
-- A new install seeds itself with the Tor Project's and the BBC's onion services; the index
-  starts small and grows as the phone crawls. Searches answer in milliseconds from the local
+- A new install seeds itself with starter sites on Tor, I2P and Hyphanet (and adds any missing
+  ones at every start); the index starts small and grows as the phone crawls. Searches answer in milliseconds from the local
   index.
 - Routers have states the user can see: Tor bootstrapping or ready, the DHT, and I2P and
   Hyphanet unreachable unless a router runs (phones normally have none).
@@ -62,7 +62,9 @@ nothing sent to a search provider.
   to come from it.
 - The look the user asked for, in their words: "a modern sleek trustworthy super fast UI/UX using
   the Icon/logo colors to create a coherent feel and optimal experience searching". Craft bar:
-  Arc / Arc Search, Signal, Proton.
+  Arc / Arc Search, Signal, Proton. Later: "make the wordmark another font, and make the
+  style/aesthetic a little more underground"; of four directions they chose "Xerox" (Space Mono,
+  a photocopied zine: no corners, rules instead of boxes), still in the icon's navy.
 
 ## Evidence on Hand
 

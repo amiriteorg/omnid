@@ -384,4 +384,6 @@ Apache-2.0, BSD, ISC, Zlib, Unicode) except `option-ext`, an unmodified
 MPL-2.0 dependency of arti, and GeckoView in the Android app, MPL-2.0 and
 unmodified (its licenses are at `about:license` in the browser); binary
 distributions, the APK included, should ship the dependencies' license
-notices.
+notices. The typeface is Space Mono, under the SIL Open Font License 1.1
+(`crates/omnid/src/ui/space-mono-OFL.txt`, and in the APK's
+`assets/licenses/`); the font files carry it too.
