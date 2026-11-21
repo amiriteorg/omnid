@@ -38,8 +38,16 @@ const MAX_INDEXED_FILES: usize = 1_000;
 
 #[derive(Debug, Clone)]
 pub struct CrawlConfig {
-    /// Links are followed this many hops from a seed.
+    /// Sites are followed this many hops from a seed: a link to another site
+    /// is a hop, links within a site are not.
     pub max_depth: u32,
+    /// Links within one site are followed this many hops from the page the
+    /// crawl entered it by.
+    pub max_site_depth: u32,
+    /// Addresses kept per site: past this a site's links are not added, so
+    /// one big site cannot fill the crawl. Seeds and submissions are kept
+    /// regardless.
+    pub max_site_pages: usize,
     /// Stop dispatching after this many jobs. `None` is unbounded.
     pub max_pages: Option<u64>,
     /// Overrides [`Politeness::default_for`] per network.
@@ -60,7 +68,9 @@ pub struct CrawlConfig {
 impl Default for CrawlConfig {
     fn default() -> Self {
         Self {
-            max_depth: 3,
+            max_depth: 5,
+            max_site_depth: 4,
+            max_site_pages: 500,
             max_pages: None,
             politeness: HashMap::new(),
             max_page_bytes: 2 << 20,
@@ -500,12 +510,32 @@ impl Context {
                 0.0
             }
         };
-        let discover = |links: Vec<Source>, depth: u32| {
-            if depth > self.cfg.max_depth || links.is_empty() {
+        // From this page, a link within its site goes a hop deeper there and a
+        // link to another site is a hop between sites, starting at that
+        // site's top. A redirect is the same page elsewhere, not a hop.
+        let discover = |links: Vec<Source>, redirect: bool| {
+            let site = job.source.site_key();
+            let jobs: Vec<_> = links
+                .into_iter()
+                .filter_map(|source| {
+                    let (depth, site_depth) = match (source.site_key() == site, redirect) {
+                        (true, false) => (job.depth, job.site_depth + 1),
+                        (true, true) => (job.depth, job.site_depth),
+                        (false, false) => (job.depth + 1, 0),
+                        (false, true) => (job.depth, 0),
+                    };
+                    (depth <= self.cfg.max_depth && site_depth <= self.cfg.max_site_depth).then_some(Job {
+                        source,
+                        depth,
+                        site_depth,
+                        trust: DISCOVERED_TRUST,
+                    })
+                })
+                .collect();
+            if jobs.is_empty() {
                 return false;
             }
-            let jobs: Vec<_> = links.into_iter().map(|source| Job { source, depth, trust: DISCOVERED_TRUST }).collect();
-            match self.store.discover(&jobs, now) {
+            match self.store.discover_within(&jobs, now, self.cfg.max_site_pages) {
                 Ok(added) => {
                     stats.known.fetch_add(added as u64, Ordering::Relaxed);
                     added > 0
@@ -529,20 +559,20 @@ impl Context {
                     finish(Visit::Answered);
                 }
                 spawn_write(writes, move || index.upsert(&doc));
-                (discover(links, job.depth + 1), true)
+                (discover(links, false), true)
             }
             Outcome::NotIndexed { reason, links } => {
                 CrawlStats::bump(&stats.skipped);
                 tracing::debug!(%url, %reason, "not indexed");
                 finish(Visit::Answered);
-                (discover(links, job.depth + 1), false)
+                (discover(links, false), false)
             }
             Outcome::Redirect(target) => {
                 CrawlStats::bump(&stats.skipped);
                 tracing::debug!(%url, to = %target, "redirect");
                 finish(Visit::Answered);
                 let followed = self.may_follow(&job.source, &target);
-                (followed && discover(vec![target], job.depth), false)
+                (followed && discover(vec![target], true), false)
             }
             Outcome::Blocked(verdict) => {
                 CrawlStats::bump(&stats.blocked);

@@ -114,7 +114,9 @@ fn crawler_with_safety(index: Arc<SearchIndex>, store: Arc<CrawlStore>, cfg: Cra
 async fn crawl(crawler: Crawler, seeds: &[&str]) -> omnid_crawl::StatsSnapshot {
     let (jobs, rx) = tokio::sync::mpsc::channel(16);
     for seed in seeds {
-        jobs.send(Job { source: Source::parse(seed).unwrap(), depth: 0, trust: SEED_TRUST }).await.unwrap();
+        jobs.send(Job { source: Source::parse(seed).unwrap(), depth: 0, site_depth: 0, trust: SEED_TRUST })
+            .await
+            .unwrap();
     }
     drop(jobs);
     tokio::time::timeout(Duration::from_secs(30), crawler.run(rx, CancellationToken::new()))
@@ -287,4 +289,63 @@ async fn reports_missing_routers_plainly() {
     let error =
         gateway.fetch(&Source::parse(&format!("http://{ONION}/")).unwrap(), &Default::default()).await.unwrap_err();
     assert!(error.to_string().contains("Tor is disabled"), "{error}");
+}
+
+/// Two sites on one server, told apart by name: 127.0.0.1 and localhost.
+/// The first is a chain four pages deep whose last page links to the
+/// second, and has a page with thirty links besides.
+async fn serve_two_sites() -> (String, u16) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let many: String = (0..30).map(|i| format!(r#"<a href="/m/{i}">{i}</a> "#)).collect();
+    let app = Router::new()
+        .route("/", get(|| async { Html(r#"<title>start</title><a href="/1">1</a>"#) }))
+        .route("/1", get(|| async { Html(r#"<title>first floor</title><a href="/2">2</a>"#) }))
+        .route("/2", get(|| async { Html(r#"<title>second floor</title><a href="/3">3</a>"#) }))
+        .route(
+            "/3",
+            get(move || async move {
+                Html(format!(r#"<title>third floor</title><a href="http://localhost:{port}/far">elsewhere</a>"#))
+            }),
+        )
+        .route("/far", get(|| async { Html(r#"<title>far away</title><a href="/beyond">on</a>"#) }))
+        .route("/beyond", get(|| async { Html("<title>beyond the hills</title>") }))
+        .route("/many", get(move || async move { Html(format!("<title>many links</title>{many}")) }))
+        .route("/m/{n}", get(|| async { Html("<title>one of many</title>") }));
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://127.0.0.1:{port}/"), port)
+}
+
+#[tokio::test]
+async fn goes_deep_within_sites_and_on_across_them() {
+    let (base, _) = serve_two_sites().await;
+    let cfg = |max_depth| CrawlConfig {
+        max_depth,
+        max_site_depth: 4,
+        max_site_pages: 10,
+        clearnet_same_site_only: false,
+        ..CrawlConfig::default()
+    };
+    // Pages within a site do not use up the hops between sites: four pages
+    // in, the link to the other site is its first hop, and that site is
+    // crawled in turn.
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    crawl(crawler_with(index.clone(), store.clone(), cfg(1)), &[&base]).await;
+    assert_eq!(hits(&index, "\"third floor\"", &[]).len(), 1);
+    assert_eq!(hits(&index, "\"far away\"", &[]).len(), 1, "the other site, reached from four pages in");
+    assert_eq!(hits(&index, "\"beyond the hills\"", &[]).len(), 1, "and a page inside it");
+
+    // A page with thirty links: the site keeps ten addresses, the page
+    // itself among them.
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    crawl(crawler_with(Arc::new(SearchIndex::in_memory().unwrap()), store.clone(), cfg(1)), &[&format!("{base}many")])
+        .await;
+    assert_eq!(store.known().unwrap(), 10);
+
+    // With no hops between sites allowed, the crawl stays on the first.
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    crawl(crawler_with(index.clone(), Arc::new(CrawlStore::in_memory().unwrap()), cfg(0)), &[&base]).await;
+    assert_eq!(hits(&index, "\"third floor\"", &[]).len(), 1);
+    assert!(hits(&index, "\"far away\"", &[]).is_empty());
 }

@@ -50,6 +50,56 @@ pub struct DaemonConfig {
     pub dht_harvest: bool,
 }
 
+/// Starter addresses on each overlay network, for a new index: services'
+/// own onion sites and Ahmia's list of onion services (which leaves out
+/// those reported for abuse), I2P's hubs and directories, and the Hyphanet
+/// project's default bookmarks, its indexes of freesites among them. Each
+/// answered on 2026-11-21. A network's seeds wait while its router is down.
+pub const DEFAULT_SEEDS: &[&str] = &[
+    // Tor: the Tor Project, the press, privacy tools and their makers.
+    "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/",
+    "https://www.bbcweb3hytmzhn5d532owbu6oqadra5z3ar726vq5kgwwn6aucdccrad.onion/",
+    "http://p53lf57qovyuvwsc6xnrppyply3vtqm7l6pcobkmyqsiofyeznfu5uqd.onion/",
+    "http://archivep75mbjunhxc6x4j5mwjmomyxb573v42baldlqu56ruil2oiad.onion/",
+    "http://sdolvtfhatvsysc6l34d65ymdwxcujausv7k5jk4cy5ttzhjoi6fzvyd.onion/",
+    "http://vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion/",
+    "http://protonmailrmez3lotccipshtkleegetolb73fuirgj7r4o4vfu7ozyd.onion/",
+    "http://o54hon2e2vj6c7m3aqqu6uyece65by3vgoxxhlqlsvkmacw6a7m7kiad.onion/",
+    "http://qubesosfasa4zl44o4tws22di6kepyzfeqv3tg4e3ztknltfxqrymdad.onion/",
+    "http://dds6qkxpwdeubwucdiaord2xgbbeyds25rbsgr73tbfpqpt4a6vjwsyd.onion/",
+    "http://w5j6stm77zs6652pgsij4awcjeel3eco7kvipheu6mtr623eyyehj4yd.onion/",
+    // Ahmia, a search engine for onion services, and its list of them.
+    "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/",
+    "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/onions/",
+    // I2P: the project, its news, forum and registries, and directories.
+    "http://i2p-projekt.i2p/",
+    "http://planet.i2p/",
+    "http://zzz.i2p/",
+    "http://i2pforum.i2p/",
+    "http://reg.i2p/",
+    "http://inr.i2p/",
+    "http://stats.i2p/",
+    "http://notbob.i2p/",
+    "http://isitup.i2p/",
+    // Hyphanet: the node's default bookmarks, Clean Spider (an index of
+    // freesites) and the Index of Indexes among them.
+    "freenet:USK@62H8KFSZWMyQ2MQgwvNhEYJ2m3SQl696PfsVfWQ-HQo,cJrPvdNz4AnrHJQXNteDV7k3YnAVY-MClt84gwH2qEo,AQACAAE/freenet-first-steps/24/",
+    "freenet:USK@5ijbfKSJ4kPZTRDzq363CHteEUiSZjrO-E36vbHvnIU,ZEZqPXeuYiyokY2r0wkhJr5cy7KBH9omkuWDqSC6PLs,AQACAAE/clean-spider/547/",
+    "freenet:USK@t-YmshUm43nS16QFieoZMfBdfieb9Opy0a2aMWsoH8o,7NqDX88r1R4SC~elmpW4SuKbnAOka~MKUuBufUWa2xQ,AQACAAE/jFniki.Index/21/",
+    "freenet:USK@0iU87PXyodL2nm6kCpmYntsteViIbMwlJE~wlqIVvZ0,nenxGvjXDElX5RIZxMvwSnOtRzUKJYjoXEDgkhY6Ljw,AQACAAE/freenetproject-mirror/519/",
+    "freenet:USK@t5zaONbYd5DvGNNSokVnDCdrIEytn9U5SSD~pYF0RTE,guWyS9aCMcywU5PFBrKsMiXs7LzwKfQlGSRi17fpffc,AQACAAE/fsng/58/",
+    "freenet:USK@8r-uSRcJPkAr-3v3YJR16OCx~lyV2XOKsiG4MOQQBMM,P42IgNemestUdaI7T6z3Og6P-Hi7g9U~e37R3kWGVj8,AQACAAE/freesite-HOWTO/4/",
+];
+
+/// [`DEFAULT_SEEDS`] as crawl jobs.
+pub fn default_seeds() -> Vec<Job> {
+    DEFAULT_SEEDS
+        .iter()
+        .filter_map(|s| Source::parse(s).ok())
+        .map(|source| Job { source, depth: 0, site_depth: 0, trust: SEED_TRUST })
+        .collect()
+}
+
 /// A running daemon: routers, crawler and the local API.
 pub struct Daemon {
     addr: SocketAddr,
@@ -233,6 +283,7 @@ async fn harvest(dht: Dht, store: Arc<CrawlStore>, shutdown: CancellationToken) 
             .map(|info_hash| Job {
                 source: Source::Magnet(Magnet { info_hash, name: None }),
                 depth: 0,
+                site_depth: 0,
                 trust: HARVESTED_TRUST,
             })
             .collect();
@@ -290,7 +341,7 @@ pub fn read_seeds(path: &Path) -> Result<Vec<Job>> {
         .filter(|(_, line)| !line.is_empty())
         .map(|(n, line)| {
             let source = Source::parse(line).with_context(|| format!("{}:{n}", path.display()))?;
-            Ok(Job { source, depth: 0, trust: SEED_TRUST })
+            Ok(Job { source, depth: 0, site_depth: 0, trust: SEED_TRUST })
         })
         .collect()
 }
@@ -298,6 +349,20 @@ pub fn read_seeds(path: &Path) -> Result<Vec<Job>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn starts_somewhere_on_every_overlay_network() {
+        let seeds = default_seeds();
+        assert_eq!(seeds.len(), DEFAULT_SEEDS.len(), "every seed parses");
+        for network in [Network::Onion, Network::I2p, Network::Hyphanet] {
+            assert!(seeds.iter().any(|j| j.source.network() == network), "{network} has seeds");
+        }
+        assert!(!seeds.iter().any(|j| j.source.network() == Network::Clearnet), "overlay sites only");
+        // Added once: a store that has them gains nothing more.
+        let store = CrawlStore::in_memory().unwrap();
+        assert_eq!(store.discover(&seeds, 0).unwrap(), seeds.len());
+        assert_eq!(store.discover(&default_seeds(), 0).unwrap(), 0);
+    }
 
     fn page(url: &str) -> omnid_core::IndexedDoc {
         omnid_core::IndexedDoc {

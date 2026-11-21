@@ -52,7 +52,7 @@ async fn crawl(gateway: GatewayConfig, dht: Option<Dht>, seed: &str, max_pages: 
         crawler = crawler.with_dht(dht);
     }
     let (jobs, rx) = tokio::sync::mpsc::channel(1);
-    jobs.send(Job { source: Source::parse(seed).unwrap(), depth: 0, trust: SEED_TRUST }).await.unwrap();
+    jobs.send(Job { source: Source::parse(seed).unwrap(), depth: 0, site_depth: 0, trust: SEED_TRUST }).await.unwrap();
     drop(jobs);
     let stats = tokio::time::timeout(Duration::from_secs(600), crawler.run(rx, CancellationToken::new()))
         .await

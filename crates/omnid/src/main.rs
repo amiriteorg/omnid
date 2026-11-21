@@ -119,9 +119,16 @@ struct CrawlOptions {
     /// Terms that keep a page out of the index, one per line
     #[arg(long, env = "OMNID_BLOCKED_TERMS")]
     blocked_terms: Option<PathBuf>,
-    /// Hops to follow from a seed
-    #[arg(long, default_value_t = 3)]
+    /// Sites to follow from a seed: a link to another site is a hop, links
+    /// within a site are not
+    #[arg(long, default_value_t = 5)]
     max_depth: u32,
+    /// Links to follow within one site, from the page the crawl entered it by
+    #[arg(long, default_value_t = 4)]
+    max_site_depth: u32,
+    /// Addresses to keep per site, so one big site cannot fill the crawl
+    #[arg(long, default_value_t = 500)]
+    max_site_pages: usize,
     /// Stop after this many pages
     #[arg(long)]
     max_pages: Option<u64>,
@@ -159,7 +166,7 @@ async fn serve(common: &Common, data_dir: &Path, args: ServeArgs) -> Result<()> 
         gateway: gateway_config(common, data_dir),
         crawl: crawl_config(&args.crawl),
         safety: safety(&args.crawl)?,
-        seeds: seeds(&args.crawl)?,
+        seeds: seeds_or_defaults(seeds(&args.crawl)?, data_dir)?,
         api_token: args.api_token,
         start_paused: args.paused,
         socks: args.socks,
@@ -186,8 +193,9 @@ async fn crawl(common: &Common, data_dir: &Path, args: CrawlArgs) -> Result<()> 
     let mut seeds = seeds(&args.crawl)?;
     for address in &args.addresses {
         let source = Source::parse(address).with_context(|| format!("seed `{address}`"))?;
-        seeds.push(Job { source, depth: 0, trust: SEED_TRUST });
+        seeds.push(Job { source, depth: 0, site_depth: 0, trust: SEED_TRUST });
     }
+    let seeds = seeds_or_defaults(seeds, data_dir)?;
     let mut crawler = Crawler::new(gateway, index, Arc::new(safety(&args.crawl)?), store, crawl_config(&args.crawl));
     if !common.no_dht {
         crawler = crawler.with_dht(Dht::start(DhtConfig::default()).await.context("joining the DHT")?);
@@ -325,6 +333,8 @@ fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
 fn crawl_config(opts: &CrawlOptions) -> CrawlConfig {
     CrawlConfig {
         max_depth: opts.max_depth,
+        max_site_depth: opts.max_site_depth,
+        max_site_pages: opts.max_site_pages,
         max_pages: opts.max_pages,
         clearnet_same_site_only: !opts.follow_offsite,
         ..CrawlConfig::default()
@@ -333,6 +343,16 @@ fn crawl_config(opts: &CrawlOptions) -> CrawlConfig {
 
 fn safety(opts: &CrawlOptions) -> Result<Safety> {
     Safety::load(opts.denylist.as_deref(), opts.blocked_terms.as_deref()).context("loading safety lists")
+}
+
+/// The starter seeds for an empty store given none of its own.
+fn seeds_or_defaults(seeds: Vec<Job>, data_dir: &Path) -> Result<Vec<Job>> {
+    if !seeds.is_empty() || omnid::open_store(data_dir)?.known()? > 0 {
+        return Ok(seeds);
+    }
+    let defaults = omnid::default_seeds();
+    tracing::info!(seeds = defaults.len(), "a new index: starting from the default seeds");
+    Ok(defaults)
 }
 
 fn seeds(opts: &CrawlOptions) -> Result<Vec<Job>> {

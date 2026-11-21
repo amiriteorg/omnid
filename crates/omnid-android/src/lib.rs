@@ -17,27 +17,9 @@ use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint};
 use omnid::{Daemon, DaemonConfig};
-use omnid_core::{Network, Source};
-use omnid_crawl::{CrawlConfig, Job, Politeness, SEED_TRUST, Safety};
+use omnid_core::{Network, now_secs};
+use omnid_crawl::{CrawlConfig, Politeness, Safety};
 use omnid_net::GatewayConfig;
-
-/// Crawled on first launch so a new install has something to search:
-/// well-known services that publish onion mirrors of their own sites, and
-/// I2P's own hubs, from which the crawl reaches the rest of I2P.
-const FIRST_RUN_SEEDS: &[&str] = &[
-    // The Tor Project
-    "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/",
-    // BBC News
-    "https://www.bbcweb3hytmzhn5d532owbu6oqadra5z3ar726vq5kgwwn6aucdccrad.onion/",
-    // I2P, crawled once the phone has a router (the i2pd app) and deferred
-    // until then: the I2P Project, I2P Planet (news from eepsites across I2P)
-    // and three name registries, which list the sites registered on it.
-    "http://i2p-projekt.i2p/",
-    "http://planet.i2p/",
-    "http://reg.i2p/",
-    "http://inr.i2p/",
-    "http://stats.i2p/",
-];
 
 static RUNNING: Mutex<Option<Running>> = Mutex::new(None);
 static LOGGING: Once = Once::new();
@@ -64,15 +46,12 @@ fn start_with(data_dir: &Path, token: &str, hyphanet_node: &str, networks: bool)
     LOGGING.call_once(init_logging);
 
     std::fs::create_dir_all(data_dir).with_context(|| format!("creating {}", data_dir.display()))?;
-    let first_run = omnid::open_store(data_dir)?.known()? == 0;
-    let seeds = if first_run {
-        FIRST_RUN_SEEDS
-            .iter()
-            .map(|s| Ok(Job { source: Source::parse(s)?, depth: 0, trust: SEED_TRUST }))
-            .collect::<Result<_>>()?
-    } else {
-        vec![]
-    };
+    // The starter seeds a new install needs and an older one is missing:
+    // added once, due now; the ones already known are left alone.
+    let added = omnid::open_store(data_dir)?.discover(&omnid::default_seeds(), now_secs())?;
+    if added > 0 {
+        tracing::info!(added, "starter seeds added");
+    }
     // Operators can drop lists into the app's data directory.
     let list = |name: &str| Some(data_dir.join(name)).filter(|p| p.exists());
     let safety = Safety::load(list("denylist.txt").as_deref(), list("blocked-terms.txt").as_deref())?;
@@ -90,7 +69,7 @@ fn start_with(data_dir: &Path, token: &str, hyphanet_node: &str, networks: bool)
         gateway,
         crawl: phone_crawl(),
         safety,
-        seeds,
+        seeds: vec![],
         api_token: Some(token.to_owned()),
         start_paused: true,
         socks: None,
@@ -159,19 +138,23 @@ pub fn set_paused(paused: bool, reason: &str) {
 }
 
 /// Fewer connections, shallower crawls and smaller pages than a desktop:
-/// a phone crawls in the background while it charges, not as a server.
+/// a phone crawls in the background while it charges, not as a server. It
+/// still goes wide: four sites from a seed, a few pages deep into each, and
+/// no more than 150 addresses from any one site.
 fn phone_crawl() -> CrawlConfig {
     let politeness = |concurrency, delay_secs| Politeness { concurrency, site_delay: Duration::from_secs(delay_secs) };
     CrawlConfig {
-        max_depth: 2,
+        max_depth: 4,
+        max_site_depth: 3,
+        max_site_pages: 150,
         max_page_bytes: 1 << 20,
         frontier_capacity: 5_000,
         commit_interval: Duration::from_secs(30),
         politeness: HashMap::from([
             (Network::Clearnet, politeness(6, 1)),
-            (Network::Onion, politeness(6, 5)),
-            (Network::I2p, politeness(2, 5)),
-            (Network::Hyphanet, politeness(1, 2)),
+            (Network::Onion, politeness(8, 5)),
+            (Network::I2p, politeness(3, 5)),
+            (Network::Hyphanet, politeness(2, 2)),
             (Network::Magnet, politeness(4, 0)),
         ]),
         ..CrawlConfig::default()
@@ -300,15 +283,6 @@ mod logcat {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn first_run_seeds_parse() {
-        for seed in FIRST_RUN_SEEDS {
-            let network = Source::parse(seed).unwrap().network();
-            assert!(matches!(network, Network::Onion | Network::I2p), "{seed}: overlay sites only");
-        }
-        assert!(FIRST_RUN_SEEDS.iter().any(|s| s.contains(".i2p")), "I2P has seeds of its own");
-    }
 
     #[test]
     fn takes_a_hyphanet_node_elsewhere() {
