@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">omnid</string>
+    <string name="share_label">Crawl with omnid</string>
+    <string name="starting">Starting omnid…</string>
+    <string name="failed">omnid could not start: %1$s</string>
+    <string name="channel_name">Running</string>
+    <string name="channel_description">Shown while omnid keeps its index and routers available</string>
+    <string name="notification_title">omnid is running</string>
+    <string name="notification_text">Search is available; crawling follows your charger and Wi-Fi settings.</string>
+    <string name="stop">Stop</string>
+    <string name="crawl_anytime">Crawl on battery and mobile data</string>
+    <string name="stop_omnid">Stop omnid</string>
+    <string name="queued">Queued %1$s</string>
+    <string name="nothing_to_queue">No onion, magnet or link found in what was shared</string>
+    <string name="paused_charger_wifi">waiting for a charger and Wi-Fi</string>
+    <string name="paused_charger">waiting for a charger</string>
+    <string name="paused_unmetered">waiting for an unmetered network</string>
+</resources>

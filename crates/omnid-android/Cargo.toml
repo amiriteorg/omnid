@@ -1,0 +1,24 @@
+[package]
+name = "omnid-android"
+description = "JNI bridge that runs the omnid daemon inside the Android app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+# cdylib for the APK; rlib so host builds, tests and clippy cover it too.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+omnid.workspace = true
+omnid-core.workspace = true
+omnid-crawl.workspace = true
+omnid-net.workspace = true
+anyhow.workspace = true
+jni.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

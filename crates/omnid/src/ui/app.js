@@ -5,6 +5,9 @@
 // text nodes in <mark>.
 
 const $ = (id) => document.getElementById(id);
+
+// Inside the Android app the window already has a title bar.
+if (new URLSearchParams(location.search).has("embedded")) document.documentElement.classList.add("embedded");
 const ALL_NETWORKS = 5;
 const PAGE = 20;
 

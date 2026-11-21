@@ -3024,6 +3024,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "omnid-android"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jni",
+ "omnid",
+ "omnid-core",
+ "omnid-crawl",
+ "omnid-net",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "omnid-core"
 version = "0.1.0"
 dependencies = [

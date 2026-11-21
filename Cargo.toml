@@ -11,6 +11,7 @@ license = "MIT"
 repository = "https://github.com/wckdboy/omnid"
 
 [workspace.dependencies]
+omnid = { path = "crates/omnid" }
 omnid-core = { path = "crates/omnid-core" }
 omnid-crawl = { path = "crates/omnid-crawl" }
 omnid-index = { path = "crates/omnid-index" }
@@ -37,6 +38,7 @@ flate2 = "1"
 http = "1"
 html5ever = "0.40"
 http-body-util = "0.1"
+jni = "0.22"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 md-5 = "0.11"
