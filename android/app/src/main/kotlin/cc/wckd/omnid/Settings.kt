@@ -30,6 +30,9 @@ internal object Settings {
 
     const val CRAWL_SPEED = "crawl_speed"
 
+    /** Whether the crawler keeps Ahmia's blocklist of onion services in its safety gate. On by default. */
+    const val ABUSE_BLOCKLIST = "abuse_blocklist"
+
     fun crawlSpeed(stored: String?): CrawlSpeed = CrawlSpeed.entries.firstOrNull { it.name == stored } ?: CrawlSpeed.NORMAL
 
     /** The search page's networks, in its own words (app.js), in the order its chips show. */

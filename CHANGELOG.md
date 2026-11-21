@@ -17,6 +17,9 @@
   Tor circuits of its own; anything else, or an answer that is not the file the browser saw, comes
   over the browser's own connection. `Native.download`, `downloadState`, `downloadError`,
   `cancelDownload` and `forgetDownload` are new.
+- Ahmia's blocklist can be turned off in the app (Settings → Ahmia's blocklist; on by default), as
+  `--no-blocklist` does on a computer. Turned off, the held copy is deleted and what the list
+  blocked is crawled again, once, unless the operator's own lists refuse it.
 - Fixed: Ahmia's blocklist kept the crawler off five of the default onion seeds. The list, published
   as onion services blocked for child sexual abuse material, names ProPublica, Proton, Qubes,
   Riseup and one more of them; on a phone running 0.1.2 their pages were refused and taken out of

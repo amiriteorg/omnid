@@ -277,6 +277,13 @@ impl CrawlStore {
         Ok(retried)
     }
 
+    /// The sites (as `Source::site_key`) that have blocked addresses.
+    pub fn blocked_sites(&self) -> rusqlite::Result<Vec<String>> {
+        let db = self.db();
+        let mut sites = db.prepare_cached("SELECT DISTINCT site FROM pages WHERE state = 2 AND site IS NOT NULL")?;
+        sites.query_map([], |row| row.get(0))?.collect()
+    }
+
     /// Makes the blocked addresses on `sites` (as `Source::site_key`) and
     /// their subdomains due now: a list blocked them that no longer does, such
     /// as a published blocklist naming a seed the operator chose. Returns how
@@ -526,6 +533,9 @@ mod tests {
         due.sort();
         assert_eq!(due, ["http://doc.seed.example/a", "http://seed.example/"]);
         assert_eq!(store.unblock_sites(["seed.example"], 6).unwrap(), 0, "nothing left blocked there");
+        let mut left = store.blocked_sites().unwrap();
+        left.sort();
+        assert_eq!(left, ["notseed.example", "other.example"]);
     }
 
     #[test]

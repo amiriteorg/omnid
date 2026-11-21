@@ -46,7 +46,7 @@ pub fn start(data_dir: &Path, token: &str, options: &Options) -> Result<u16> {
 
 /// The app's settings the daemon takes at start, as `Native.start` passes
 /// them: a JSON object with these fields, each optional.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Options {
     /// A Hyphanet node's FProxy elsewhere (the owner's computer over
@@ -58,6 +58,21 @@ pub struct Options {
     pub crawl_speed: i32,
     /// The proxy for other apps on the phone, when it is on.
     pub app_proxy: Option<AppProxy>,
+    /// Ahmia's blocklist of onion services in the safety gate; on unless the
+    /// app's Settings turn it off.
+    pub abuse_blocklist: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            hyphanet_node: String::new(),
+            i2p_router: String::new(),
+            crawl_speed: 1,
+            app_proxy: None,
+            abuse_blocklist: true,
+        }
+    }
 }
 
 /// Settings → Proxy for other apps: SOCKS5 and HTTP on this loopback port,
@@ -154,7 +169,7 @@ fn start_with(data_dir: &Path, token: &str, options: &Options, networks: bool) -
         // server's job, not a phone's.
         dht: networks.then(|| omnid_dht::DhtConfig { max_peer_connections: 4, ..omnid_dht::DhtConfig::default() }),
         dht_harvest: false,
-        abuse_blocklist: networks,
+        abuse_blocklist: networks && options.abuse_blocklist,
     }))?;
     let port = daemon.addr().port();
     *running = Some(Running { runtime, daemon });
@@ -690,6 +705,10 @@ mod tests {
                 "appProxy": {"port": 0, "password": "pw"}}"#,
         )
         .unwrap();
+        assert!(options.abuse_blocklist, "on unless the app says otherwise");
+        let off: Options = serde_json::from_str(r#"{"abuseBlocklist": false}"#).unwrap();
+        assert!(!off.abuse_blocklist);
+        assert_eq!(off.crawl_speed, 1, "the rest as by default");
         let started = start_with(&dir, "token", &options, false).unwrap();
         assert_ne!(started, 0);
         let again = start_with(&dir, "token", &Options::default(), false).unwrap();
