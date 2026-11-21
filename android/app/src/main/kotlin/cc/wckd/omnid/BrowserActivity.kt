@@ -440,15 +440,23 @@ class BrowserActivity : Activity() {
             request: GeckoSession.NavigationDelegate.LoadRequest,
         ): GeckoResult<AllowOrDeny>? {
             val uri = Uri.parse(request.uri)
+            // Only what was typed, or tapped, leaves the network a page is on for I2P or Hyphanet,
+            // or reaches another app: a script or a redirect could otherwise send any visitor
+            // there, which shows the visitor's I2P router or torrent app to the page's author.
+            val asked = request.isDirectNavigation || (request.hasUserGesture && !request.isRedirect)
             return when (BrowserConfig.target(uri.scheme, uri.host)) {
                 BrowserConfig.Target.LOAD -> {
+                    if (!asked && BrowserConfig.entersOverlay(tabOf(session)?.url, request.uri)) {
+                        refuse(request.uri)
+                        return GeckoResult.deny()
+                    }
                     // A page for a new tab gets a session of its own, set up in onNewSession.
                     val here = request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_CURRENT
                     if (here && BrowserConfig.isWebPage(uri.scheme, uri.host)) allowScripts(session, request.uri)
                     GeckoResult.allow()
                 }
                 BrowserConfig.Target.ELSEWHERE -> {
-                    openElsewhere(uri)
+                    if (asked) askTorrentApp(request.uri, offerIndex = true) else refuse(request.uri)
                     GeckoResult.deny()
                 }
                 BrowserConfig.Target.REFUSE -> {
@@ -456,6 +464,15 @@ class BrowserActivity : Activity() {
                     GeckoResult.deny()
                 }
             }
+        }
+
+        // Frames load web pages only: never another app, whatever their page asks.
+        override fun onSubframeLoadRequest(
+            session: GeckoSession,
+            request: GeckoSession.NavigationDelegate.LoadRequest,
+        ): GeckoResult<AllowOrDeny>? {
+            val uri = Uri.parse(request.uri)
+            return if (BrowserConfig.target(uri.scheme, uri.host) == BrowserConfig.Target.LOAD) GeckoResult.allow() else GeckoResult.deny()
         }
 
         // Links that open a window, and window.open after a tap, get a tab next to their page.
@@ -793,14 +810,6 @@ class BrowserActivity : Activity() {
         geckoView.requestFocus()
         hideKeyboard(address)
         shown?.let { load(it, target) } ?: openTab(target)
-    }
-
-    private fun openElsewhere(uri: Uri) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, uri))
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, uri.toString(), Toast.LENGTH_LONG).show()
-        }
     }
 
     private fun showTabList(show: Boolean) {
@@ -1325,4 +1334,40 @@ internal class TabButton(context: Context) : FrameLayout(context) {
         addView(number, LayoutParams((22 * density).toInt(), (22 * density).toInt(), Gravity.CENTER))
         count = 0
     }
+}
+
+/**
+ * Asks before handing a magnet link to a torrent app, which goes online directly, outside Tor:
+ * the BitTorrent network sees the phone's address and the torrent. The link goes without the
+ * trackers and peers a page can plant in it ([Magnets.safe]). [offerIndex] adds the choice of
+ * OMNId's own index instead, which needs no torrent app.
+ */
+internal fun Activity.askTorrentApp(link: String, offerIndex: Boolean) {
+    val safe = Magnets.safe(link)
+    if (safe == null) {
+        Toast.makeText(this, R.string.magnet_invalid, Toast.LENGTH_LONG).show()
+        return
+    }
+    AlertDialog.Builder(this)
+        .setTitle(R.string.magnet_ask)
+        .setMessage(R.string.magnet_ask_detail)
+        .setPositiveButton(R.string.magnet_open) { _, _ ->
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(safe)))
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(this, R.string.magnet_no_app, Toast.LENGTH_LONG).show()
+            }
+        }
+        .apply {
+            if (offerIndex) {
+                setNeutralButton(R.string.magnet_add) { _, _ ->
+                    startActivity(
+                        Intent(this@askTorrentApp, MainActivity::class.java)
+                            .setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, safe),
+                    )
+                }
+            }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
 }

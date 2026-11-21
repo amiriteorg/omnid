@@ -105,4 +105,15 @@ class BrowserConfigTest {
         assertEquals("freenet:USK@abc,def,AQACAAE/site/1/", BrowserConfig.shareable("http://hyphanet/USK@abc,def,AQACAAE/site/1/"))
         assertEquals("http://stats.i2p/", BrowserConfig.shareable("http://stats.i2p/"))
     }
+
+    @Test
+    fun entersAnOverlayOnlyFromAnotherNetwork() {
+        val onion = "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/"
+        assertTrue(BrowserConfig.entersOverlay(onion, "http://stats.i2p/"))
+        assertTrue(BrowserConfig.entersOverlay("https://example.com/", "http://hyphanet/USK@x/site/1/"))
+        assertTrue(BrowserConfig.entersOverlay("http://stats.i2p/", "http://hyphanet/USK@x/site/1/"))
+        assertFalse("within I2P", BrowserConfig.entersOverlay("http://stats.i2p/", "http://reg.i2p/"))
+        assertFalse("to the clearnet", BrowserConfig.entersOverlay(onion, "https://example.com/"))
+        assertFalse("a new tab, typed", BrowserConfig.entersOverlay(null, "http://stats.i2p/"))
+    }
 }

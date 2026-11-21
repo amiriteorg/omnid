@@ -186,6 +186,14 @@
     <string name="settings_download_connections_one">One at a time</string>
     <string name="settings_download_connections_about">A large file from a server that allows it comes in parts over several Tor circuits at once, which is faster and goes on when a circuit fails.</string>
 
+    <!-- Magnet links. -->
+    <string name="magnet_ask">Open this torrent in another app?</string>
+    <string name="magnet_ask_detail">A torrent app connects to the BitTorrent network directly, outside Tor: that network sees your address and which torrent you asked for. OMNId hands over only the torrent\'s hash and name, without the trackers and peers a page can put in a link.</string>
+    <string name="magnet_open">Open in torrent app</string>
+    <string name="magnet_add">Add to OMNId</string>
+    <string name="magnet_invalid">Not a torrent link OMNId can hand on: it has no valid info hash.</string>
+    <string name="magnet_no_app">No torrent app is installed.</string>
+
     <!-- The browser's menu. -->
     <string name="browser_share">Share</string>
     <string name="browser_desktop_site">Desktop site</string>

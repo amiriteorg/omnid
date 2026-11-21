@@ -101,6 +101,9 @@ class MainActivity : Activity() {
                     if (uri.host == "127.0.0.1" || uri.host.equals("localhost", ignoreCase = true)) return true
                     if (uri.toString() == I2PD_LINK) {
                         launch(I2pd.intent(this@MainActivity))
+                    } else if (uri.scheme.equals("magnet", ignoreCase = true)) {
+                        // A result: already in the index, so only the torrent app, after asking.
+                        askTorrentApp(uri.toString(), offerIndex = false)
                     } else if (BrowserConfig.isWebPage(uri.scheme, uri.host)) {
                         val open = ActivityOptions.makeCustomAnimation(this@MainActivity, R.anim.browser_open_enter, R.anim.browser_open_exit)
                         startActivity(

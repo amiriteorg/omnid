@@ -132,6 +132,26 @@ internal object BrowserConfig {
     fun shareable(url: String): String =
         if (isHyphanet(url)) "freenet:" + url.substringAfter("://").substringAfter('/') else url
 
+    /**
+     * Whether a load from a page at [from] to [to] enters I2P or Hyphanet from another network: the
+     * browser allows that only when typed or tapped, since a script or redirect could otherwise
+     * make every visitor's router or node fetch an address the page's author watches.
+     */
+    fun entersOverlay(from: String?, to: String): Boolean {
+        val into = when {
+            isI2p(to) -> "i2p"
+            isHyphanet(to) -> "hyphanet"
+            else -> return false
+        }
+        val on = when {
+            from == null -> return false
+            isI2p(from) -> "i2p"
+            isHyphanet(from) -> "hyphanet"
+            else -> "other"
+        }
+        return on != into
+    }
+
     /** Whether the address is a Hyphanet page, through the node. */
     fun isHyphanet(url: String?): Boolean = runCatching { URI(url).host }.getOrNull()?.lowercase() == HYPHANET_HOST
 
