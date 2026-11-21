@@ -33,9 +33,40 @@ struct Running {
 /// starts paused; the caller applies its battery and network policy with
 /// [`set_paused`]. `hyphanet_node` is a Hyphanet node's FProxy and
 /// `i2p_router` an i2pd HTTP proxy elsewhere (the owner's computer over
-/// Tailscale, say), each empty for none.
-pub fn start(data_dir: &Path, token: &str, hyphanet_node: &str, i2p_router: &str) -> Result<u16> {
-    start_with(data_dir, token, Routers { hyphanet_node, i2p_router }, true)
+/// Tailscale, say), each empty for none. `speed` is how hard to crawl.
+pub fn start(data_dir: &Path, token: &str, hyphanet_node: &str, i2p_router: &str, speed: CrawlSpeed) -> Result<u16> {
+    start_with(data_dir, token, Routers { hyphanet_node, i2p_router }, speed, true)
+}
+
+/// How hard the phone crawls when its policy lets it: the app's Settings →
+/// Crawl speed, as the ordinal of its `Settings.CrawlSpeed`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CrawlSpeed {
+    /// Half the connections per network, for a phone that should stay cool.
+    Gentle,
+    #[default]
+    Normal,
+    /// Twice the connections per network; sites still get one request at a
+    /// time with their usual pause.
+    Fast,
+}
+
+impl CrawlSpeed {
+    pub fn from_ordinal(ordinal: i32) -> Self {
+        match ordinal {
+            0 => Self::Gentle,
+            2 => Self::Fast,
+            _ => Self::Normal,
+        }
+    }
+
+    fn scale(self, concurrency: usize) -> usize {
+        match self {
+            Self::Gentle => concurrency.div_ceil(2),
+            Self::Normal => concurrency,
+            Self::Fast => concurrency * 2,
+        }
+    }
 }
 
 /// What the app was told about routers elsewhere: addresses, or empty.
@@ -46,12 +77,13 @@ struct Routers<'a> {
 }
 
 /// `networks: false` leaves out Tor and the DHT, for tests.
-fn start_with(data_dir: &Path, token: &str, routers: Routers, networks: bool) -> Result<u16> {
+fn start_with(data_dir: &Path, token: &str, routers: Routers, speed: CrawlSpeed, networks: bool) -> Result<u16> {
     let mut running = RUNNING.lock().expect("daemon lock poisoned");
     if let Some(running) = running.as_ref() {
         return Ok(running.daemon.addr().port());
     }
     LOGGING.call_once(init_logging);
+    tracing::info!(?speed, "starting the daemon");
 
     std::fs::create_dir_all(data_dir).with_context(|| format!("creating {}", data_dir.display()))?;
     // The starter seeds a new install needs and an older one is missing:
@@ -75,7 +107,7 @@ fn start_with(data_dir: &Path, token: &str, routers: Routers, networks: bool) ->
         data_dir: data_dir.to_owned(),
         listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         gateway,
-        crawl: phone_crawl(),
+        crawl: phone_crawl(speed),
         safety,
         seeds: vec![],
         api_token: Some(token.to_owned()),
@@ -166,9 +198,13 @@ pub fn set_paused(paused: bool, reason: &str) {
 /// Fewer connections, shallower crawls and smaller pages than a desktop:
 /// a phone crawls in the background while it charges, not as a server. It
 /// still goes wide: four sites from a seed, a few pages deep into each, and
-/// no more than 150 addresses from any one site.
-fn phone_crawl() -> CrawlConfig {
-    let politeness = |concurrency, delay_secs| Politeness { concurrency, site_delay: Duration::from_secs(delay_secs) };
+/// no more than 150 addresses from any one site. `speed` scales the
+/// connections per network, never the pause each site gets.
+fn phone_crawl(speed: CrawlSpeed) -> CrawlConfig {
+    let politeness = |concurrency, delay_secs| Politeness {
+        concurrency: speed.scale(concurrency),
+        site_delay: Duration::from_secs(delay_secs),
+    };
     CrawlConfig {
         max_depth: 4,
         max_site_depth: 3,
@@ -203,10 +239,12 @@ pub extern "system" fn Java_cc_wckd_omnid_Native_start<'local>(
     token: JString<'local>,
     hyphanet_node: JString<'local>,
     i2p_router: JString<'local>,
+    crawl_speed: jint,
 ) -> jint {
     env.with_env(|_| -> Result<jint, NativeError> {
         let (node, router) = (hyphanet_node.to_string(), i2p_router.to_string());
-        let port = start(Path::new(&data_dir.to_string()), &token.to_string(), &node, &router)
+        let speed = CrawlSpeed::from_ordinal(crawl_speed);
+        let port = start(Path::new(&data_dir.to_string()), &token.to_string(), &node, &router, speed)
             .map_err(|e| NativeError::Daemon(format!("{e:#}")))?;
         Ok(jint::from(port))
     })
@@ -312,6 +350,18 @@ mod logcat {
 mod tests {
     use super::*;
 
+    #[test]
+    fn crawl_speed_scales_connections_not_pauses() {
+        let concurrency = |speed| phone_crawl(speed).politeness[&Network::Onion].concurrency;
+        let speeds = [0, 1, 2].map(CrawlSpeed::from_ordinal);
+        assert_eq!(speeds, [CrawlSpeed::Gentle, CrawlSpeed::Normal, CrawlSpeed::Fast], "the app's order");
+        assert_eq!(speeds.map(concurrency), [4, 8, 16]);
+        assert_eq!(phone_crawl(CrawlSpeed::Gentle).politeness[&Network::Hyphanet].concurrency, 1, "never none");
+        let pause = |speed| phone_crawl(speed).politeness[&Network::Onion].site_delay;
+        assert_eq!(pause(CrawlSpeed::Fast), pause(CrawlSpeed::Gentle));
+        assert_eq!(CrawlSpeed::from_ordinal(7), CrawlSpeed::Normal, "unknown: normal");
+    }
+
     fn urls(urls: &[url::Url]) -> Vec<&str> {
         urls.iter().map(url::Url::as_str).collect()
     }
@@ -349,10 +399,10 @@ mod tests {
     #[ignore = "live: reaches Tor and the DHT"]
     fn live_stops_with_tor_and_the_dht_running() {
         let dir = std::env::temp_dir().join(format!("omnid-android-live-{}", std::process::id()));
-        start_with(&dir, "token", Routers::default(), true).unwrap();
+        start_with(&dir, "token", Routers::default(), CrawlSpeed::Normal, true).unwrap();
         std::thread::sleep(Duration::from_secs(20));
         stop();
-        let again = start_with(&dir, "token", Routers::default(), true).unwrap();
+        let again = start_with(&dir, "token", Routers::default(), CrawlSpeed::Normal, true).unwrap();
         assert_ne!(again, 0, "and starts again after");
         stop();
         let _ = std::fs::remove_dir_all(dir);
@@ -366,13 +416,10 @@ mod tests {
         // Without Tor or the DHT, so the test stays off the network. A node
         // elsewhere that does not answer: the status says where omnid looked.
         let elsewhere = Routers { hyphanet_node: "http://127.0.0.1:9", i2p_router: "http://127.0.0.1:10" };
-        let started = start_with(&dir, "token", elsewhere, false).unwrap();
+        let started = start_with(&dir, "token", elsewhere, CrawlSpeed::Fast, false).unwrap();
         assert_ne!(started, 0);
-        assert_eq!(
-            start_with(&dir, "token", Routers::default(), false).unwrap(),
-            started,
-            "a second start reuses the daemon"
-        );
+        let again = start_with(&dir, "token", Routers::default(), CrawlSpeed::Normal, false).unwrap();
+        assert_eq!(again, started, "a second start reuses the daemon");
         assert_ne!(browser_proxy_port(), 0, "the browser's proxy is up");
         new_identity();
         set_paused(true, "waiting for a charger");

@@ -80,7 +80,7 @@ store in `crawl.sqlite`, Tor state in `tor/`.
 
 A Hyphanet node can also run on another machine, such as an always-on
 computer that a phone reaches over Tailscale; point omnid at it with
-`--fproxy http://<address>:8888` (in the app, ⋮ → Hyphanet node). FProxy has
+`--fproxy http://<address>:8888` (in the app, ⋮ → Settings → Hyphanet node). FProxy has
 no passwords, so in the node's `freenet.ini` bind it to loopback and that one
 private address, let in only your own devices, and keep its settings,
 downloads to disk and FCP for the machine itself:
@@ -99,7 +99,7 @@ put FProxy behind `tailscale serve` or another local proxy: the node would see
 every client as 127.0.0.1 and give each one full access.
 
 An I2P router can run elsewhere in the same way: `--i2p-proxy
-http://<address>:4444` (in the app, ⋮ → I2P router). i2pd's HTTP proxy binds
+http://<address>:4444` (in the app, ⋮ → Settings → I2P router). i2pd's HTTP proxy binds
 one address and has no access list, so keep it on loopback and put a relay that
 admits only your devices' addresses on the private one; Tailscale ties each
 peer's address to its key, so the address is who is connecting. Leave
@@ -159,11 +159,32 @@ missing at every start, so an older install gains new ones without losing its
 index. Magnets are resolved through the DHT on the phone too; the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
 from F-Droid and start its router: its HTTP proxy is on 127.0.0.1:4444, where
 omnid looks, so there is nothing to set up. Until then the I2P row under the
-network strip offers "Get i2pd" or "Open i2pd". ⋮ → I2P router takes a router
-elsewhere, such as your computer's over Tailscale (see above), asked before the
-i2pd app, which stays the fallback. For Hyphanet, ⋮ → Hyphanet node takes a
-node elsewhere in the same way; empty means one on the phone at 127.0.0.1:8888,
-which is also the fallback.
+network strip offers "Get i2pd" or "Open i2pd". ⋮ → Settings → I2P router takes
+a router elsewhere, such as your computer's over Tailscale (see above), asked
+before the i2pd app, which stays the fallback. For Hyphanet, ⋮ → Settings →
+Hyphanet node takes a node elsewhere in the same way; empty means one on the
+phone at 127.0.0.1:8888, which is also the fallback.
+
+⋮ → Settings (also in the browser's ⋮) holds the rest, saved as they change:
+
+- **Appearance**: the theme (as the phone, light or dark) for OMNId's screens
+  and the search page, and the text size on web pages (85 to 150%).
+- **Browser**: the security level (below), whether pages load images (off,
+  pages load far faster over Tor), and whether screenshots may show the
+  browser.
+- **Search**: the networks a search starts with, the languages to rank first
+  (`de, en`; empty for the phone's own), and two lists the crawler reads at
+  start: blocked words (a page with one is not indexed and its links are not
+  followed) and blocked sites (never crawled), kept as `blocked-terms.txt` and
+  `denylist.txt` in the app's data directory.
+- **Crawling**: crawl speed (Gentle halves the connections per network, Fast
+  doubles them; each site still gets one request at a time with its usual
+  pause) and "Crawl on battery and mobile data".
+- **Networks**: the I2P router and Hyphanet node elsewhere.
+- **About**: the version, the source code and the licenses.
+
+Settings the crawler reads at start (crawl speed, the lists, the routers)
+restart it; the browser takes its settings when it next comes to the front.
 
 Results open in omnid's own browser, GeckoView (Firefox's engine) in private
 mode: onion and `.i2p` results as well as clearnet ones, typed addresses too,
@@ -178,9 +199,14 @@ The browser has tabs, up to 16. A result opens in a tab of its own, and Back
 at its first page closes it and returns to the search page; other tabs stay
 open, and the framed count beside the address (or on the search page's
 toolbar) lists them. Long-press a link to open it in a new or background tab,
-or to copy it; a page that opens a window gets a tab next to it. ⋮ has find in
-page, bookmarks (the one thing the browser keeps, and only when asked), copy
-link (a Hyphanet page as its `freenet:` key) and the security level:
+or to copy it; a page that opens a window gets a tab next to it. Words typed
+into the address bar that are not an address search OMNId's index. ⋮ has
+Reopen closed tab (the last ten, kept in memory only), find in page, bookmarks
+(the one thing the browser keeps, and only when asked), share and copy link (a
+Hyphanet page as its `freenet:` key), Desktop site (the page's computer layout,
+per tab) and the security level. Video plays in the page or full screen, its
+own controls' button hiding the toolbar and the system bars until Back; the
+levels below decide whether it waits for a tap:
 
 - **Standard**: every site feature, with resist-fingerprinting.
 - **Safer**: no JIT, WebAssembly, MathML or SVG fonts; media plays only when
@@ -341,7 +367,8 @@ The Android app's browser:
   `.i2p` site without HTTPS is reloaded over HTTP: I2P, like Tor for onions,
   encrypts the whole way), strict tracking protection, no Safe Browsing lookups. Site permissions (camera,
   microphone, location, notifications) are refused, downloads are off, and
-  screenshots and the recent-apps thumbnail are blocked unless allowed in ⋮.
+  screenshots and the recent-apps thumbnail are blocked unless allowed in
+  Settings.
 
 ## Known limitations
 
