@@ -19,7 +19,7 @@
     <string name="hyphanet_node_hint">http://100.x.y.z:8888</string>
     <string name="hyphanet_node_invalid">That is not a node\'s address: use http://host:port</string>
     <string name="i2p_router">I2P router</string>
-    <string name="i2p_router_detail">OMNId reaches I2P through a router\'s HTTP proxy. Leave this empty for the i2pd app on this phone, or enter a router on your own computer, over Tailscale for instance. The i2pd app stays the fallback. OMNId does not encrypt the way to a router: use one only over a network you trust, such as Tailscale, or its network sees which sites you ask for.</string>
+    <string name="i2p_router_detail">OMNId reaches I2P through a router\'s HTTP proxy. Leave this empty for the i2pd app on this phone, or enter a router on your own computer, over Tailscale for instance. The i2pd app stays the fallback. OMNId does not encrypt the way to a router: use one only over a network you trust, such as Tailscale, or its network sees which sites you ask for; a router at a Tailscale address is asked only while Tailscale is on. The i2pd app ships with 1-hop tunnels and one lasting I2P address for its proxy: set 3 hops and transient keys in its i2pd.conf, or use a router like the one on your computer.</string>
     <string name="i2p_router_hint">http://100.x.y.z:4444</string>
     <string name="i2p_router_invalid">That is not a router\'s address: use http://host:port</string>
     <string name="save">Save</string>

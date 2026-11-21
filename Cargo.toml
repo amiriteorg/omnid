@@ -40,6 +40,7 @@ http = "1"
 html5ever = "0.40"
 http-body-util = "0.1"
 jni = "0.22"
+libc = "0.2"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 md-5 = "0.11"

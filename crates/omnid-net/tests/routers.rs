@@ -189,3 +189,50 @@ fn tempfile_for_test() -> std::fs::File {
     let path = std::env::temp_dir().join(format!("omnid-redirect-test-{}", std::process::id()));
     std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(true).open(path).unwrap()
 }
+
+#[tokio::test]
+async fn the_browsers_downloads_send_what_the_browser_sends() {
+    // An i2pd stand-in that tunnels to a file server and keeps the request
+    // the download sent through it.
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let kept = seen.clone();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let router: Url = format!("http://{}/", listener.local_addr().unwrap()).parse().unwrap();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for _ in 0..2 {
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {
+                head.push(stream.read_u8().await.unwrap());
+            }
+            if head.starts_with(b"CONNECT ") {
+                stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+            } else {
+                *kept.lock().unwrap() = String::from_utf8(head).unwrap();
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nfile").await.unwrap();
+            }
+        }
+    });
+    let gateway = gateway(vec![router], vec![]);
+    let options = omnid_net::DownloadOptions {
+        route: omnid_net::Route::Browser { site: "site.i2p".into() },
+        connections: 1,
+        ..omnid_net::DownloadOptions::default()
+    };
+    let file = tempfile_for_test();
+    let done = gateway
+        .download(
+            &"http://site.i2p/file".parse().unwrap(),
+            &file,
+            &options,
+            &omnid_net::Progress::default(),
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(done.bytes, 4);
+    let head = seen.lock().unwrap().to_ascii_lowercase();
+    assert!(head.contains("accept-language: en-us,en;q=0.5\r\n"), "{head}");
+    assert!(head.contains("accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"), "{head}");
+    assert!(head.contains("sec-gpc: 1\r\n"), "{head}");
+}

@@ -537,6 +537,9 @@ function explain(network, router) {
         ? "Torrent lookups are off: torrents are listed from their links alone. ⋮ → Settings → Torrent lookups turns them on, but the BitTorrent network cannot go through Tor and sees your address."
         : "Torrent lookups are off.";
     case "i2p":
+      if (state === "ready" && EMBEDDED && (whereIs(detail) || "on this device") === "on this device") {
+        return "I2P sites go through the i2pd app on this phone. It ships with 1-hop tunnels and one lasting I2P address for its proxy, which makes you easier to trace: in its i2pd.conf, set the httpproxy's inbound.length and outbound.length to 3 and its keys to transient, or use a router on your own computer (⋮ → Settings → I2P router).";
+      }
       if (state === "ready") return `I2P sites go through the I2P router ${whereIs(detail) || "on this device"}.`;
       if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and OMNId uses it right away, or use a router on your own computer: ⋮ → Settings → I2P router.";
       if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router: the free i2pd app on this phone, from F-Droid, which OMNId uses as soon as it runs, or one on your own computer, over Tailscale for instance: ⋮ → Settings → I2P router.";

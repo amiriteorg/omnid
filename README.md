@@ -114,7 +114,11 @@ put FProxy behind `tailscale serve` or another local proxy: the node would see
 every client as 127.0.0.1 and give each one full access.
 
 An I2P router can run elsewhere in the same way: `--i2p-proxy
-http://<address>:4444` (in the app, ⋮ → Settings → I2P router). i2pd's HTTP proxy binds
+http://<address>:4444` (in the app, ⋮ → Settings → I2P router). A router or
+node at a Tailscale address (100.64.0.0/10) is asked only while this machine
+has such an address on a tunnel interface: the range is also carrier-grade
+NAT's, and with Tailscale off, plain HTTP to it could reach another
+subscriber's device. i2pd's HTTP proxy binds
 one address and has no access list, so keep it on loopback and put a relay that
 admits only your devices' addresses on the private one; Tailscale ties each
 peer's address to its key, so the address is who is connecting. Leave
@@ -404,6 +408,13 @@ What it does not hide:
   your own devices only.
 - **A file you open in another app**, which may go online by itself, and the
   torrent app a magnet is handed to, which goes online directly.
+- **The i2pd app's defaults.** The i2pd app for Android ships with 1-hop
+  tunnels for its HTTP proxy, where I2P's own default is 3, and one lasting
+  I2P address (`keys = proxy-keys.dat`) that its SOCKS proxy shares: easier to
+  trace, and linkable from one day to the next. In its `i2pd.conf`, set the
+  `[httpproxy]` section's `inbound.length` and `outbound.length` to 3 and
+  `keys` to `transient`, or use a router on your own computer (the setup in
+  Quick start uses 3 hops and a new address at every start).
 - **One I2P identity.** Your I2P router's HTTP proxy sends everything through
   one I2P destination: the browser's eepsites, the crawler's and the apps
   behind the proxy, so eepsites can link those visits to each other (though

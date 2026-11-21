@@ -27,8 +27,8 @@ use std::task::Poll;
 use std::time::Duration;
 
 use ::http::header::{
-    ACCEPT, ACCEPT_ENCODING, CONNECTION, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG, HOST,
-    HeaderName, HeaderValue, IF_RANGE, LAST_MODIFIED, LOCATION, RANGE, USER_AGENT,
+    ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CONNECTION, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE,
+    CONTENT_TYPE, ETAG, HOST, HeaderName, HeaderValue, IF_RANGE, LAST_MODIFIED, LOCATION, RANGE, USER_AGENT,
 };
 use ::http::{HeaderMap, Request, Response};
 use bytes::{Bytes, BytesMut};
@@ -297,6 +297,11 @@ impl Gateway {
     }
 }
 
+/// What the app's browser sends as Accept on a page load, and as
+/// Accept-Language whatever the phone's languages (its proxy extension).
+const BROWSER_ACCEPT: &str = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+const BROWSER_LANGUAGE: &str = "en-US,en;q=0.5";
+
 /// One download's settings and state, shared by its connections.
 struct Job<'a> {
     gateway: &'a Gateway,
@@ -552,14 +557,20 @@ impl Job<'_> {
             Some(last) => format!("bytes={start}-{last}"),
             None => format!("bytes={start}-"),
         };
+        let browser = matches!(self.opts.route, Route::Browser { .. });
         let mut request = Request::get(&url[url::Position::BeforePath..url::Position::AfterQuery])
             .header(HOST, authority)
             .header(USER_AGENT, self.user_agent)
-            .header(ACCEPT, "*/*")
+            // For the browser, what it sends itself, so its downloads stand
+            // out less (they still come in ranges, from several exits).
+            .header(ACCEPT, if browser { BROWSER_ACCEPT } else { "*/*" })
             // Ranges count the bytes as sent: a compressed body's are not the
             // file's.
             .header(ACCEPT_ENCODING, "identity")
             .header(RANGE, range);
+        if browser {
+            request = request.header(ACCEPT_LANGUAGE, BROWSER_LANGUAGE).header("sec-gpc", "1");
+        }
         if let Some(validator) = if_range {
             request = request.header(IF_RANGE, validator);
         }
