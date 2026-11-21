@@ -412,6 +412,7 @@ function explain(network, router) {
       return "Reaching .i2p sites needs an I2P router, such as the i2pd app, running on this device.";
     case "hyphanet":
       if (state === "ready") return `Hyphanet sites go through the Hyphanet node (${detail}).`;
+      if (EMBEDDED) return `No Hyphanet node answers at ${detail.replace(/^no FProxy at /, "")}. Run one on this phone, or use one on your own computer over Tailscale: ⋮ → Hyphanet node.`;
       return "Hyphanet sites need a Hyphanet node running on this device.";
     case "clearnet":
       return EMBEDDED

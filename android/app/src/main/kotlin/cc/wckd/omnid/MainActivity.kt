@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityOptions
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -12,6 +13,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
@@ -27,6 +29,7 @@ import android.window.OnBackInvokedDispatcher
 import android.content.res.ColorStateList
 import android.util.TypedValue
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -205,6 +208,7 @@ class MainActivity : Activity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menu.add(Menu.NONE, R.string.crawl_anytime, Menu.NONE, R.string.crawl_anytime).isCheckable = true
+        menu.add(Menu.NONE, R.string.hyphanet_node, Menu.NONE, R.string.hyphanet_node)
         menu.add(Menu.NONE, R.string.stop_omnid, Menu.NONE, R.string.stop_omnid)
         return true
     }
@@ -219,6 +223,10 @@ class MainActivity : Activity() {
             prefs().edit().putBoolean(CrawlPolicy.KEY_ANYTIME, !item.isChecked).apply()
             true
         }
+        R.string.hyphanet_node -> {
+            askHyphanetNode()
+            true
+        }
         R.string.stop_omnid -> {
             stopService(Intent(this, OmnidService::class.java))
             finishAndRemoveTask()
@@ -228,6 +236,43 @@ class MainActivity : Activity() {
     }
 
     private fun prefs() = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE)
+
+    /** Where omnid reaches Hyphanet; a change restarts the daemon, which takes it at start. */
+    private fun askHyphanetNode() {
+        fun dp(value: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
+        val current = prefs().getString(HyphanetNode.KEY, "").orEmpty()
+        val input = EditText(this).apply {
+            setText(current)
+            hint = getString(R.string.hyphanet_node_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            isSingleLine = true
+        }
+        val frame = FrameLayout(this).apply {
+            setPadding(dp(20), dp(4), dp(20), 0)
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.hyphanet_node)
+            .setMessage(R.string.hyphanet_node_detail)
+            .setView(frame)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val node = HyphanetNode.parse(input.text.toString())
+                when {
+                    node == null -> Toast.makeText(this, R.string.hyphanet_node_invalid, Toast.LENGTH_LONG).show()
+                    node != current -> {
+                        prefs().edit().putString(HyphanetNode.KEY, node).apply()
+                        restartService()
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun restartService() {
+        stopService(Intent(this, OmnidService::class.java))
+        startForegroundService(Intent(this, OmnidService::class.java))
+    }
 
     private fun show() {
         val endpoint = OmnidService.endpoint
@@ -294,10 +339,7 @@ class MainActivity : Activity() {
             setTextColor(onAccent)
             backgroundTintList = ColorStateList.valueOf(getColor(R.color.accent))
             visibility = View.GONE
-            setOnClickListener {
-                stopService(Intent(this@MainActivity, OmnidService::class.java))
-                startForegroundService(Intent(this@MainActivity, OmnidService::class.java))
-            }
+            setOnClickListener { restartService() }
         }
         starting = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

@@ -40,13 +40,14 @@ struct Running {
 
 /// Starts the daemon if it is not running and returns its port. Crawling
 /// starts paused; the caller applies its battery and network policy with
-/// [`set_paused`].
-pub fn start(data_dir: &Path, token: &str) -> Result<u16> {
-    start_with(data_dir, token, true)
+/// [`set_paused`]. `hyphanet_node` is a Hyphanet node's FProxy elsewhere (the
+/// owner's computer over Tailscale, say), or empty for one on this phone.
+pub fn start(data_dir: &Path, token: &str, hyphanet_node: &str) -> Result<u16> {
+    start_with(data_dir, token, hyphanet_node, true)
 }
 
 /// `networks: false` leaves out Tor and the DHT, for tests.
-fn start_with(data_dir: &Path, token: &str, networks: bool) -> Result<u16> {
+fn start_with(data_dir: &Path, token: &str, hyphanet_node: &str, networks: bool) -> Result<u16> {
     let mut running = RUNNING.lock().expect("daemon lock poisoned");
     if let Some(running) = running.as_ref() {
         return Ok(running.daemon.addr().port());
@@ -66,6 +67,7 @@ fn start_with(data_dir: &Path, token: &str, networks: bool) -> Result<u16> {
     // Operators can drop lists into the app's data directory.
     let list = |name: &str| Some(data_dir.join(name)).filter(|p| p.exists());
     let safety = Safety::load(list("denylist.txt").as_deref(), list("blocked-terms.txt").as_deref())?;
+    let gateway = gateway(data_dir, hyphanet_node, networks)?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -76,7 +78,7 @@ fn start_with(data_dir: &Path, token: &str, networks: bool) -> Result<u16> {
     let daemon = runtime.block_on(omnid::start(DaemonConfig {
         data_dir: data_dir.to_owned(),
         listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-        gateway: GatewayConfig { tor_dir: networks.then(|| data_dir.join("tor")), ..GatewayConfig::default() },
+        gateway,
         crawl: phone_crawl(),
         safety,
         seeds,
@@ -93,6 +95,21 @@ fn start_with(data_dir: &Path, token: &str, networks: bool) -> Result<u16> {
     let port = daemon.addr().port();
     *running = Some(Running { runtime, daemon });
     Ok(port)
+}
+
+/// The phone's gateway: Tor in the app's data directory, and the Hyphanet
+/// node it was given, if any.
+fn gateway(data_dir: &Path, hyphanet_node: &str, networks: bool) -> Result<GatewayConfig> {
+    let mut gateway = GatewayConfig { tor_dir: networks.then(|| data_dir.join("tor")), ..GatewayConfig::default() };
+    let node = hyphanet_node.trim();
+    if !node.is_empty() {
+        let fproxy = gateway.fproxy.insert(node.parse().with_context(|| format!("Hyphanet node {node:?}"))?);
+        anyhow::ensure!(
+            matches!(fproxy.scheme(), "http" | "https") && fproxy.host().is_some(),
+            "Hyphanet node {node:?} is not an http address"
+        );
+    }
+    Ok(gateway)
 }
 
 /// Stops crawling, commits the index and shuts the daemon down.
@@ -165,9 +182,10 @@ pub extern "system" fn Java_cc_wckd_omnid_Native_start<'local>(
     _class: JClass<'local>,
     data_dir: JString<'local>,
     token: JString<'local>,
+    hyphanet_node: JString<'local>,
 ) -> jint {
     env.with_env(|_| -> Result<jint, NativeError> {
-        let port = start(Path::new(&data_dir.to_string()), &token.to_string())
+        let port = start(Path::new(&data_dir.to_string()), &token.to_string(), &hyphanet_node.to_string())
             .map_err(|e| NativeError::Daemon(format!("{e:#}")))?;
         Ok(jint::from(port))
     })
@@ -270,6 +288,18 @@ mod tests {
         }
     }
 
+    #[test]
+    fn takes_a_hyphanet_node_elsewhere() {
+        let dir = Path::new("unused");
+        let local = gateway(dir, " ", false).unwrap().fproxy.unwrap();
+        assert_eq!(local.as_str(), "http://127.0.0.1:8888/", "none given: a node on this phone");
+        let remote = gateway(dir, "http://100.101.102.103:8888/", false).unwrap().fproxy.unwrap();
+        assert_eq!(remote.as_str(), "http://100.101.102.103:8888/");
+        for node in ["ftp://100.101.102.103/", "100.101.102.103:8888", "not a url"] {
+            assert!(gateway(dir, node, false).is_err(), "{node}");
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn starts_pauses_and_stops() {
         let dir = std::env::temp_dir().join(format!("omnid-android-test-{}", std::process::id()));
@@ -279,8 +309,9 @@ mod tests {
             let dir = dir.clone();
             tokio::task::spawn_blocking(move || {
                 // Without Tor or the DHT, so the test stays off the network.
-                let first = start_with(&dir, "token", false).unwrap();
-                assert_eq!(start_with(&dir, "token", false).unwrap(), first, "a second start reuses the daemon");
+                // A node elsewhere that does not answer: the status says where omnid looked.
+                let first = start_with(&dir, "token", "http://127.0.0.1:9", false).unwrap();
+                assert_eq!(start_with(&dir, "token", "", false).unwrap(), first, "a second start reuses the daemon");
                 assert_ne!(browser_proxy_port(), 0, "the browser's proxy is up");
                 new_identity();
                 first
@@ -304,6 +335,7 @@ mod tests {
         .unwrap();
         assert!(body.starts_with("HTTP/1.1 200"), "{body}");
         assert!(body.contains("waiting for a charger"), "{body}");
+        assert!(body.contains("no FProxy at http://127.0.0.1:9/"), "{body}");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

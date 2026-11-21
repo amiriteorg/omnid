@@ -47,10 +47,14 @@ class OmnidService : Service() {
         fun unobserve(listener: () -> Unit) = listeners.remove(listener)
 
         private fun changed() = listeners.forEach { it() }
+
+        /**
+         * Native calls block, so they run here, one at a time and in order: one thread for the
+         * process, so a restart's start waits for the stop before it.
+         */
+        private val native: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "omnid-native") }
     }
 
-    /** Native calls block, so they run here, one at a time and in order. */
-    private val native: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "omnid-native") }
     private var policy: CrawlPolicy? = null
 
     override fun onCreate() {
@@ -61,7 +65,8 @@ class OmnidService : Service() {
         val token = ByteArray(32).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
         native.execute {
             try {
-                val port = Native.start(File(filesDir, "omnid").path, token)
+                val node = getSharedPreferences(CrawlPolicy.PREFS, MODE_PRIVATE).getString(HyphanetNode.KEY, "").orEmpty()
+                val port = Native.start(File(filesDir, "omnid").path, token, node)
                 endpoint = Endpoint(port, token, Native.browserProxyPort())
                 failure = null
                 val crawlPolicy = CrawlPolicy(this) { paused, reason -> native.execute { Native.setPaused(paused, reason) } }
@@ -86,7 +91,6 @@ class OmnidService : Service() {
         endpoint = null
         changed()
         native.execute { Native.stop() }
-        native.shutdown()
         super.onDestroy()
     }
 

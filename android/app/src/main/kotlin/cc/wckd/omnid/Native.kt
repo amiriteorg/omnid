@@ -8,10 +8,11 @@ internal object Native {
 
     /**
      * Starts the daemon if it is not running and returns its loopback port. Crawling starts
-     * paused. Throws [RuntimeException] with the reason when it cannot start.
+     * paused. [hyphanetNode] is a Hyphanet node's FProxy URL ([HyphanetNode]), or empty for one
+     * on this phone. Throws [RuntimeException] with the reason when it cannot start.
      */
     @JvmStatic
-    external fun start(dataDir: String, token: String): Int
+    external fun start(dataDir: String, token: String, hyphanetNode: String): Int
 
     /** Stops crawling, commits the index and shuts the daemon down. */
     @JvmStatic

@@ -109,6 +109,10 @@ start_hyphanet() {
   local pkg=$CACHE/hyphanet-$HYPHANET_BUILD node=$LIVE/hyphanet
   if [ -f "$node/java.pid" ] && kill -0 "$(cat "$node/java.pid")" 2>/dev/null; then
     say "Hyphanet already running"
+  elif nc -z 127.0.0.1 8888 2>/dev/null; then
+    # A node of the machine's own (one kept running for omnid): use it as it
+    # is; `down` leaves it alone, having no PID file for it.
+    say "using the Hyphanet node already on 127.0.0.1:8888"
   else
     mkdir -p "$node"/{state,run,store,plugins,tmp,downloads,logs}
     cp "$pkg/usr/share/freenet/seednodes.fref" "$node/"

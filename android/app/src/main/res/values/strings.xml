@@ -13,6 +13,11 @@
     <string name="stop">Stop</string>
     <string name="crawl_anytime">Crawl on battery and mobile data</string>
     <string name="stop_omnid">Stop omnid</string>
+    <string name="hyphanet_node">Hyphanet node</string>
+    <string name="hyphanet_node_detail">omnid reaches Hyphanet through a node\'s FProxy. Leave this empty for a node on this phone, or enter one on your own computer, over Tailscale for instance.</string>
+    <string name="hyphanet_node_hint">http://100.x.y.z:8888</string>
+    <string name="hyphanet_node_invalid">That is not a node\'s address: use http://host:port</string>
+    <string name="save">Save</string>
     <string name="queued">Queued %1$s</string>
     <string name="nothing_to_queue">No onion, magnet or link found in what was shared</string>
     <string name="paused_charger_wifi">waiting for a charger and Wi-Fi</string>

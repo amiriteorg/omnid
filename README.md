@@ -67,6 +67,26 @@ also indexes info hashes sampled from the whole DHT. Data lives in the platform 
 directory (`--data-dir` to override): the index in `index-v3/`, the crawl
 store in `crawl.sqlite`, Tor state in `tor/`.
 
+A Hyphanet node can also run on another machine, such as an always-on
+computer that a phone reaches over Tailscale; point omnid at it with
+`--fproxy http://<address>:8888` (in the app, ⋮ → Hyphanet node). FProxy has
+no passwords, so in the node's `freenet.ini` bind it to loopback and that one
+private address, let in only your own devices, and keep its settings,
+downloads to disk and FCP for the machine itself:
+
+```ini
+fproxy.bindTo=127.0.0.1,<the machine's Tailscale address>
+fproxy.allowedHosts=127.0.0.1,0:0:0:0:0:0:0:1,<each client's address>
+fproxy.allowedHostsFullAccess=127.0.0.1,0:0:0:0:0:0:0:1
+fproxy.publicGatewayMode=true
+fcp.bindTo=127.0.0.1
+fcp.allowedHosts=127.0.0.1
+```
+
+`allowedHostsFullAccess` only takes effect with `publicGatewayMode`. Do not
+put FProxy behind `tailscale serve` or another local proxy: the node would see
+every client as 127.0.0.1 and give each one full access.
+
 Search syntax: words (all required, falling back to any word when nothing has
 all of them), `"a phrase"`, `-exclude`, `title:word`, `site:host`,
 `network:onion`.
@@ -106,7 +126,9 @@ services. Magnets are resolved through the DHT on the phone too; the phone
 never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
 from F-Droid and start its router: its HTTP proxy is on 127.0.0.1:4444, where
 omnid looks, so there is nothing to set up. Until then the I2P row under the
-network strip offers "Get i2pd" or "Open i2pd".
+network strip offers "Get i2pd" or "Open i2pd". For Hyphanet, ⋮ → Hyphanet node
+takes a node elsewhere, such as your computer's over Tailscale (see above);
+empty means one on the phone at 127.0.0.1:8888.
 
 Results open in omnid's own browser, GeckoView (Firefox's engine) in private
 mode: onion and `.i2p` results as well as clearnet ones, typed addresses too.
