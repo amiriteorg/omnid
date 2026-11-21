@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 (2026-11-21)
 
 - The crawler goes wide before deep. Links within a site no longer use up the hops from a seed:
   `--max-depth` (now 5) counts sites, `--max-site-depth` (4) pages within a site, and
