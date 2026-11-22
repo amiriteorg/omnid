@@ -9,6 +9,7 @@
 mod doc;
 mod ipfs;
 pub mod lang;
+pub mod nostr;
 mod source;
 
 pub use doc::{FileMeta, IndexedDoc, now_secs};

@@ -38,6 +38,8 @@ impl Politeness {
             // A gateway finds content through the IPFS DHT, which can take
             // a while; it is the node that does the work, not a site.
             Network::Ipfs => (8, 1),
+            // Each fetch asks up to four relays at once.
+            Network::Nostr => (4, 1),
             // Magnets are indexed from the link itself, without a fetch.
             Network::Magnet => (16, 0),
         };

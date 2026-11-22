@@ -219,8 +219,9 @@ fn gateway(data_dir: &Path, options: &Options, networks: bool) -> Result<Gateway
         tor_dir: networks.then(|| data_dir.join("tor")),
         clearnet_via_tor: networks && options.clearnet_via_tor,
         // No IPFS node runs on a phone, and nothing in the app sets a gateway
-        // elsewhere yet.
+        // elsewhere yet; nor is Nostr in the app yet.
         ipfs_gateways: Vec::new(),
+        nostr_relays: Vec::new(),
         ..GatewayConfig::default()
     };
     if let Some(node) = elsewhere(&options.hyphanet_node, "Hyphanet node", &["http", "https"])? {
@@ -454,6 +455,7 @@ fn phone_crawl(speed: CrawlSpeed) -> CrawlConfig {
             (Network::I2p, politeness(3, 5)),
             (Network::Hyphanet, politeness(2, 2)),
             (Network::Ipfs, politeness(2, 1)),
+            (Network::Nostr, politeness(2, 1)),
             (Network::Magnet, politeness(4, 0)),
         ]),
         ..CrawlConfig::default()

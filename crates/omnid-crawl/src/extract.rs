@@ -14,7 +14,7 @@ use html5ever::tendril::StrTendril;
 use html5ever::tokenizer::states::RawKind;
 use html5ever::tokenizer::{BufferQueue, Tag, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts};
 
-const MAX_TEXT_BYTES: usize = 100_000;
+pub(crate) const MAX_TEXT_BYTES: usize = 100_000;
 const MAX_TITLE_BYTES: usize = 300;
 const MAX_DESCRIPTION_BYTES: usize = 500;
 const FALLBACK_DESCRIPTION_BYTES: usize = 280;
@@ -266,7 +266,7 @@ fn attr<'a>(tag: &'a Tag, name: &str) -> Option<&'a str> {
     tag.attrs.iter().find(|a| &*a.name.local == name).map(|a| &*a.value)
 }
 
-fn collapse(s: &str, max_bytes: usize) -> String {
+pub(crate) fn collapse(s: &str, max_bytes: usize) -> String {
     let mut out = String::new();
     for word in s.split_whitespace() {
         if !out.is_empty() {
@@ -281,7 +281,7 @@ fn collapse(s: &str, max_bytes: usize) -> String {
     truncate(&out, max_bytes).trim_end().to_owned()
 }
 
-fn truncate(s: &str, max_bytes: usize) -> &str {
+pub(crate) fn truncate(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
         return s;
     }
