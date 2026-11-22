@@ -37,9 +37,12 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Proxy, SOCKS5 and HTTP (`.onion`/`.i2p` for any browser or app), open or private | done, live tested with curl over Tor; the app's proxy for other apps run on the emulator (Tor exits per username, an onion, reg.i2p) |
 | Android app (arm64) | done, run on an Android 16 emulator: crawled 225 onion pages over embedded Tor, magnets via the DHT |
 | Browser in the Android app: GeckoView, private, every request through the daemon | done, run on the emulator: onion and clearnet pages over Tor, check.torproject.org reports Tor, New identity changes the exit, reg.i2p through the i2pd app |
+| An I2P identity per browser site, through the router's SAM bridge | done, tested against a stand-in bridge and run against i2pd on a computer over Tailscale; not yet with the i2pd app's own SAM bridge |
+| Downloads in parallel byte ranges, each connection on Tor circuits of its own | done, tested against local servers; measured over Tor in [docs/benchmarks.md](docs/benchmarks.md) |
+| The phone's crawler through Tor, torrent lookups off by default | done, run on the emulator, upgrading an install that crawled directly |
 
-Not built yet: router lifecycle management (starting i2pd and Hyphanet as child processes), index
-sync between nodes, near-duplicate detection, a desktop app shell.
+Every release so far has run on an emulator and on macOS, not yet on a physical phone. What
+comes next, and what is not built yet, is in [ROADMAP.md](ROADMAP.md).
 
 ## Quick start
 
