@@ -164,7 +164,8 @@
     <string name="settings_source">Source code</string>
     <string name="settings_licenses">Licenses</string>
     <string name="settings_licenses_value">MIT; GeckoView MPL 2.0; Space Mono OFL 1.1</string>
-    <string name="settings_licenses_text">OMNId is free software under the MIT License.\n\nIts browser is GeckoView, Firefox\'s engine, under the Mozilla Public License 2.0.\n\nSpace Mono, the typeface, is under the SIL Open Font License 1.1:\n\n</string>
+    <string name="settings_third_party">Third-party notices</string>
+    <string name="settings_licenses_text">OMNId is free software under the MIT License.\n\nIts browser is GeckoView, Firefox\'s engine, under the Mozilla Public License 2.0.\n\nThird-party notices lists the other software OMNId is built with, and its licenses.\n\nSpace Mono, the typeface, is under the SIL Open Font License 1.1:\n\n</string>
     <string name="network_onion">Onion</string>
     <string name="network_web">Web</string>
     <string name="network_torrents">Torrents</string>
