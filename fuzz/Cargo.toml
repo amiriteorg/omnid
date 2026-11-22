@@ -1,0 +1,119 @@
+# cargo-fuzz targets for the parsers that read what comes off the network. A
+# workspace of its own, so `cargo test`, clippy and `eng verify` never build it;
+# it needs a nightly toolchain. CONTRIBUTING.md says how to run it.
+[package]
+name = "omnid-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+# The only crates the workspace's Cargo.lock, copied in to build, does not pin.
+arbitrary = "=1.5.0"
+libfuzzer-sys = "=0.4.13"
+omnid = { path = "../crates/omnid" }
+omnid-core = { path = "../crates/omnid-core" }
+omnid-crawl = { path = "../crates/omnid-crawl" }
+omnid-dht = { path = "../crates/omnid-dht" }
+omnid-net = { path = "../crates/omnid-net" }
+
+[workspace]
+
+[[bin]]
+name = "source_parse"
+path = "fuzz_targets/source_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "source_join"
+path = "fuzz_targets/source_join.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bencode"
+path = "fuzz_targets/bencode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "krpc"
+path = "fuzz_targets/krpc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "info_dict"
+path = "fuzz_targets/info_dict.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "peer_wire"
+path = "fuzz_targets/peer_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "extract"
+path = "fuzz_targets/extract.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "robots"
+path = "fuzz_targets/robots.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_decode"
+path = "fuzz_targets/http_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_response"
+path = "fuzz_targets/http_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sam_replies"
+path = "fuzz_targets/sam_replies.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "download_headers"
+path = "fuzz_targets/download_headers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proxy_handshake"
+path = "fuzz_targets/proxy_handshake.rs"
+test = false
+doc = false
+bench = false
+
+# Line numbers in a crash's backtrace.
+[profile.release]
+debug = 1

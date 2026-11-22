@@ -30,3 +30,7 @@ texting_robots.workspace = true
 http-body-util.workspace = true
 tower.workspace = true
 tempfile.workspace = true
+
+[lints.rust]
+# cargo-fuzz builds with `--cfg fuzzing`, which adds `mod fuzzing` for fuzz/.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }

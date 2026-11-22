@@ -331,6 +331,11 @@ async fn http_handshake<S: AsyncRead + AsyncWrite + Unpin>(
         return Err(invalid("not an absolute http:// target"));
     };
     let host = url.host_str().unwrap_or_default().trim_start_matches('[').trim_end_matches(']').to_owned();
+    // The URL parser takes names, such as `)`, that no router should see.
+    if !valid_host(&host) {
+        reply_http(s, 400, "Bad Request", "not a host name").await?;
+        return Err(invalid("not a host name"));
+    }
     let port = url.port_or_known_default().unwrap_or(80);
     let mut forward =
         format!("{} {} {}\r\n", head.method, &url[url::Position::BeforePath..url::Position::AfterQuery], head.version);
@@ -523,6 +528,45 @@ async fn read_array<const N: usize, S: AsyncRead + Unpin>(s: &mut S) -> io::Resu
 
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.to_owned())
+}
+
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use super::*;
+
+    /// A client's first bytes, as [`handshake`] reads them. `input`'s first
+    /// byte picks who may use the listener; the rest is what the client
+    /// sends. A request that passes names a host a router can be asked for,
+    /// was let in only with the password where there is one, and is passed
+    /// on as a head that parses as strictly as the client's had to.
+    pub fn handshake(input: &[u8]) {
+        let Some((&pick, sent)) = input.split_first() else { return };
+        let password = || "s3cret".to_owned();
+        let access = match pick % 4 {
+            0 => Access::Open,
+            1 => Access::Browser { password: password() },
+            2 => Access::Apps { password: None },
+            _ => Access::Apps { password: Some(password()) },
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread().build().expect("a runtime");
+        let (mut client, mut server) = tokio::io::duplex(sent.len() + MAX_HTTP_HEAD);
+        let Ok(request) = runtime.block_on(async {
+            client.write_all(sent).await.expect("room for the request");
+            client.shutdown().await.expect("an open stream");
+            super::handshake(&mut server, &access).await
+        }) else {
+            return;
+        };
+        assert!(valid_host(&request.host), "{:?}", request.host);
+        assert!(access.password().is_none() || request.username.is_some(), "let in without the password");
+        if let Reply::HttpForward(head) = &request.reply {
+            let head = parse_head(head).expect("a forwarded head that parses");
+            assert!(head.target.starts_with('/'), "{:?}", head.target);
+            assert!(head.header("proxy-authorization").is_none());
+            assert_eq!(head.headers.last(), Some(&("Connection", "close")));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -911,6 +955,22 @@ mod tests {
         assert_eq!(written[2..4], [5, NOT_ALLOWED]);
         assert!(valid_host("stats.i2p") && valid_host("_dmarc.example") && valid_host("::1") && valid_host("10.0.0.1"));
         assert!(!valid_host("") && !valid_host("a b") && !valid_host("a/b") && !valid_host(&"a".repeat(254)));
+    }
+
+    #[tokio::test]
+    async fn checks_the_host_of_a_request_in_absolute_form_too() {
+        // Found by fuzz/fuzz_targets/proxy_handshake.rs: `G http:) HTTP/1.1`
+        // asked for the host `)`. The URL parser takes such names, and only
+        // CONNECT's and SOCKS's were checked.
+        for request in
+            [&b"G http:) HTTP/1.1\r\n\r\n"[..], b"GET http://stats.)2p/a?b=1 HTTP/1.1\r\nHost: stats.i2p\r\n\r\n"]
+        {
+            let (target, written) = negotiate(request).await;
+            assert!(target.is_err(), "{}", String::from_utf8_lossy(request));
+            assert!(written.starts_with(b"HTTP/1.1 400 "), "{}", String::from_utf8_lossy(&written));
+        }
+        let (target, _) = negotiate(b"GET http://stats.i2p/a?b=1 HTTP/1.1\r\n\r\n").await;
+        assert_eq!(target.unwrap(), ("stats.i2p".into(), 80));
     }
 
     /// An i2pd stand-in: answers every CONNECT with 200, then echoes.

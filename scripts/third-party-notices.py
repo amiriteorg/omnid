@@ -8,7 +8,8 @@
 The Rust part comes from cargo-about (`cargo install --locked --features cli
 cargo-about@0.9.3`). License texts are read from the crates in Cargo's registry, or are the
 license's standard text where a crate ships none; only `cargo fetch` goes to the network. The Java and Kotlin part asks Gradle
-for the release build's libraries and reads each one's license from its POM in Gradle's cache.
+for the release build's libraries and reads each one's license from its POM, which it asks Gradle
+to fetch.
 A library under a license this script does not know stops it, rather than going out without
 its notice. Write the app's file before `./gradlew assembleRelease`, which packs it.
 """
@@ -17,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -30,8 +32,8 @@ TARGETS = {
 RULE = "=" * 78
 
 
-def run(args, cwd=ROOT):
-    res = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+def run(args, cwd=ROOT, env=None):
+    res = subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env)
     if res.returncode != 0:
         sys.exit(f"{' '.join(args[:3])} failed:\n{res.stderr.strip()}")
     return res.stdout
@@ -92,15 +94,55 @@ def gradle_libraries():
     return sorted(found)
 
 
-def gradle_cache():
-    return Path(os.environ.get("GRADLE_USER_HOME", Path.home() / ".gradle")) / "caches" / "modules-2" / "files-2.1"
+# Resolves each library's POM as an artifact of its own (`group:name:version@pom`) and prints
+# where Gradle put it. A build needs only a library's metadata, which for most AndroidX libraries
+# is Gradle's own `.module` file, so a cache may well hold no POM for them: CI's restored one did
+# not. Asked for this way, Gradle fetches what is missing, from the app's own repositories.
+POM_TASK = """
+allprojects {
+    if (path == ':app') {
+        tasks.register('omnidPoms') {
+            doLast {
+                def wanted = System.getenv('OMNID_POMS').split(' ').collect { project.dependencies.create(it + '@pom') }
+                def poms = project.configurations.detachedConfiguration(wanted as Dependency[])
+                poms.transitive = false
+                poms.resolvedConfiguration.lenientConfiguration.artifacts.each { a ->
+                    def id = a.moduleVersion.id
+                    println "omnid-pom ${id.group}:${id.name}:${id.version} ${a.file}"
+                }
+            }
+        }
+    }
+}
+"""
+
+# group:name:version -> its POM, as Gradle resolved it.
+POMS = {}
+
+
+def fetch_poms(coords):
+    wanted = [":".join(c) for c in coords if ":".join(c) not in POMS]
+    if not wanted:
+        return
+    with tempfile.NamedTemporaryFile("w", suffix=".gradle") as init:
+        init.write(POM_TASK)
+        init.flush()
+        env = dict(os.environ, OMNID_POMS=" ".join(wanted))
+        out = run(["./gradlew", "-q", "--no-configuration-cache", "-I", init.name, ":app:omnidPoms"],
+                  cwd=ROOT / "android", env=env)
+    for line in out.splitlines():
+        if line.startswith("omnid-pom "):
+            _, coord, path = line.split(" ", 2)
+            POMS[coord] = Path(path)
 
 
 def pom(group, name, ver):
-    hits = sorted((gradle_cache() / group / name / ver).glob(f"*/{name}-{ver}.pom"))
-    if not hits:
-        sys.exit(f"no POM for {group}:{name}:{ver} in Gradle's cache")
-    root = ET.parse(hits[0]).getroot()
+    coord = f"{group}:{name}:{ver}"
+    if coord not in POMS:  # a parent POM, asked for when first needed
+        fetch_poms([(group, name, ver)])
+    if coord not in POMS:
+        sys.exit(f"Gradle found no POM for {coord}")
+    root = ET.parse(POMS[coord]).getroot()
     for el in root.iter():  # drop the Maven namespace
         el.tag = el.tag.split("}")[-1]
     return root
@@ -135,7 +177,9 @@ def kind(name, url):
 
 def java_section():
     groups = {"Apache-2.0": [], "MPL-2.0": []}
-    for group, name, ver in gradle_libraries():
+    libraries = gradle_libraries()
+    fetch_poms(libraries)
+    for group, name, ver in libraries:
         lic = pom_license(group, name, ver)
         if lic is None:
             continue

@@ -4,6 +4,14 @@
 pub mod api;
 mod socks;
 
+/// The proxy's entry point for the fuzz targets in `fuzz/`, built only by
+/// cargo-fuzz (`cfg(fuzzing)`). Not part of the API.
+#[cfg(fuzzing)]
+#[doc(hidden)]
+pub mod fuzzing {
+    pub use crate::socks::fuzz::handshake as proxy_handshake;
+}
+
 pub use socks::Access as ProxyAccess;
 
 /// The app's browser's proxy: the password it wants, and where it listens.

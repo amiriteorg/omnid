@@ -246,6 +246,21 @@ pub(crate) mod testing {
     }
 }
 
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use super::*;
+
+    /// A datagram from anyone. What a response holds is bounded by its size.
+    pub fn decode(packet: &[u8]) {
+        if let Ok(Message::Response { response, .. }) = super::decode(packet) {
+            assert!(response.nodes.len() * 26 <= packet.len());
+            assert!(response.values.len() * 6 <= packet.len());
+            assert!(response.samples.len() * 20 <= packet.len());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::testing::*;

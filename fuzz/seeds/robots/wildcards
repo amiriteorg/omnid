@@ -1,0 +1,6 @@
+/a/b.php?x=1
+User-agent: *
+Allow: /a/*.html$
+Disallow: /a/
+Crawl-delay: 10
+Sitemap: http://example.com/s.xml

@@ -9,6 +9,14 @@ mod robots;
 pub mod safety;
 mod store;
 
+/// The robots.txt parser's entry point for the fuzz targets in `fuzz/`, built
+/// only by cargo-fuzz (`cfg(fuzzing)`). Not part of the API.
+#[cfg(fuzzing)]
+#[doc(hidden)]
+pub mod fuzzing {
+    pub use crate::robots::fuzz::allows as robots;
+}
+
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
