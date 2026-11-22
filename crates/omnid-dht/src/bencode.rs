@@ -291,6 +291,28 @@ fn encode_bytes(b: &[u8], out: &mut Vec<u8>) {
     out.extend_from_slice(b);
 }
 
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use super::*;
+
+    /// Decodes `input` under each of the client's limits. A value that
+    /// decodes took exactly as many bytes as it encodes to (only a dict's key
+    /// order can differ), and its encoding decodes back to it.
+    pub fn decode(input: &[u8]) {
+        for limits in [Limits::KRPC, Limits::PEER, Limits::INFO] {
+            let Ok((value, used)) = decode_prefix(input, limits) else {
+                assert!(super::decode(input, limits).is_err());
+                continue;
+            };
+            assert_eq!(super::decode(input, limits).is_ok(), used == input.len());
+            let encoded = encode(&value);
+            assert_eq!(encoded.len(), used);
+            assert_eq!(super::decode(&encoded, limits).as_ref(), Ok(&value));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

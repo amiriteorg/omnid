@@ -21,6 +21,15 @@ enum Rules {
 }
 
 impl Rules {
+    /// What a robots.txt that came with a 2xx answer says to `agent`. One
+    /// that cannot be read allows everything.
+    fn parse(agent: &str, body: &[u8]) -> Self {
+        match Robot::new(agent, body) {
+            Ok(robot) => Rules::Parsed(Box::new(robot)),
+            Err(_) => Rules::AllowAll,
+        }
+    }
+
     fn allows(&self, url: &str) -> bool {
         match self {
             Rules::AllowAll => true,
@@ -62,16 +71,23 @@ impl RobotsCache {
         };
         let page = gateway.fetch(&robots, &opts).await?;
         let (rules, ttl) = match page.status {
-            200..300 => match page.body.as_deref().map(|body| Robot::new(&self.agent, body)) {
-                Some(Ok(robot)) => (Rules::Parsed(Box::new(robot)), TTL),
-                _ => (Rules::AllowAll, TTL),
-            },
+            200..300 => (page.body.as_deref().map_or(Rules::AllowAll, |body| Rules::parse(&self.agent, body)), TTL),
             500.. => (Rules::DisallowAll, SERVER_ERROR_TTL),
             _ => (Rules::AllowAll, TTL),
         };
         let allowed = rules.allows(&url);
         self.sites.lock().expect("robots lock poisoned").insert(site, (Instant::now() + ttl, rules));
         Ok(allowed)
+    }
+}
+
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    /// Whether a robots.txt `body` that came with a 200 lets `agent` fetch
+    /// `url`.
+    pub fn allows(agent: &str, body: &[u8], url: &str) -> bool {
+        super::Rules::parse(agent, body).allows(url)
     }
 }
 

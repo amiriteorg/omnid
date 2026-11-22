@@ -1,0 +1,7 @@
+target
+corpus
+artifacts
+coverage
+# Copied from the workspace before a build (CONTRIBUTING.md), so the targets build the
+# versions that ship.
+Cargo.lock

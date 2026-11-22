@@ -402,7 +402,8 @@ fn hyphanet_key(input: &str) -> Option<String> {
         .or_else(|| strip_prefix_ignore_case(input, "hyphanet:"))
         .unwrap_or(input)
         .trim_start_matches('/');
-    let rest = rest.split('#').next().unwrap_or(rest);
+    // Trimmed as the whole input was, so the canonical form parses back.
+    let rest = rest.split('#').next().unwrap_or(rest).trim_end();
     let key_type = HYPHANET_KEY_TYPES
         .iter()
         .find(|t| rest.len() > t.len() && rest.get(..t.len()).is_some_and(|head| head.eq_ignore_ascii_case(t)))?;
@@ -706,6 +707,21 @@ mod tests {
         }
         assert_eq!(Source::parse(key).unwrap().to_string(), format!("freenet:{key}"));
         assert_eq!(Source::parse(key).unwrap().site_key(), "USK@abc,def,AQACAAE");
+    }
+
+    #[test]
+    fn whitespace_before_a_fragment_is_not_part_of_a_key() {
+        // Found by fuzz/fuzz_targets/source_parse.rs: the key kept the
+        // whitespace before `#`, which parsing its canonical form trims,
+        // leaving another key, or no address at all ("KSK@\t#").
+        let key = "USK@abc,def,AQACAAE/site/3/";
+        assert_eq!(Source::parse(&format!("{key} #top")).unwrap(), Source::Hyphanet(key.into()));
+        assert!(Source::parse("KSK@\t#").is_err(), "a key type with no key is no key");
+        for input in ["KSK@\t#", "USK@a #b", "freenet:SSK@x\t\t#y"] {
+            if let Ok(source) = Source::parse(input) {
+                assert_eq!(Source::parse(&source.to_string()), Ok(source), "{input:?}");
+            }
+        }
     }
 
     #[test]

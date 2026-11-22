@@ -678,6 +678,33 @@ impl AsyncWrite for SamStream {
     }
 }
 
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use std::pin::pin;
+    use std::task::{Context, Poll, Waker};
+
+    use super::*;
+
+    /// What a SAM bridge sends, read line by line as the client reads it, and
+    /// each line parsed as a reply.
+    pub fn replies(input: &[u8]) {
+        let mut reader = tokio::io::BufReader::new(input);
+        loop {
+            // The bytes are all there, so a read never waits.
+            let Poll::Ready(read) = pin!(read_line(&mut reader)).poll(&mut Context::from_waker(Waker::noop())) else {
+                unreachable!("a read from memory waited");
+            };
+            let Ok(line) = read else { break };
+            // At most MAX_LINE bytes were read, each at most a U+FFFD.
+            assert!(line.len() <= 3 * MAX_LINE);
+            let reply = Reply::parse(&line);
+            let _ = (reply.is("STREAM", "STATUS"), reply.get("RESULT"), reply.topic());
+            assert!(reply.message().chars().count() <= ": ".len() + 200);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

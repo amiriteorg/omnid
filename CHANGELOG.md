@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed: a Hyphanet address with whitespace before its `#fragment`
+  (`freenet:USK@…/site/3/ #top`) kept the whitespace in its key, so the address the crawler
+  stored named another key, or none.
+- Proxy clients' host names are checked on plain HTTP requests (`GET http://host/`) too, not
+  only on CONNECT and SOCKS: a name such as `a)b.i2p` gets a 400 instead of reaching a router.
 - Links whose file name says the crawler would not index them (archives, programs, disk images,
   media, documents, fonts, checksums and signatures, by a URL's last segment or an IPFS gateway's
   `?filename=`) are not followed: asking for one cost a fetch over Tor or I2P, and made an IPFS
