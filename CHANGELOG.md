@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.6 (2026-11-22)
 
 - Releases carry their third-party license notices, which the README said they should and none
   did: `THIRD-PARTY-NOTICES.txt` in the macOS tarball, and Settings → About → Licenses →
