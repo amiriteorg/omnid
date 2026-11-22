@@ -8,7 +8,7 @@ edition = "2024"
 rust-version = "1.92"
 publish = false
 license = "MIT"
-repository = "https://github.com/wckdboy/omnid"
+repository = "https://github.com/amiriteorg/omnid"
 
 [workspace.dependencies]
 omnid = { path = "crates/omnid" }
