@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- IPFS is a network: `ipfs://<CID>/…` and `ipns://<name>/…` (IPNS keys and DNSLink names), fetched
+  and crawled through an IPFS gateway, by default an IPFS node's on 127.0.0.1:8080 (kubo's);
+  `--ipfs-gateway` takes others, best first, as `--fproxy` does. A CID in any base is one address
+  (CIDv1 in base32), and links through public gateways (`https://ipfs.io/ipfs/…`,
+  `https://<CID>.ipfs.dweb.link/…`) are the content itself. An answer without a gateway's headers
+  is refused, so another server on the port is not indexed as IPFS. IPFS is not anonymous, so the
+  crawler never follows a link into it from an onion, I2P or Hyphanet page, and the app's browser
+  never reaches it. New default seeds: IPFS's documentation and the Distributed Wikipedia Mirror.
+  The search page has an IPFS filter and opens IPFS results through `/ipfs/…` and `/ipns/…`, which
+  redirect to the gateway. `/api/status` lists an `ipfs` router, between `hyphanet` and `magnet`.
+  Not in the app yet.
+
 ## 0.1.6 (2026-11-22)
 
 - Releases carry their third-party license notices, which the README said they should and none

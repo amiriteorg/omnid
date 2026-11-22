@@ -69,9 +69,10 @@ pub struct DaemonConfig {
 
 /// Starter addresses on each overlay network, for a new index: services'
 /// own onion sites and Ahmia's list of onion services (which leaves out
-/// those reported for abuse), I2P's hubs and directories, and the Hyphanet
-/// project's default bookmarks, its indexes of freesites among them. Each
-/// answered on 2026-11-21. A network's seeds wait while its router is down.
+/// those reported for abuse), I2P's hubs and directories, the Hyphanet
+/// project's default bookmarks, its indexes of freesites among them, and
+/// IPFS's documentation and Wikipedia's snapshots on IPFS. Each answered on
+/// 2026-11-21 (the IPFS ones through kubo 0.43.1 on 2026-11-22). A network's seeds wait while its router is down.
 /// An onion site on Ahmia's blocklist is not added, though the seeds are
 /// exempt from it: five older ones are on it wrongly. An eepsite is named
 /// only if a new i2pd's address book has the name; otherwise it is given by
@@ -213,6 +214,16 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "freenet:USK@dCnkUL22fAmKbKg-Cftx9j2m4IwyWB0QbGoiq1RSLP8,4d1TDqwRr4tYlsubLrQK~c4h0~FtmE-OXCDmFiI8BB4,AQACAAE/Sharesite/41/",
     "freenet:USK@pGQPA-9PcFiE3A2tCuCjacK165UaX07AQYw98iDQrNA,8gwQ67ytBNR03hNj7JU~ceeew22HVq6G50dcEeMcgks,AQACAAE/flip/17/",
     "freenet:USK@nrDOd1piehaN7z7s~~IYwH-2eK7gcQ9wAtPMxD8xPEs,y61pkcoRy-ccB7BHvLCzt3RUjeMILf8ox26NKvPZ-jk,AQACAAE/dgof/292/",
+    // IPFS, by DNSLink name: its documentation, specifications, blog and
+    // release downloads, and the Distributed Wikipedia Mirror's snapshots,
+    // put on IPFS against censorship (English, Turkish, Russian).
+    "ipns://docs.ipfs.tech/",
+    "ipns://specs.ipfs.tech/",
+    "ipns://blog.ipfs.tech/",
+    "ipns://dist.ipfs.tech/",
+    "ipns://en.wikipedia-on-ipfs.org/wiki/",
+    "ipns://tr.wikipedia-on-ipfs.org/wiki/",
+    "ipns://ru.wikipedia-on-ipfs.org/wiki/",
 ];
 
 /// [`DEFAULT_SEEDS`] as crawl jobs.
@@ -604,7 +615,7 @@ mod tests {
     fn starts_somewhere_on_every_overlay_network() {
         let seeds = default_seeds();
         assert_eq!(seeds.len(), DEFAULT_SEEDS.len(), "every seed parses");
-        for network in [Network::Onion, Network::I2p, Network::Hyphanet] {
+        for network in [Network::Onion, Network::I2p, Network::Hyphanet, Network::Ipfs] {
             assert!(seeds.iter().any(|j| j.source.network() == network), "{network} has seeds");
         }
         assert!(!seeds.iter().any(|j| j.source.network() == Network::Clearnet), "overlay sites only");

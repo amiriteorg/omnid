@@ -1,4 +1,5 @@
-//! Live tests against the real Tor network, i2pd and a Hyphanet node.
+//! Live tests against the real Tor network, i2pd, a Hyphanet node and an IPFS
+//! node.
 //! Ignored by default; `scripts/live-routers.sh all` starts the routers and
 //! runs them. A test whose router is not running fails and says how to start
 //! it, rather than passing.
@@ -242,4 +243,21 @@ async fn live_hyphanet_follows_newer_editions() {
     let edition: u32 = page.source.to_string().split('/').nth(2).and_then(|e| e.parse().ok()).unwrap();
     assert!(edition >= 24, "{}", page.source);
     assert!(text(&page).contains("Freenet First Steps"));
+}
+
+#[tokio::test]
+#[ignore = "live: needs an IPFS node (scripts/live-routers.sh up)"]
+async fn live_ipfs_fetches_cids_and_dnslink_sites() {
+    require_router(8080, "An IPFS node's gateway");
+    let gateway = Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap();
+    // The empty directory, which every kubo repo holds, asked for by its
+    // CIDv0: the gateway gets the CIDv1 and lists the directory.
+    let page = fetch(&gateway, "ipfs://QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn/").await;
+    assert_eq!(page.status, 200);
+    assert_eq!(page.source.to_string(), "ipfs://bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354/");
+    // A DNSLink site, over the IPFS network: the directory's redirect to its
+    // slash stays in IPFS.
+    let page = fetch_with_retries(&gateway, "ipns://docs.ipfs.tech/concepts").await;
+    assert_eq!(page.source.to_string(), "ipns://docs.ipfs.tech/concepts/");
+    assert!(text(&page).contains("IPFS Docs"), "{}", text(&page).chars().take(200).collect::<String>());
 }
