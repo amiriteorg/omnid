@@ -1,0 +1,58 @@
+name: Bug
+description: Something in OMNId does not work as the README says.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A way to learn who you are, or what you visit, is a security problem: report it privately (see SECURITY.md), not here.
+
+        Logs and screenshots can show addresses you visited. Remove anything you would not want public.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Settings → About on the phone, or `omnid --version`.
+      placeholder: "0.1.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Where
+      options:
+        - Android app
+        - omnid on macOS
+        - omnid on another system
+    validations:
+      required: true
+  - type: dropdown
+    id: networks
+    attributes:
+      label: Networks involved
+      multiple: true
+      options:
+        - Clearnet
+        - Tor
+        - I2P
+        - Hyphanet
+        - BitTorrent
+        - None in particular
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: |
+        The phone or computer, and the Android version. Which I2P router or Hyphanet node, and where it runs (the i2pd app, a computer over Tailscale). For `omnid`, the command line, with secrets removed.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The lines around the failure. On a computer, `RUST_LOG=debug` gives more.
+      render: text
