@@ -9,6 +9,7 @@
 //! |          | for the browser, an I2P identity per site           |
 //! | hyphanet | a node's FProxy, of one node or several             |
 //! | ipfs     | an IPFS gateway's paths, of one gateway or several  |
+//! | nostr    | relays over WebSocket, [`Gateway::nostr`]            |
 //! | magnet   | not yet: needs the DHT module                       |
 //!
 //! Redirects are resolved here, against the source that issued them, so a
@@ -20,10 +21,12 @@
 mod download;
 mod guard;
 mod http;
+mod nostr;
 mod routers;
 mod sam;
 mod tailnet;
 mod tor;
+mod ws;
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
@@ -42,6 +45,7 @@ pub use download::{
     Download, DownloadError, DownloadOptions, Expected, MAX_CONNECTIONS, Progress, Route, sanitize_filename,
 };
 pub use guard::is_public_ip;
+pub use nostr::{Event as NostrEvent, Filter as NostrFilter, MAX_EVENTS as NOSTR_MAX_EVENTS};
 pub use sam::{DEFAULT_PORT as DEFAULT_SAM_PORT, beside as sam_beside};
 
 /// The name `http://hyphanet/USK@…` gives the Hyphanet node's FProxy, for the
@@ -56,6 +60,9 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub const DEFAULT_I2P_PROXY: &str = "http://127.0.0.1:4444";
 pub const DEFAULT_FPROXY: &str = "http://127.0.0.1:8888";
 pub const DEFAULT_IPFS_GATEWAY: &str = "http://127.0.0.1:8080";
+/// Relays that let anyone read, asked for Nostr events by default.
+pub const DEFAULT_NOSTR_RELAYS: [&str; 4] =
+    ["wss://nos.lol", "wss://relay.primal.net", "wss://nostr.mom", "wss://relay.damus.io"];
 
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
@@ -86,6 +93,11 @@ pub struct GatewayConfig {
     /// is no anonymity network: the node asks its peers for the content
     /// from its own address. Empty disables IPFS.
     pub ipfs_gateways: Vec<Url>,
+    /// Nostr relays (`wss://`, `ws://`), asked four at a time; a link's own
+    /// relay hints first. They are clearnet hosts (or onions), reached as the
+    /// clearnet is: directly, or through Tor exits with `clearnet_via_tor`.
+    /// Empty disables Nostr.
+    pub nostr_relays: Vec<Url>,
     /// Lets clearnet fetches reach loopback, private and link-local
     /// addresses. Off by default: otherwise any submitted URL turns the
     /// daemon into a proxy into the operator's LAN.
@@ -107,6 +119,7 @@ impl Default for GatewayConfig {
             i2p_sam: Vec::new(),
             fproxies: vec![Url::parse(DEFAULT_FPROXY).expect("valid default")],
             ipfs_gateways: vec![Url::parse(DEFAULT_IPFS_GATEWAY).expect("valid default")],
+            nostr_relays: DEFAULT_NOSTR_RELAYS.iter().map(|r| Url::parse(r).expect("valid default")).collect(),
             allow_private_addresses: false,
             clearnet_via_tor: false,
         }
@@ -324,12 +337,29 @@ impl Gateway {
             self.i2p_status().await,
             probe(&self.fproxy, Network::Hyphanet, "FProxy").await,
             probe(&self.ipfs, Network::Ipfs, "IPFS gateway").await,
+            self.nostr_status(),
             RouterStatus {
                 network: Network::Magnet,
                 state: RouterState::Unsupported,
                 detail: "magnet links are indexed; metadata needs the DHT module".into(),
             },
         ]
+    }
+
+    /// Nostr's relays, as configured: they are not probed, as a probe would be
+    /// a connection to each every 30 seconds.
+    fn nostr_status(&self) -> RouterStatus {
+        let relays = &self.cfg.nostr_relays;
+        if relays.is_empty() {
+            return disabled(Network::Nostr);
+        }
+        let way = if self.cfg.clearnet_via_tor { " through Tor" } else { "" };
+        let names: Vec<&str> = relays.iter().filter_map(Url::host_str).collect();
+        RouterStatus {
+            network: Network::Nostr,
+            state: RouterState::Ready,
+            detail: format!("relays{way}: {}", names.join(", ")),
+        }
     }
 
     /// The HTTP proxies' state, and the SAM bridges': whether the browser's
@@ -392,6 +422,7 @@ impl Gateway {
                     };
                     via_routers(&self.ipfs, network, "no IPFS gateway configured", page, ipfs_answer, opts).await
                 }
+                Source::Nostr(_) => Err(unavailable(network, "Nostr events come from relays: Gateway::nostr")),
                 Source::Magnet(_) => Err(unavailable(
                     network,
                     "fetching torrent metadata (BEP 9) needs the DHT module, which is not built yet",
@@ -490,13 +521,14 @@ impl Gateway {
     }
 
     /// Whether a fetch on `network` comes from this machine's own address, or
-    /// one of the owner's: the clearnet without `clearnet_via_tor`, and IPFS,
+    /// one of the owner's: the clearnet and Nostr's relays without
+    /// `clearnet_via_tor`, and IPFS,
     /// whose node asks its peers for the content itself. An onion site linking
     /// a CID of its own could learn who fetched it as easily as from a
     /// clearnet address.
     pub fn reaches_directly(&self, network: Network) -> bool {
         match network {
-            Network::Clearnet => !self.cfg.clearnet_via_tor,
+            Network::Clearnet | Network::Nostr => !self.cfg.clearnet_via_tor,
             Network::Ipfs => true,
             Network::Onion | Network::I2p | Network::Hyphanet | Network::Magnet => false,
         }

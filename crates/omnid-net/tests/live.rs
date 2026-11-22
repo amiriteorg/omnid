@@ -261,3 +261,28 @@ async fn live_ipfs_fetches_cids_and_dnslink_sites() {
     assert_eq!(page.source.to_string(), "ipns://docs.ipfs.tech/concepts/");
     assert!(text(&page).contains("IPFS Docs"), "{}", text(&page).chars().take(200).collect::<String>());
 }
+
+#[tokio::test]
+#[ignore = "live: Nostr relays"]
+async fn live_nostr_reads_a_profile_from_relays() {
+    let gateway = Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap();
+    // fiatjaf, who made Nostr.
+    let fiatjaf: [u8; 32] = (0..32)
+        .map(|i| {
+            u8::from_str_radix(
+                &"3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d"[2 * i..2 * i + 2],
+                16,
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    let filter =
+        omnid_net::NostrFilter { authors: vec![fiatjaf], kinds: vec![0], limit: Some(1), ..Default::default() };
+    let events = gateway.nostr(&filter, &[]).await.unwrap();
+    assert!(!events.is_empty(), "no default relay had the profile");
+    // Every event came back checked; the newest names him.
+    let newest = events.iter().max_by_key(|e| e.created_at).unwrap();
+    assert!(newest.content.contains("fiatjaf"), "{}", newest.content);
+}

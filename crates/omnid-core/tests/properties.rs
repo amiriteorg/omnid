@@ -2,6 +2,7 @@
 //! canonical forms are stable, and joining links keeps those promises.
 
 use data_encoding::{BASE32_NOPAD, HEXLOWER};
+use omnid_core::nostr::{Nostr, NostrTarget};
 use omnid_core::{Network, Source};
 use proptest::prelude::*;
 
@@ -118,8 +119,22 @@ fn ipfs() -> impl Strategy<Value = String> {
     ]
 }
 
+/// A note, a profile or an article, written as `nostr:` URIs or bare.
+fn nostr() -> impl Strategy<Value = String> {
+    let target = prop_oneof![
+        any::<[u8; 32]>().prop_map(NostrTarget::Event),
+        any::<[u8; 32]>().prop_map(NostrTarget::Profile),
+        (any::<u32>(), any::<[u8; 32]>(), "[a-z0-9-]{0,20}")
+            .prop_map(|(kind, author, identifier)| NostrTarget::Address { kind, author, identifier }),
+    ];
+    (target, any::<bool>()).prop_map(|(target, bare)| {
+        let uri = Nostr { target, relays: vec![] }.to_string();
+        if bare { uri.trim_start_matches("nostr:").to_owned() } else { uri }
+    })
+}
+
 fn address() -> impl Strategy<Value = String> {
-    prop_oneof![4 => url(), 1 => magnet(), 1 => freenet_key(), 1 => ipfs()]
+    prop_oneof![4 => url(), 1 => magnet(), 1 => freenet_key(), 1 => ipfs(), 1 => nostr()]
 }
 
 proptest! {

@@ -40,6 +40,7 @@
   --i2p: #45d3d9;
   --hyphanet: #6fa2ff;
   --ipfs: #b5d96a;
+  --nostr: #e08ce0;
   --mono: "Space Mono", ui-monospace, "Roboto Mono", Menlo, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   /* One type ramp, 1.2 steps from the 15px body, and an 11px step for state
@@ -78,6 +79,7 @@
     --i2p: #0a7279;
     --hyphanet: #2a63d6;
     --ipfs: #557a0c;
+    --nostr: #9a2f9a;
   }
 }
 
@@ -315,6 +317,7 @@ details.files li { overflow-wrap: anywhere; }
 .net-i2p { --net: var(--i2p); }
 .net-hyphanet { --net: var(--hyphanet); }
 .net-ipfs { --net: var(--ipfs); }
+.net-nostr { --net: var(--nostr); }
 
 @media (min-width: 720px) {
   .top { padding-top: 2rem; }

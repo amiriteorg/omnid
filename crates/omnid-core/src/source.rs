@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use url::{Host, Position, Url};
 
 use crate::ipfs::{self, Namespace};
+use crate::nostr::{self, Nostr};
 
 /// Origin used to resolve relative links inside a freesite. FProxy serves keys
 /// at the root of its origin, so a key behaves like an absolute path there.
@@ -27,12 +28,21 @@ pub enum Network {
     /// IPFS content (`ipfs://<CID>/…`) and IPNS names (`ipns://<name>/…`),
     /// through an IPFS gateway.
     Ipfs,
+    /// Nostr events, profiles and articles (`nostr:note1…`), from relays.
+    Nostr,
     Magnet,
 }
 
 impl Network {
-    pub const ALL: [Network; 6] =
-        [Network::Clearnet, Network::Onion, Network::I2p, Network::Hyphanet, Network::Ipfs, Network::Magnet];
+    pub const ALL: [Network; 7] = [
+        Network::Clearnet,
+        Network::Onion,
+        Network::I2p,
+        Network::Hyphanet,
+        Network::Ipfs,
+        Network::Nostr,
+        Network::Magnet,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -41,6 +51,7 @@ impl Network {
             Network::I2p => "i2p",
             Network::Hyphanet => "hyphanet",
             Network::Ipfs => "ipfs",
+            Network::Nostr => "nostr",
             Network::Magnet => "magnet",
         }
     }
@@ -62,6 +73,7 @@ impl FromStr for Network {
             "i2p" => Ok(Network::I2p),
             "hyphanet" | "freenet" => Ok(Network::Hyphanet),
             "ipfs" | "ipns" => Ok(Network::Ipfs),
+            "nostr" => Ok(Network::Nostr),
             "magnet" | "dht" | "torrent" => Ok(Network::Magnet),
             _ => Err(SourceError::UnknownNetwork(s.to_owned())),
         }
@@ -80,6 +92,8 @@ pub enum SourceError {
     BadOnion(String),
     #[error("not an IPFS CID or IPNS name: `{0}`")]
     BadIpfs(String),
+    #[error("not a Nostr note, profile or address: `{0}`")]
+    BadNostr(String),
     #[error("magnet link has no BitTorrent v1 info hash (xt=urn:btih:...)")]
     NoInfoHash,
     #[error("unknown network `{0}`")]
@@ -100,18 +114,22 @@ pub enum Source {
     /// canonical form: a CID as CIDv1 in base32, an IPNS key as CIDv1 in
     /// base36, a DNSLink name as its lowercase hostname.
     Ipfs(Url),
+    Nostr(Nostr),
     Magnet(Magnet),
 }
 
 impl Source {
     /// Parses anything a user might paste: a URL, a bare host
     /// (`xyz.onion`), a `freenet:`/`hyphanet:` key, an IPFS address
-    /// (`ipfs://`, `ipns://`, `/ipfs/…`, `dweb:/ipfs/…` or a bare CID) or a
-    /// magnet link.
+    /// (`ipfs://`, `ipns://`, `/ipfs/…`, `dweb:/ipfs/…` or a bare CID), a
+    /// Nostr entity (`nostr:npub1…`, or bare) or a magnet link.
     pub fn parse(input: &str) -> Result<Self, SourceError> {
         let input = input.trim();
         if input.is_empty() {
             return Err(SourceError::Invalid(String::new()));
+        }
+        if let Some(entity) = nostr_entity(input) {
+            return entity;
         }
         if strip_prefix_ignore_case(input, "magnet:").is_some() {
             return Magnet::parse(input).map(Source::Magnet);
@@ -139,6 +157,7 @@ impl Source {
     pub fn from_url(mut url: Url) -> Result<Self, SourceError> {
         match url.scheme() {
             "http" | "https" => {}
+            "nostr" => return Nostr::parse(url.as_str()).map(Source::Nostr).ok_or(SourceError::BadNostr(url.into())),
             scheme => match Namespace::from_name(scheme) {
                 Some(namespace) => {
                     let id = url.host_str().ok_or_else(|| SourceError::BadIpfs(url.to_string()))?;
@@ -161,7 +180,7 @@ impl Source {
         Ok(match network {
             Network::Onion => Source::Onion(url),
             Network::I2p => Source::I2p(url),
-            _ => through_gateway(&url).unwrap_or(Source::Clearnet(url)),
+            _ => through_gateway(&url).or_else(|| through_nostr_client(&url)).unwrap_or(Source::Clearnet(url)),
         })
     }
 
@@ -172,6 +191,7 @@ impl Source {
             Source::I2p(_) => Network::I2p,
             Source::Hyphanet(_) => Network::Hyphanet,
             Source::Ipfs(_) => Network::Ipfs,
+            Source::Nostr(_) => Network::Nostr,
             Source::Magnet(_) => Network::Magnet,
         }
     }
@@ -180,7 +200,7 @@ impl Source {
     pub fn url(&self) -> Option<&Url> {
         match self {
             Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => Some(url),
-            Source::Hyphanet(_) | Source::Ipfs(_) | Source::Magnet(_) => None,
+            Source::Hyphanet(_) | Source::Ipfs(_) | Source::Nostr(_) | Source::Magnet(_) => None,
         }
     }
 
@@ -192,7 +212,8 @@ impl Source {
     }
 
     /// Groups requests for politeness: a host, a freesite, one IPFS root or
-    /// IPNS name, or one torrent.
+    /// IPNS name, one Nostr author (an event's own ID until its author is
+    /// known), or one torrent.
     pub fn site_key(&self) -> String {
         match self {
             Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => {
@@ -200,6 +221,10 @@ impl Source {
             }
             Source::Hyphanet(key) => key.split('/').next().unwrap_or(key).to_owned(),
             Source::Ipfs(url) => format!("{}:{}", url.scheme(), url.host_str().unwrap_or_default()),
+            Source::Nostr(entity) => match entity.author() {
+                Some(author) => format!("nostr:{}", nostr::npub(&author)),
+                None => entity.to_string(),
+            },
             Source::Magnet(magnet) => format!("btih:{}", magnet.info_hash_hex()),
         }
     }
@@ -218,6 +243,9 @@ impl Source {
         {
             return hyphanet_key(href).map(Source::Hyphanet);
         }
+        if strip_prefix_ignore_case(href, "nostr:").is_some() {
+            return Nostr::parse(href).map(Source::Nostr);
+        }
         let base = match self {
             Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => url.clone(),
             Source::Hyphanet(key) => Url::parse(HYPHANET_BASE).ok()?.join(key).ok()?,
@@ -233,6 +261,8 @@ impl Source {
                 }
                 url.clone()
             }
+            // Nostr content links only by full address.
+            Source::Nostr(_) => return Source::from_url(Url::parse(href).ok()?).ok(),
             Source::Magnet(_) => return None,
         };
         let joined = base.join(href).ok()?;
@@ -257,6 +287,7 @@ impl fmt::Display for Source {
                 f.write_str(url.as_str())
             }
             Source::Hyphanet(key) => write!(f, "freenet:{key}"),
+            Source::Nostr(entity) => write!(f, "{entity}"),
             Source::Magnet(magnet) => write!(f, "magnet:?xt=urn:btih:{}", magnet.info_hash_hex()),
         }
     }
@@ -362,6 +393,27 @@ fn hyphanet_key(input: &str) -> Option<String> {
         .iter()
         .find(|t| rest.len() > t.len() && rest.get(..t.len()).is_some_and(|head| head.eq_ignore_ascii_case(t)))?;
     Some(format!("{key_type}{}", &rest[key_type.len()..]))
+}
+
+/// A `nostr:` URI, or a bare entity (`npub1…`, `note1…`, `nevent1…`,
+/// `nprofile1…`, `naddr1…`). `None` when it is neither; an error when it
+/// looks like one and does not decode.
+fn nostr_entity(input: &str) -> Option<Result<Source, SourceError>> {
+    let scheme = strip_prefix_ignore_case(input, "nostr:").is_some();
+    let bare = ["npub1", "note1", "nevent1", "nprofile1", "naddr1"]
+        .iter()
+        .any(|hrp| strip_prefix_ignore_case(input, hrp).is_some() && !input.contains(['/', '.', ':']));
+    (scheme || bare).then(|| Nostr::parse(input).map(Source::Nostr).ok_or_else(|| SourceError::BadNostr(input.into())))
+}
+
+/// The Nostr entity a known web client's page shows: njump.me/<entity>,
+/// primal.net/e/<entity> and the like.
+fn through_nostr_client(url: &Url) -> Option<Source> {
+    let host = url.host_str()?.trim_start_matches("www.");
+    if !nostr::KNOWN_CLIENTS.contains(&host) {
+        return None;
+    }
+    url.path_segments()?.take(2).find_map(Nostr::parse).map(Source::Nostr)
 }
 
 /// Drops what carries a visitor's session rather than a page: phpBB's `sid`,
@@ -607,6 +659,43 @@ mod tests {
         assert_eq!("Freenet".parse::<Network>().unwrap(), Network::Hyphanet);
         assert_eq!("ipns".parse::<Network>().unwrap(), Network::Ipfs);
         assert!("gopher".parse::<Network>().is_err());
+    }
+
+    const NPUB: &str = "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg";
+    const NPROFILE: &str = "nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p";
+
+    #[test]
+    fn parses_nostr_entities_and_their_web_pages() {
+        for input in [
+            format!("nostr:{NPUB}"),
+            NPUB.to_owned(),
+            NPUB.to_ascii_uppercase(),
+            format!("https://njump.me/{NPUB}"),
+            format!("https://primal.net/p/{NPUB}"),
+        ] {
+            let source = Source::parse(&input).unwrap_or_else(|e| panic!("{input}: {e}"));
+            assert_eq!(source.network(), Network::Nostr, "{input}");
+            assert_eq!(source.to_string(), format!("nostr:{NPUB}"), "{input}");
+            assert_eq!(source.site_key(), format!("nostr:{NPUB}"));
+            assert!(source.url().is_none() && source.robots_txt().is_none());
+        }
+        let profile = Source::parse(&format!("nostr:{NPROFILE}")).unwrap();
+        assert!(profile.to_string().starts_with("nostr:npub1"), "relay hints are not the address");
+        assert!(matches!(Source::parse("nostr:npub1nothing"), Err(SourceError::BadNostr(_))));
+        assert!(matches!(Source::parse("npub1qqqqqqqqqq"), Err(SourceError::BadNostr(_))));
+        assert_eq!(Source::parse("https://njump.me/about").unwrap().network(), Network::Clearnet);
+        assert_eq!(Source::parse("npub1.example.com").unwrap().network(), Network::Clearnet, "a host, not an entity");
+    }
+
+    #[test]
+    fn joins_nostr_links() {
+        let web = Source::parse("https://example.com/").unwrap();
+        assert_eq!(web.join(&format!("nostr:{NPUB}")).unwrap().network(), Network::Nostr);
+        let note = Source::parse(&format!("nostr:{NPUB}")).unwrap();
+        assert_eq!(note.join("https://example.com/x").unwrap().to_string(), "https://example.com/x");
+        assert_eq!(note.join(&format!("nostr:{NPROFILE}")).unwrap().network(), Network::Nostr);
+        assert_eq!(note.join("relative/page"), None, "nothing is relative to a note");
+        assert_eq!(note.join("#tag"), None);
     }
 
     const CID_V0: &str = "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn";

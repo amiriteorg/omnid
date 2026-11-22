@@ -4,6 +4,7 @@
 pub mod extract;
 mod forums;
 mod frontier;
+pub mod nostr;
 mod robots;
 pub mod safety;
 mod store;
@@ -13,6 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use omnid_core::nostr::{Nostr, NostrTarget};
 use omnid_core::{IndexedDoc, Magnet, Network, Source, now_secs};
 use omnid_dht::{Dht, TorrentMeta};
 use omnid_index::SearchIndex;
@@ -372,6 +374,9 @@ impl Context {
         if let Source::Magnet(magnet) = source {
             return self.magnet(magnet, job).await;
         }
+        if let Source::Nostr(entity) = source {
+            return self.nostr(entity, job).await;
+        }
         match self.robots.allowed(&self.gateway, source).await {
             Ok(true) => {}
             Ok(false) => return Outcome::NotIndexed { reason: "disallowed by robots.txt".into(), links: vec![] },
@@ -490,6 +495,61 @@ impl Context {
             url,
         };
         Outcome::Indexed { doc: Box::new(doc), links: vec![] }
+    }
+
+    /// A Nostr event, article or profile, from the relays: each event the
+    /// gateway hands over is checked, and its author must not be denied.
+    async fn nostr(&self, entity: &Nostr, job: &Job) -> Outcome {
+        let ask = |filter| async move { self.gateway.nostr(&filter, &entity.relays).await };
+        let found = match ask(nostr::filter(&entity.target)).await {
+            Ok(events) => events,
+            Err(e) => return failed(&e, ""),
+        };
+        CrawlStats::bump(&self.control.stats.fetched);
+        let Some(event) = nostr::newest(found) else {
+            return Outcome::Failed { visit: Visit::Failed, error: "no relay asked has it".into() };
+        };
+        let author = Source::Nostr(Nostr { target: NostrTarget::Profile(event.pubkey), relays: vec![] });
+        if self.safety.check_source(&author) != Verdict::Allow {
+            return Outcome::Blocked(Verdict::DeniedSite);
+        }
+        // Whatever fails here leaves the event itself to index.
+        let fields = match (&entity.target, event.kind) {
+            (NostrTarget::Profile(pubkey), _) => {
+                let events = ask(nostr::profile_events(*pubkey)).await.unwrap_or_default();
+                nostr::profile(&event, &events)
+            }
+            (_, nostr::CHANNEL) => {
+                let messages = ask(nostr::channel_messages(event.id)).await.unwrap_or_default();
+                nostr::event(&event, &messages)
+            }
+            _ => nostr::event(&event, &[]),
+        };
+        let url = job.source.to_string();
+        let verdict = self.safety.check_content(&[&url, &fields.title, &fields.description, &fields.body]);
+        if verdict != Verdict::Allow {
+            return Outcome::Blocked(verdict);
+        }
+        let links = self.follow(&job.source, &fields.links);
+        let now = now_secs();
+        let doc = IndexedDoc {
+            network: Network::Nostr,
+            site: author.site_key(),
+            title: fields.title,
+            description: fields.description,
+            keywords: fields.keywords,
+            content_hash: content_hash(&fields.body, &event.id),
+            body: fields.body,
+            info_hash: None,
+            files: vec![],
+            first_seen: now,
+            last_seen: now,
+            liveness: 1.0,
+            trust: job.trust,
+            lang: None,
+            url,
+        };
+        Outcome::Indexed { doc: Box::new(doc), links }
     }
 
     fn follow(&self, from: &Source, hrefs: &[String]) -> Vec<Source> {
