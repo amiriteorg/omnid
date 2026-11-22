@@ -368,7 +368,20 @@ A new level reloads every open tab.
   the clearnet (without `--clearnet-via-tor`) and IPFS itself.
 - **HTML is tokenized, not parsed into a tree.** A tree builder does work
   proportional to nesting depth on every element: a 600 KB page of nested
-  `<div>`s took 11.5 s in release. The tokenizer is linear.
+  `<div>`s took 11.5 s in release. The tokenizer is linear. omnid runs no
+  scripts, so `<noscript>` is read as a page shows with scripts off; its text
+  comes after the rest of the page's.
+- **Forums** spend a site's page budget on threads. Addresses that are a
+  forum's sign-in, sign-up, member, profile, search, reply or print pages
+  (Discourse, NodeBB, Lemmy, Flarum, XenForo, phpBB, MyBB, vBulletin, FluxBB,
+  SMF) are not fetched; crawling 80 addresses each, 45 of Discourse Meta's had
+  been user pages. Session IDs in links (phpBB's `sid`, vBulletin's `s`,
+  `PHPSESSID`, `jsessionid`) are dropped from the address, so a thread has one.
+  A page whose `<link rel="canonical">` names another address on its site, at
+  the same path or above it, is crawled there instead (a front page named as
+  every page's canonical is ignored). A page with a captcha or bot check
+  in its markup and little text besides is not indexed, and is tried again
+  later as a failure is.
 - **Magnets** are resolved by a read-only DHT node (BEP 43 `ro`, rate
   limited, private and low-port peers skipped). Only the info dictionary is
   fetched over `ut_metadata` and checked against the info hash; no piece is

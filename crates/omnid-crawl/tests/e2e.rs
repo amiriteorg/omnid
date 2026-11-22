@@ -434,3 +434,75 @@ async fn crawls_ipfs_from_the_web_but_not_from_anonymous_pages() {
     assert!(!asked.lock().unwrap().iter().any(|p| p.contains(PLANTED_CID)), "{:?}", asked.lock().unwrap());
     assert_eq!(hits(&index, "freesite", &[Network::Hyphanet]).len(), 1);
 }
+
+/// A forum with what forums have besides threads: people, sign-in and search
+/// pages, a post's address with a parameter beside its own, a session ID in
+/// its links, a bot check, and a Flarum-style page whose links are all in
+/// `<noscript>`. Returns the base and the paths fetched.
+async fn serve_forum() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    const SID: &str = "0123456789abcdef0123456789abcdef";
+    let fetched = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = fetched.clone();
+    let app = Router::new().fallback(move |uri: axum::http::Uri| {
+        log.lock().unwrap().push(uri.to_string());
+        async move {
+            let page = match (uri.path(), uri.query()) {
+                ("/", _) => format!(
+                    r#"<title>Board index</title>
+                    <a href="/t/walnuts/1">thread</a> <a href="/u/alice">alice</a> <a href="/login">log in</a>
+                    <a href="/search?q=x">search</a> <a href="/post/1?scrollToComments=true">post</a>
+                    <a href="/viewtopic.php?t=3&sid={SID}">topic</a> <a href="/viewtopic.php?t=3">topic</a>
+                    <a href="/check">check</a> <a href="/flarum">flarum</a>"#
+                ),
+                ("/t/walnuts/1", _) => "<title>Walnut thread</title><p>all about walnuts</p>".into(),
+                ("/post/1", None) => {
+                    r#"<link rel="canonical" href="/post/1"><title>Pecan post</title><p>all about pecans</p>"#.into()
+                }
+                ("/post/1", Some(_)) => {
+                    r#"<link rel="canonical" href="/post/1"><title>Pecan post</title><p>all about pecans, again</p>"#.into()
+                }
+                ("/viewtopic.php", Some("t=3")) => "<title>Hazel topic</title><p>all about hazelnuts</p>".into(),
+                ("/check", _) => {
+                    r#"<title></title><form><p>Human Verification</p><div class="h-captcha" data-sitekey="k"></div></form>"#.into()
+                }
+                ("/flarum", _) => r#"<title>Flarum</title><noscript>You need JavaScript.</noscript>
+                    <noscript id="flarum-content"><ul><li><a href="/d/2-almonds">Almonds</a></li></ul></noscript>"#
+                    .into(),
+                ("/d/2-almonds", _) => "<title>Almond discussion</title><p>all about cashews</p>".into(),
+                _ => return StatusCode::NOT_FOUND.into_response(),
+            };
+            Html(page).into_response()
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (base, fetched)
+}
+
+#[tokio::test]
+async fn crawls_a_forums_threads_and_leaves_the_rest() {
+    let (base, fetched) = serve_forum().await;
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let stats = crawl(crawler(index.clone(), store, None), &[&base]).await;
+
+    let fetched = fetched.lock().unwrap().clone();
+    for path in ["/u/alice", "/login", "/search?q=x"] {
+        assert!(!fetched.iter().any(|p| p == path), "{path} was fetched: {fetched:?}");
+    }
+    let topic_fetches = fetched.iter().filter(|p| p.starts_with("/viewtopic.php")).count();
+    assert_eq!(topic_fetches, 1, "the session ID made no second address: {fetched:?}");
+
+    // The board, the thread, the post (once, at its own address), the topic,
+    // the Flarum page and the discussion only its <noscript> links to.
+    assert_eq!(stats.indexed, 6, "{stats:?}");
+    for word in ["walnuts", "hazelnuts", "cashews"] {
+        assert_eq!(hits(&index, word, &[]).len(), 1, "{word}");
+    }
+    let pecans = hits(&index, "pecans", &[]);
+    assert_eq!(pecans.len(), 1);
+    assert_eq!(pecans[0].routes[0].url, format!("{base}post/1"));
+    assert!(hits(&index, "verification", &[]).is_empty(), "the bot check is not a page");
+    assert_eq!(stats.failed, 1, "the bot check is asked again later: {stats:?}");
+}

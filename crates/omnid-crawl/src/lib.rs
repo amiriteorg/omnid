@@ -2,6 +2,7 @@
 //! safety → index, with discovered links written back to the store.
 
 pub mod extract;
+mod forums;
 mod frontier;
 mod robots;
 pub mod safety;
@@ -35,6 +36,10 @@ pub const HARVESTED_TRUST: f32 = 0.3;
 const HEALTHY_SWARM: f32 = 20.0;
 /// File names kept in the index per torrent; the description keeps the count.
 const MAX_INDEXED_FILES: usize = 1_000;
+/// A page with a captcha or bot check in its markup and less visible text
+/// than this is the check itself: MyBB's "Human Verification" was 300 bytes,
+/// a forum thread is several thousand.
+const CHALLENGE_TEXT: usize = 1_500;
 
 #[derive(Debug, Clone)]
 pub struct CrawlConfig {
@@ -395,6 +400,10 @@ impl Context {
         };
 
         let page = extract::extract(page.content_type.as_deref(), &body);
+        if page.challenge && page.text.len() < CHALLENGE_TEXT {
+            // Asked again later, as a failure is: the check may let it through.
+            return Outcome::Failed { visit: Visit::Failed, error: "a captcha or bot check".into() };
+        }
         let url = source.to_string();
         let verdict = self.safety.check_content(&[&url, &page.title, &page.description, &page.text]);
         if verdict != Verdict::Allow {
@@ -403,6 +412,13 @@ impl Context {
         let links = if page.nofollow { vec![] } else { self.follow(source, &page.links) };
         if page.noindex {
             return Outcome::NotIndexed { reason: "noindex".into(), links };
+        }
+        if let Some(original) = page.canonical.as_deref().and_then(|c| copy_of(source, c)) {
+            // The original goes through the store like any link, so it is
+            // crawled once however many copies point at it.
+            let mut links = links;
+            links.extend(self.follow(source, &[original.to_string()]));
+            return Outcome::NotIndexed { reason: format!("a copy of {original}"), links };
         }
 
         let now = now_secs();
@@ -496,6 +512,7 @@ impl Context {
         };
         (link.network() != Network::Clearnet || clearnet_ok())
             && !self.gateway.leaves_anonymity(from.network(), link.network())
+            && !link.url().is_some_and(forums::is_chaff)
             && self.safety.check_source(link) == Verdict::Allow
     }
 
@@ -641,6 +658,23 @@ fn human_size(bytes: u64) -> String {
 }
 
 /// `www.example.com` and `example.com` are one site.
+/// The page `canonical` names, when `source` is a copy of it on the same site:
+/// the same path with another query (`/post/1?scrollToComments=true` of
+/// `/post/1`, a phpBB topic with other parameters), or a page below it
+/// (`/t/topic/123/4`, a post's place in its topic, of `/t/topic/123`). A
+/// canonical address anywhere else, the site's front page above all, is
+/// taken for a mistake and left alone.
+fn copy_of(source: &Source, canonical: &str) -> Option<Source> {
+    let original = source.join(canonical)?;
+    let (from, to) = (source.url()?, original.url()?);
+    if to == from || to.host_str() != from.host_str() || to.port() != from.port() {
+        return None;
+    }
+    let below = from.path().strip_prefix(to.path().trim_end_matches('/')).is_some_and(|rest| rest.starts_with('/'));
+    let same_path = to.path() == from.path();
+    (same_path || (below && to.path() != "/")).then_some(original)
+}
+
 fn same_site(a: &str, b: &str) -> bool {
     a.strip_prefix("www.").unwrap_or(a) == b.strip_prefix("www.").unwrap_or(b)
 }
@@ -678,6 +712,40 @@ mod tests {
         };
         assert_eq!(describe(&meta), "1 file · 123.3 MB · 322 peers");
         assert_eq!(human_size(512), "512 B");
+    }
+
+    #[test]
+    fn a_copy_names_its_original_on_the_same_site_only() {
+        let copy =
+            |page: &str, canonical: &str| copy_of(&Source::parse(page).unwrap(), canonical).map(|s| s.to_string());
+        // Lemmy, NodeBB, phpBB, Discourse, as they say it.
+        assert_eq!(
+            copy("https://lemmy.ml/post/5?scrollToComments=true", "https://lemmy.ml/post/5").as_deref(),
+            Some("https://lemmy.ml/post/5")
+        );
+        assert_eq!(
+            copy("https://community.nodebb.org/topic/18883/push/4", "https://community.nodebb.org/topic/18883/push")
+                .as_deref(),
+            Some("https://community.nodebb.org/topic/18883/push")
+        );
+        assert_eq!(
+            copy("http://f.example/viewtopic.php?f=2&t=9", "viewtopic.php?t=9").as_deref(),
+            Some("http://f.example/viewtopic.php?t=9")
+        );
+        assert_eq!(copy("https://d.example/t/x/7/3", "/t/x/7/").as_deref(), Some("https://d.example/t/x/7/"));
+        assert_eq!(
+            copy("http://d.example/a?x=1", "https://d.example/a").as_deref(),
+            Some("https://d.example/a"),
+            "to https"
+        );
+        // Not copies: itself, elsewhere, the front page, a sibling, a page below.
+        assert_eq!(copy("https://lemmy.ml/post/5", "https://lemmy.ml/post/5"), None);
+        assert_eq!(copy("https://lemmy.ml/post/5", "https://other.example/post/5"), None);
+        assert_eq!(copy("https://lemmy.ml/post/5", "/"), None);
+        assert_eq!(copy("https://lemmy.ml/post/5", "/post/6"), None);
+        assert_eq!(copy("https://lemmy.ml/post", "/post/5"), None);
+        assert_eq!(copy("https://lemmy.ml/postal/5", "/post"), None, "a path prefix is not a parent");
+        assert_eq!(copy("freenet:USK@a,b,c/s/1/", "/USK@a,b,c/s/2/"), None);
     }
 
     #[test]
