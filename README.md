@@ -277,7 +277,9 @@ A new level reloads every open tab.
 | `crates/omnid-dht` | read-only DHT client: get_peers, BEP 9 metadata, BEP 51 sampling, own bencode |
 | `crates/omnid` | the daemon as a library (`omnid::start`) and the CLI; API, search page, SOCKS proxy |
 | `crates/omnid-android` | JNI bridge for the app |
-| `android/` | the Android app (Kotlin, platform APIs only) |
+| `android/` | the Android app (Kotlin, platform APIs only, plus GeckoView for the browser) |
+| `scripts/` | the emulator smoke test, the live router tests, the app icons |
+| `docs/` | [benchmarks](docs/benchmarks.md) and [how a release is cut](docs/releasing.md) |
 
 ## Design notes
 
@@ -606,7 +608,10 @@ until each serves pages, and deletes their state afterwards. A live test whose
 router is not running fails and says so.
 
 Benchmarks and their recorded results are in [docs/benchmarks.md](docs/benchmarks.md):
-`bench_crawl`, `bench_search`, `bench_tor` and the DHT `soak`.
+`bench_crawl`, `bench_search`, `bench_tor`, `bench_download` and the DHT `soak`.
+
+Releases are cut as [docs/releasing.md](docs/releasing.md) describes, and the plan is in
+[ROADMAP.md](ROADMAP.md). Agents changing the code start from [AGENTS.md](AGENTS.md).
 
 ## License
 
