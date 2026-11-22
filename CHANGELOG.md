@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.4 (2026-11-22)
 
 - Each I2P site the app's browser opens gets an I2P identity of its own, as each gets Tor circuits
   of its own: through the router's SAM bridge, a new destination per site, never published, on
@@ -14,7 +14,6 @@
 - The search page's I2P row says whether sites get identities of their own, and when they share
   one (the i2pd app as it ships: SAM off, 1-hop tunnels) offers Settings → I2P router, whose text
   says how to turn SAM on.
-
 - Anonymity: on the phone, the crawler now reaches web pages through Tor and the BitTorrent DHT is
   off by default (Settings → Anonymity → Crawl the web through Tor, Torrent lookups). The crawler
   follows what it finds, so directly, a page on an onion site could make the phone fetch a clearnet
