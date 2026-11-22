@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: a Hyphanet address with whitespace before its `#fragment`
+  (`freenet:USK@…/site/3/ #top`) kept the whitespace in its key, so the address the crawler
+  stored named another key, or none.
+
 ## 0.1.6 (2026-11-22)
 
 - Releases carry their third-party license notices, which the README said they should and none
