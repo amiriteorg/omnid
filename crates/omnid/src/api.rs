@@ -53,6 +53,8 @@ pub fn router(state: AppState, listen: SocketAddr, token: Option<String>) -> Rou
         .route("/api/status", get(status))
         .route("/api/crawl", post(crawl))
         .route("/hyphanet/{*key}", get(hyphanet))
+        .route("/ipfs/{*path}", get(|state, Path(path): Path<String>| ipfs(state, format!("/ipfs/{path}"))))
+        .route("/ipns/{*path}", get(|state, Path(path): Path<String>| ipfs(state, format!("/ipns/{path}"))))
         .with_state(state);
     if let Some(token) = token {
         router = router.layer(middleware::from_fn_with_state(Arc::<str>::from(token), require_token));
@@ -184,6 +186,28 @@ async fn hyphanet(State(state): State<AppState>, Path(key): Path<String>) -> Res
     let page = fproxy.join(key).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
     if page.origin() != fproxy.origin() {
         return Err(ApiError(StatusCode::BAD_REQUEST, "not a Hyphanet key".into()));
+    }
+    Ok(Redirect::temporary(page.as_str()))
+}
+
+/// IPFS content in an ordinary browser, which the search page links here:
+/// the IPFS gateway serves it. CIDs and IPNS names only, never a URL, so this
+/// redirects nowhere but the gateway.
+async fn ipfs(State(state): State<AppState>, path: String) -> Result<Redirect, ApiError> {
+    let gateway = state
+        .gateway
+        .ipfs_gateway()
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "no IPFS gateway is configured".into()))?;
+    let source = Source::parse(&path).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
+    let Some(path) = source.gateway_path() else {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "not an IPFS address".into()));
+    };
+    if state.safety.check_source(&source) != Verdict::Allow {
+        return Err(ApiError(StatusCode::FORBIDDEN, "that site is on the denylist".into()));
+    }
+    let page = gateway.join(&path).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e.to_string()))?;
+    if page.origin() != gateway.origin() {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "not an IPFS address".into()));
     }
     Ok(Redirect::temporary(page.as_str()))
 }

@@ -73,7 +73,7 @@ fn api_with(token: Option<&str>, node: Option<&str>) -> Api {
         index: Arc::new(index),
         control: control.clone(),
         jobs,
-        safety: Arc::new(Safety::from_lists("denied.example\nCHK@denied,x,y", "")),
+        safety: Arc::new(Safety::from_lists("denied.example\nCHK@denied,x,y\nipfs://bafkqaaa", "")),
         dht: None,
     };
     let listen: SocketAddr = LISTEN.parse().unwrap();
@@ -242,6 +242,31 @@ async fn serves_the_page_with_a_strict_policy() {
         assert!(csp.contains("font-src 'self';"), "the page's own font, and no other: {csp}");
         assert_eq!(headers[header::REFERRER_POLICY], "no-referrer");
     }
+}
+
+#[tokio::test]
+async fn sends_ipfs_addresses_to_the_gateway() {
+    // Outside the app, an IPFS result links here and the gateway serves it,
+    // the CID in its canonical form.
+    let node = api_with(None, Some("http://127.0.0.1:8080/"));
+    let cid = "bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354";
+    for (path, location) in [
+        ("/ipfs/QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn/wiki/A%20page", format!("ipfs/{cid}/wiki/A%20page")),
+        ("/ipns/Docs.IPFS.tech/", "ipns/docs.ipfs.tech/".into()),
+    ] {
+        let response = node.router.clone().oneshot(get(path).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT, "{path}");
+        assert_eq!(response.headers()[header::LOCATION], format!("http://127.0.0.1:8080/{location}").as_str());
+    }
+    // CIDs and names only: nothing else is sent on, to the gateway or anywhere.
+    for path in ["/ipfs/http:%2F%2Fevil.example/", "/ipfs//evil.example/x", "/ipfs/not-a-cid", "/ipns/x.onion/"] {
+        let (status, _) = send(&node.router, get(path).body(Body::empty()).unwrap()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}");
+    }
+    let (status, _) = send(&node.router, get("/ipfs/bafkqaaa/").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "the denylist holds");
+    let (status, _) = send(&api(None).router, get(&format!("/ipfs/{cid}/")).body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "no gateway configured");
 }
 
 #[tokio::test]
