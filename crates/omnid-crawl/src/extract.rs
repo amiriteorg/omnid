@@ -23,7 +23,12 @@ const MAX_KEYWORDS: usize = 32;
 /// November 2026); the page-size cap bounds this too.
 const MAX_LINKS: usize = 20_000;
 /// Elements whose text is not shown to a reader.
-const INVISIBLE: [&str; 5] = ["script", "style", "noscript", "template", "svg"];
+const INVISIBLE: [&str; 4] = ["script", "style", "template", "svg"];
+/// Words in a page's markup (classes, ids, field names, script addresses)
+/// that make it a captcha or a bot check: hCaptcha, reCAPTCHA, Friendly
+/// Captcha, a forum's or an onion's own captcha field, Cloudflare's
+/// Turnstile and challenge page, DDoS-Guard.
+const CHALLENGE_MARKERS: [&str; 4] = ["captcha", "turnstile", "challenge-platform", "ddos-guard"];
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Extracted {
@@ -40,6 +45,13 @@ pub struct Extracted {
     pub noindex: bool,
     /// ...or not to follow its links.
     pub nofollow: bool,
+    /// `<link rel="canonical">`, as written: the address the page says it is
+    /// a copy of, or its own.
+    pub canonical: Option<String>,
+    /// The markup has a captcha or bot check in it: hCaptcha, reCAPTCHA, a
+    /// captcha field, Cloudflare's or DDoS-Guard's check. With little text
+    /// besides, the page is that check, not content.
+    pub challenge: bool,
 }
 
 pub fn extract(content_type: Option<&str>, body: &[u8]) -> Extracted {
@@ -102,7 +114,9 @@ fn extract_html(source: &str) -> Extracted {
 
     let mut out = page.out;
     out.title = collapse(&page.title, MAX_TITLE_BYTES);
-    out.text = collapse(&page.text, MAX_TEXT_BYTES);
+    // What <noscript> holds comes last, so a page's own words, when it has
+    // any outside it, start its description.
+    out.text = collapse(&(page.text + " " + &page.noscript_text), MAX_TEXT_BYTES);
     if out.description.is_empty() {
         out.description = truncate(&out.text, FALLBACK_DESCRIPTION_BYTES).to_owned();
     }
@@ -121,6 +135,11 @@ struct Page {
     title_done: bool,
     /// Open invisible elements.
     hidden: usize,
+    /// Open `<noscript>` elements. omnid runs no scripts, so their content
+    /// is what it sees, as a browser with scripts off shows it: some forums
+    /// (Flarum) put every post and link there.
+    noscript: usize,
+    noscript_text: String,
 }
 
 impl TokenSink for Sink {
@@ -142,8 +161,9 @@ impl Page {
         let name: &str = &tag.name;
         // Tags separate words. One space per run of tags, or a page of bare
         // markup would fill the text budget with spaces.
-        if !self.text.is_empty() && !self.text.ends_with(' ') {
-            self.text.push(' ');
+        let text = self.text_now();
+        if !text.is_empty() && !text.ends_with(' ') {
+            text.push(' ');
         }
         if tag.kind == TagKind::EndTag {
             if name == "title" && self.in_title {
@@ -153,7 +173,18 @@ impl Page {
             if INVISIBLE.contains(&name) {
                 self.hidden = self.hidden.saturating_sub(1);
             }
+            if name == "noscript" {
+                self.noscript = self.noscript.saturating_sub(1);
+            }
             return TokenSinkResult::Continue;
+        }
+        if !self.out.challenge {
+            self.out.challenge = tag.attrs.iter().any(|a| {
+                matches!(&*a.name.local, "class" | "id" | "name" | "src" | "action") && {
+                    let value = a.value.to_ascii_lowercase();
+                    CHALLENGE_MARKERS.iter().any(|marker| value.contains(marker))
+                }
+            });
         }
 
         match name {
@@ -163,6 +194,14 @@ impl Page {
             }
             "title" if !self.title_done => self.in_title = true,
             "meta" => self.meta(tag),
+            "link" if self.out.canonical.is_none() => {
+                let canonical = attr(tag, "rel")
+                    .is_some_and(|rel| rel.split_ascii_whitespace().any(|r| r.eq_ignore_ascii_case("canonical")));
+                if canonical {
+                    self.out.canonical = attr(tag, "href").map(str::to_owned);
+                }
+            }
+            "noscript" if !tag.self_closing => self.noscript += 1,
             "a" if self.out.links.len() < MAX_LINKS => {
                 if let Some(href) = attr(tag, "href") {
                     self.out.links.push(href.to_owned());
@@ -177,9 +216,8 @@ impl Page {
         // without one, the sink has to.
         match name {
             "script" => TokenSinkResult::RawData(RawKind::ScriptData),
-            "style" | "noscript" | "xmp" | "iframe" | "noembed" | "noframes" => {
-                TokenSinkResult::RawData(RawKind::Rawtext)
-            }
+            // Not noscript: with scripts off, its content is markup.
+            "style" | "xmp" | "iframe" | "noembed" | "noframes" => TokenSinkResult::RawData(RawKind::Rawtext),
             "title" | "textarea" => TokenSinkResult::RawData(RawKind::Rcdata),
             "plaintext" => TokenSinkResult::Plaintext,
             _ => TokenSinkResult::Continue,
@@ -213,9 +251,14 @@ impl Page {
             if self.title.len() < MAX_TITLE_BYTES * 2 {
                 self.title.push_str(text);
             }
-        } else if self.hidden == 0 && self.text.len() < MAX_TEXT_BYTES * 2 {
-            self.text.push_str(text);
+        } else if self.hidden == 0 && self.text.len() + self.noscript_text.len() < MAX_TEXT_BYTES * 2 {
+            self.text_now().push_str(text);
         }
+    }
+
+    /// Where visible text goes now: inside `<noscript>`, or not.
+    fn text_now(&mut self) -> &mut String {
+        if self.noscript > 0 { &mut self.noscript_text } else { &mut self.text }
     }
 }
 
@@ -272,9 +315,56 @@ mod tests {
         assert_eq!(e.title, "The Hidden Wiki");
         assert_eq!(e.description, "A directory of onion services");
         assert_eq!(e.keywords, ["wiki", "directory", "onion"]);
-        assert_eq!(e.links, ["/a", "http://example.com/b#x"], "script and noscript bodies are not markup");
-        assert_eq!(e.text, "Welcome Links A and B & more x");
+        assert_eq!(e.links, ["/a", "http://example.com/b#x", "/noscript"], "script bodies are not markup");
+        assert_eq!(e.text, "Welcome Links A and B & more x enable js", "noscript's text comes last");
         assert!(!e.noindex && !e.nofollow);
+    }
+
+    #[test]
+    fn reads_what_noscript_holds_as_a_page_without_scripts() {
+        // Flarum's forum index, shortened: every discussion is in <noscript>.
+        let page = r#"<title>Flarum Community</title><div id="app"></div>
+            <noscript>You need to enable JavaScript to run this app.</noscript>
+            <noscript id="flarum-content"><div class="container"><h1>Welcome</h1>
+            <ul><li><a href="https://discuss.flarum.org/d/1-hello">Hello</a></li></ul></div></noscript>
+            <p>Powered by Flarum</p>"#;
+        let e = extract(Some("text/html"), page.as_bytes());
+        assert_eq!(e.links, ["https://discuss.flarum.org/d/1-hello"]);
+        assert_eq!(e.text, "Powered by Flarum You need to enable JavaScript to run this app. Welcome Hello");
+        assert_eq!(e.description, e.text, "short enough to be its own description");
+        // A style or script inside it stays hidden.
+        let e = extract(Some("text/html"), b"<noscript><style>p{}</style><script>x()</script>seen</noscript>");
+        assert_eq!(e.text, "seen");
+    }
+
+    #[test]
+    fn reads_the_canonical_address() {
+        let canonical = |html: &str| extract(Some("text/html"), html.as_bytes()).canonical;
+        assert_eq!(
+            canonical(r#"<link data-inferno-helmet="true" rel="canonical" href="https://lemmy.ml/post/1">"#).as_deref(),
+            Some("https://lemmy.ml/post/1")
+        );
+        assert_eq!(
+            canonical(r#"<link rel="Canonical alternate" href="/t/x/2"><link rel=canonical href=/no>"#).as_deref(),
+            Some("/t/x/2")
+        );
+        assert_eq!(canonical(r#"<link rel="stylesheet" href="/a.css">"#), None);
+    }
+
+    #[test]
+    fn notices_captchas_and_bot_checks() {
+        let challenge = |html: &str| extract(Some("text/html"), html.as_bytes()).challenge;
+        // MyBB's hCaptcha page, Cloudflare's interstitial, an onion's own captcha form.
+        assert!(challenge(r#"<form><div class="h-captcha" data-sitekey="x"></div></form>"#));
+        assert!(challenge(r#"<script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script>"#));
+        assert!(challenge(
+            r#"<form method="post"><img src="data:image/png;base64,AAAA"><input name="captcha"></form>"#
+        ));
+        assert!(challenge(r#"<div class="cf-turnstile"></div>"#));
+        assert!(
+            !challenge(r#"<p>We stopped using a captcha last year.</p><a href="/captcha-faq">faq</a>"#),
+            "words, not markup"
+        );
     }
 
     #[test]

@@ -148,6 +148,7 @@ impl Source {
             },
         }
         url.set_fragment(None);
+        drop_session(&mut url);
         let network = match url.host() {
             Some(Host::Domain(domain)) if domain.ends_with(".onion") => {
                 validate_onion(domain)?;
@@ -363,6 +364,38 @@ fn hyphanet_key(input: &str) -> Option<String> {
     Some(format!("{key_type}{}", &rest[key_type.len()..]))
 }
 
+/// Drops what carries a visitor's session rather than a page: phpBB's `sid`,
+/// vBulletin's `s`, PHP's and Java's session IDs. Forum software adds them to
+/// every link for visitors without cookies, as a crawler is, so one thread
+/// would have an address per visit. Only values shaped like a session token
+/// go (`?s=search+words` stays); the rest of the query is kept as written.
+fn drop_session(url: &mut Url) {
+    let path = url.path();
+    if let Some(at) = path.to_ascii_lowercase().find(";jsessionid=") {
+        let kept = path[..at].to_owned();
+        url.set_path(&kept);
+    }
+    let Some(query) = url.query() else { return };
+    let pairs: Vec<&str> = query.split('&').collect();
+    let kept: Vec<&str> = pairs.iter().copied().filter(|pair| !is_session(pair)).collect();
+    if kept.len() < pairs.len() {
+        let kept = kept.join("&");
+        url.set_query(Some(&kept).filter(|q| !q.is_empty()).map(String::as_str));
+    }
+}
+
+fn is_session(pair: &str) -> bool {
+    let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+    let hex32 = value.len() == 32 && value.bytes().all(|b| b.is_ascii_hexdigit());
+    let token =
+        (16..=128).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_,".contains(&b));
+    match key.to_ascii_lowercase().as_str() {
+        "sid" | "s" => hex32,
+        "phpsessid" | "jsessionid" | "sessionid" | "oscsid" | "zenid" => token,
+        _ => false,
+    }
+}
+
 /// An IPFS address in its canonical form, from a CID or IPNS name and what
 /// follows it: a path, a query, a fragment (dropped), or nothing.
 fn ipfs_source(namespace: Namespace, id: &str, rest: &str) -> Result<Source, SourceError> {
@@ -464,6 +497,39 @@ mod tests {
     fn canonical_form_drops_fragment() {
         let s = Source::parse("https://example.com/a?b=1#frag").unwrap();
         assert_eq!(s.to_string(), "https://example.com/a?b=1");
+    }
+
+    #[test]
+    fn drops_session_ids_and_keeps_the_rest_of_the_query() {
+        let canonical = |s: &str| Source::parse(s).unwrap().to_string();
+        let sid = "0123456789abcdef0123456789ABCDEF";
+        // phpBB, vBulletin, SMF, a Java forum; on an onion too.
+        assert_eq!(
+            canonical(&format!("http://f.example/viewtopic.php?f=2&t=9&sid={sid}")),
+            "http://f.example/viewtopic.php?f=2&t=9"
+        );
+        assert_eq!(
+            canonical(&format!("http://f.example/showthread.php?s={sid}&t=5")),
+            "http://f.example/showthread.php?t=5"
+        );
+        assert_eq!(
+            canonical("http://f.example/index.php?PHPSESSID=3k1m2n4b5v6c7x8z9a0s1d2f3g&topic=5.0"),
+            "http://f.example/index.php?topic=5.0"
+        );
+        assert_eq!(
+            canonical("http://f.example/thread.jsp;jsessionid=A1B2C3D4E5F6A7B8C9D0?id=4"),
+            "http://f.example/thread.jsp?id=4"
+        );
+        assert_eq!(canonical(&format!("http://{ONION}/index.php?sid={sid}")), format!("http://{ONION}/index.php"));
+        // Not sessions: a search, a short id, something else's hex, an encoded query kept as written.
+        for kept in [
+            "https://blog.example/?s=privacy+tools",
+            "http://f.example/viewtopic.php?t=9&sid=12",
+            &format!("https://example.com/file?hash={sid}"),
+            "https://example.com/q?a=%2F%20b&b=2",
+        ] {
+            assert_eq!(canonical(kept), kept);
+        }
     }
 
     #[test]

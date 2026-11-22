@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Forums crawl better. Their sign-in, sign-up, member, profile, search, reply and print pages are
+  no longer fetched (on Discourse Meta they had been 45 of the first 80 addresses). Session IDs
+  (`sid`, vBulletin's `s`, `PHPSESSID`, `jsessionid`) are dropped from addresses, which changes the
+  address a page with one is indexed under. A page that names a canonical address on its site, at
+  the same path or above it (`/post/1?scrollToComments=true`, a post's place in its topic), is
+  crawled at that address instead. A captcha or bot-check page (MyBB's hCaptcha, Cloudflare's) is
+  no longer indexed. `<noscript>` content is read as markup, since omnid runs no scripts: a
+  Flarum forum's discussions are all there, and it had yielded 2 links.
 - IPFS is a network: `ipfs://<CID>/…` and `ipns://<name>/…` (IPNS keys and DNSLink names), fetched
   and crawled through an IPFS gateway, by default an IPFS node's on 127.0.0.1:8080 (kubo's);
   `--ipfs-gateway` takes others, best first, as `--fproxy` does. A CID in any base is one address
