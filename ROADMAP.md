@@ -18,9 +18,11 @@ from one index, with a private browser in the app. The daemon also reaches IPFS 
 
 ## Next
 
-1. **IPFS in the app.** The daemon crawls IPFS through a gateway; the phone has none.
+1. **IPFS and Nostr in the app.** The daemon crawls IPFS through a gateway and Nostr from
+   relays; the phone has neither yet.
    - Settings → Networks → IPFS gateway, for a node elsewhere (over Tailscale, as for the
-     Hyphanet node), and the IPFS filter in Settings → Search.
+     Hyphanet node), and Nostr's relays, reached through Tor as the phone's crawler is.
+   - Their filters in Settings → Search, and `nostr:` results handed to a Nostr app.
    - The browser stays out of IPFS until it can isolate it: a page could otherwise make the
      node ask its peers for a CID of the page's choosing, from the node's own address.
 2. **Run it on a physical phone.** Every release so far was tested on an emulator. A real

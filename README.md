@@ -2,8 +2,8 @@
 
 # omnid
 
-One daemon that reaches the clearnet, Tor, I2P, Hyphanet, IPFS and BitTorrent
-magnets, crawls them politely, and keeps a single search index over all of
+One daemon that reaches the clearnet, Tor, I2P, Hyphanet, IPFS, Nostr and
+BitTorrent magnets, crawls them politely, and keeps a single search index over all of
 them. Content mirrored on several networks shows up as one result with every
 route to it. It runs as a desktop/server daemon and as an Android app.
 
@@ -16,19 +16,20 @@ route to it. It runs as a desktop/server daemon and as an Android app.
                                                                       ▼
                             Gateway::fetch / Gateway::connect route by network
       clearnet: reqwest (or Tor exits) │ onion: arti, in-process │ i2p: i2pd proxy │ hyphanet: FProxy
-                                       ipfs: an IPFS gateway (kubo's)
+                         ipfs: an IPFS gateway (kubo's) │ nostr: relays, over WebSocket
 ```
 
 ## Status
 
 | Piece | State |
 |---|---|
-| Address parsing: URLs, bare hosts, v3 onions, `.i2p`, `freenet:` keys, `ipfs://`/`ipns://` (a CID in any base is one address), magnets | done, unit and property tested |
+| Address parsing: URLs, bare hosts, v3 onions, `.i2p`, `freenet:` keys, `ipfs://`/`ipns://` (a CID in any base is one address), `nostr:` entities (NIP-19), magnets | done, unit and property tested |
 | Clearnet fetch, gzip/brotli/deflate | done, live tested |
 | Tor fetch, HTTP and HTTPS, via embedded arti, gzip over Tor | done, live tested against real onion services |
 | I2P via i2pd: fetching, crawling and the SOCKS tunnel | done, live tested against i2pd 3.0 (stats.i2p, reg.i2p, notbob.i2p) |
 | Hyphanet via FProxy: fetching, crawling, newer-edition redirects | done, live tested against a Hyphanet 1507 node |
 | IPFS via a gateway: CIDs, IPNS keys and DNSLink names, links through public gateways folded into the content | done, live tested against kubo 0.43.1 (docs.ipfs.tech, Wikipedia on IPFS); not in the app yet |
+| Nostr from relays: notes, articles, profiles and public chat channels, every event's ID and signature checked | done, live tested against nos.lol, Primal and nostr.mom; not in the app yet |
 | Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested; 30-minute soak: 30/30 lookups, flat 11–12 MB |
 | DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
 | Index: stemming, accent folding, snippets, ranking, facets, paging, mirror folding | done, unit tested |
@@ -134,6 +135,21 @@ the crawler never follows a link into IPFS from an onion, I2P or Hyphanet page
 (or from the clearnet with `--clearnet-via-tor`), where the page's author could
 plant a CID and watch who asks for it. robots.txt is not asked for on IPFS.
 
+Nostr comes from relays (`--nostr-relay`, by default nos.lol, Primal,
+nostr.mom and Damus, four asked at once; `--no-nostr` for none), over
+WebSocket. A `nostr:` address (NIP-19's `npub1…`, `note1…`, `naddr1…`, and
+`nevent1…`/`nprofile1…`, whose relay hints are asked first) is a profile, an
+event or an article; a public chat channel (NIP-28) is indexed with its
+latest 50 messages, and a profile with links to its latest 20 notes, articles
+and channels. No event is taken before its ID is checked against its content
+and its signature against its author (BIP-340), so a relay can withhold an
+event but not forge or alter one. Relays are reached as the clearnet is,
+directly or through Tor exits with `--clearnet-via-tor`, so a page reached
+anonymously leads the crawler to Nostr only through Tor. A `nostr:` link on a
+web page, and pages of web clients that show one entity (njump.me,
+primal.net and the like), are followed into Nostr; links in a note to the web
+are not.
+
 An I2P router can run elsewhere in the same way: `--i2p-proxy
 http://<address>:4444` (in the app, ⋮ → Settings → I2P router). A router or
 node at a Tailscale address (100.64.0.0/10) is asked only while this machine
@@ -159,7 +175,7 @@ letters, so results come while it is being typed. When nothing matches, plain
 words are matched with a letter wrong, missing, extra or swapped (two from
 eight letters), and the results say so (`fuzzy`). On the search page, an
 address typed into the search field (an onion or `.i2p` host, a URL, a magnet,
-a Hyphanet key or an IPFS address) can be opened or added to the index right there.
+a Hyphanet key, an IPFS address or a Nostr entity) can be opened or added to the index right there.
 
 ### API
 
@@ -312,7 +328,7 @@ A new level reloads every open tab.
 - **The crawl survives restarts.** Every known address lives in SQLite with
   its next visit, consecutive failures and liveness; the in-memory frontier is
   a bounded working set pulled from it, shallowest first. Pages are revisited
-  after 3 days (onion, I2P, magnets) or 7 (clearnet, Hyphanet, IPFS), failures back
+  after 3 days (onion, I2P, Nostr, magnets) or 7 (clearnet, Hyphanet, IPFS), failures back
   off from an hour to 30 days, 404/410 leave the index, and a router that is
   not running only defers its sites by 10 minutes.
 - **Ranking** multiplies BM25 by provenance and reliability:
@@ -351,14 +367,15 @@ A new level reloads every open tab.
   the Unofficial Guide to FMS, Bombe's flog and jSite, Arne Babenhauserheide's
   site, Sharesite, FLIP and dgof; and on IPFS its documentation,
   specifications, blog and downloads, and the Distributed Wikipedia Mirror in
-  English, Turkish and Russian (`omnid::DEFAULT_SEEDS`).
+  English, Turkish and Russian; and on Nostr fiatjaf, jb55, Vitor Pamplona,
+  Edward Snowden and jack (`omnid::DEFAULT_SEEDS`).
   An onion site on Ahmia's blocklist is not made a seed (five older seeds are
   on it wrongly; see Safety). An eepsite is named when the address book a new
   i2pd starts with has the name, and otherwise given by its b32 address, which
   any router resolves. A network's seeds wait while its router is down.
 - **Politeness.** Per network: clearnet 32 concurrent with 1 s per site,
-  onion 16 with 5 s, I2P 4 with 5 s, Hyphanet 2 with 2 s, IPFS 8 with 1 s
-  (the phone uses 6/8/3/2/2). One request per site at a time. robots.txt is honored and fetched
+  onion 16 with 5 s, I2P 4 with 5 s, Hyphanet 2 with 2 s, IPFS 8 with 1 s,
+  Nostr 4 with 1 s (the phone uses 6/8/3/2/2/2). One request per site at a time. robots.txt is honored and fetched
   over the same network as the page.
 - **Link following.** Overlay and magnet links are always harvested.
   Clearnet links are followed only from clearnet pages, and by default only
@@ -477,6 +494,8 @@ What it does not hide:
 - **What your I2P router and Hyphanet node fetch for you.** Run them on a
   machine you control; the setup in Quick start keeps them on your tailnet for
   your own devices only.
+- **Which Nostr events the crawler asks for**, from your address unless the
+  clearnet goes through Tor: relays see what they are asked.
 - **What your IPFS node fetches.** IPFS is not an anonymity network: its
   peers see your node's address ask for each CID. OMNId's browser never
   reaches IPFS, and the crawler goes there only from pages it fetched from
@@ -510,7 +529,8 @@ What it does not hide:
   refused. A file of any type is downloaded only when you ask for it
   (`omnid download`, a download in the app's browser).
 - **Denylist** (`--denylist`): hostnames (subdomains included), Hyphanet keys,
-  IPFS CIDs and IPNS names (`ipfs://…`, `ipns://…`), magnets, or MD5 hex digests of hostnames, the form published blocklists use.
+  IPFS CIDs and IPNS names (`ipfs://…`, `ipns://…`), Nostr authors (`nostr:npub1…`, which
+  keeps out everything they signed), magnets, or MD5 hex digests of hostnames, the form published blocklists use.
   Denied sites are never fetched and links to them are never queued.
 - **Ahmia's abuse blocklist**, the onion services reported to Ahmia for
   abuse (about 60,000, as MD5 digests), is kept in the denylist: the last copy

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Nostr is a network: notes, long-form articles, profiles and public chat channels (NIP-28, with
+  their latest messages), read from relays over WebSocket and crawled through what they mention.
+  `nostr:` entities (NIP-19) and pages of web clients that show one (njump.me, primal.net and the
+  like) are addresses. Every event's ID and BIP-340 signature is checked, so a relay cannot forge
+  or alter one. Relays are reached as the clearnet is, and `--nostr-relay` and `--no-nostr` set
+  them. A denied `nostr:npub1…` keeps out all its author signed. New dependency: `k256`
+  (RustCrypto, for the signatures). `/api/status` lists a `nostr` row, between `ipfs` and
+  `magnet`. Not in the app yet.
 - Forums crawl better. Their sign-in, sign-up, member, profile, search, reply and print pages are
   no longer fetched (on Discourse Meta they had been 45 of the first 80 addresses). Session IDs
   (`sid`, vBulletin's `s`, `PHPSESSID`, `jsessionid`) are dropped from addresses, which changes the
