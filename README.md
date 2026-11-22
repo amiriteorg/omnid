@@ -37,9 +37,12 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Proxy, SOCKS5 and HTTP (`.onion`/`.i2p` for any browser or app), open or private | done, live tested with curl over Tor; the app's proxy for other apps run on the emulator (Tor exits per username, an onion, reg.i2p) |
 | Android app (arm64) | done, run on an Android 16 emulator: crawled 225 onion pages over embedded Tor, magnets via the DHT |
 | Browser in the Android app: GeckoView, private, every request through the daemon | done, run on the emulator: onion and clearnet pages over Tor, check.torproject.org reports Tor, New identity changes the exit, reg.i2p through the i2pd app |
+| An I2P identity per browser site, through the router's SAM bridge | done, tested against a stand-in bridge and run against i2pd on a computer over Tailscale; not yet with the i2pd app's own SAM bridge |
+| Downloads in parallel byte ranges, each connection on Tor circuits of its own | done, tested against local servers; measured over Tor in [docs/benchmarks.md](docs/benchmarks.md) |
+| The phone's crawler through Tor, torrent lookups off by default | done, run on the emulator, upgrading an install that crawled directly |
 
-Not built yet: router lifecycle management (starting i2pd and Hyphanet as child processes), index
-sync between nodes, near-duplicate detection, a desktop app shell.
+Every release so far has run on an emulator and on macOS, not yet on a physical phone. What
+comes next, and what is not built yet, is in [ROADMAP.md](ROADMAP.md).
 
 ## Quick start
 
@@ -182,7 +185,8 @@ crawls only on a charger and an unmetered network unless "Crawl on battery
 and mobile data" is on. Share an onion, magnet or link to the app to crawl
 it. The app starts from the default seeds (below), and adds any it is
 missing at every start, so an older install gains new ones without losing its
-index. Magnets are resolved through the DHT on the phone too; the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
+index. On the phone, magnets are looked up on the DHT only while Settings → Torrent lookups is
+on (off by default; see Anonymity), and the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
 from F-Droid and start its router: its HTTP proxy is on 127.0.0.1:4444, where
 omnid looks, so there is nothing to set up. Until then the I2P row under the
 network strip offers "Get i2pd" or "Open i2pd". Turn on SAM in its `i2pd.conf`
@@ -199,8 +203,8 @@ phone at 127.0.0.1:8888, which is also the fallback.
 - **Appearance**: the theme (as the phone, light or dark) for OMNId's screens
   and the search page, and the text size on web pages (85 to 150%).
 - **Browser**: the security level (below), whether pages load images (off,
-  pages load far faster over Tor), and whether screenshots may show the
-  browser.
+  pages load far faster over Tor), whether screenshots may show the
+  browser, and how many connections a download uses.
 - **Search**: the networks a search starts with, the languages to rank first
   (`de, en`; empty for the phone's own), and two lists the crawler reads at
   start: blocked words (a page with one is not indexed and its links are not
@@ -210,6 +214,8 @@ phone at 127.0.0.1:8888, which is also the fallback.
   doubles them; each site still gets one request at a time with its usual
   pause), "Crawl on battery and mobile data", and Ahmia's blocklist (on by
   default; see Safety; `--no-blocklist` on a computer).
+- **Anonymity**: "Crawl the web through Tor" (on by default) and "Torrent
+  lookups" (off by default); see Anonymity.
 - **Networks**: the I2P router and Hyphanet node elsewhere.
 - **Proxy for other apps**: other apps on the phone reach Tor, I2P and Hyphanet
   through OMNId at 127.0.0.1:7172, as SOCKS5 or HTTP, the private proxy above:
@@ -277,7 +283,9 @@ A new level reloads every open tab.
 | `crates/omnid-dht` | read-only DHT client: get_peers, BEP 9 metadata, BEP 51 sampling, own bencode |
 | `crates/omnid` | the daemon as a library (`omnid::start`) and the CLI; API, search page, SOCKS proxy |
 | `crates/omnid-android` | JNI bridge for the app |
-| `android/` | the Android app (Kotlin, platform APIs only) |
+| `android/` | the Android app (Kotlin, platform APIs only, plus GeckoView for the browser) |
+| `scripts/` | the emulator smoke test, the live router tests, the app icons |
+| `docs/` | [benchmarks](docs/benchmarks.md) and [how a release is cut](docs/releasing.md) |
 
 ## Design notes
 
@@ -606,7 +614,10 @@ until each serves pages, and deletes their state afterwards. A live test whose
 router is not running fails and says so.
 
 Benchmarks and their recorded results are in [docs/benchmarks.md](docs/benchmarks.md):
-`bench_crawl`, `bench_search`, `bench_tor` and the DHT `soak`.
+`bench_crawl`, `bench_search`, `bench_tor`, `bench_download` and the DHT `soak`.
+
+Releases are cut as [docs/releasing.md](docs/releasing.md) describes, and the plan is in
+[ROADMAP.md](ROADMAP.md). Agents changing the code start from [AGENTS.md](AGENTS.md).
 
 ## License
 
