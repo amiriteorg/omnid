@@ -1,0 +1,10 @@
+# SAM bridge replies.
+"HELLO REPLY "
+"SESSION STATUS "
+"STREAM STATUS "
+"RESULT=OK"
+"RESULT="
+"MESSAGE=\""
+"PING "
+"\""
+"\x0a"

@@ -1,0 +1,2 @@
+CONNECT example.onion:80 HTTP/1.0
+

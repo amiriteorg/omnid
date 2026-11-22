@@ -1,0 +1,6 @@
+/no-omnid/page
+User-agent: *
+Disallow: /private
+
+User-agent: omnid
+Disallow: /no-omnid

@@ -25,6 +25,38 @@ which it skipped. The CLI works without the kit too: `cargo fmt --all --check`,
 **A bug fix comes with a test that fails without it.** Live tests against real networks are
 `#[ignore]`d. They run with `scripts/live-routers.sh all` and are never needed for CI.
 
+## Fuzzing
+
+The parsers that read what comes off the network have cargo-fuzz targets in `fuzz/`, a crate
+outside the workspace, so the checks above never build it. It needs a nightly toolchain and
+cargo-fuzz, at the versions CI uses:
+
+```sh
+rustup toolchain install nightly-2026-11-01 --profile minimal
+cargo install --locked cargo-fuzz@0.13.2
+cd fuzz
+cp ../Cargo.lock .   # the versions that ship; cargo adds only the fuzzing crates
+cargo +nightly-2026-11-01 fuzz list
+cargo +nightly-2026-11-01 fuzz run source_parse corpus/source_parse seeds/source_parse -- \
+  -dict=dicts/source_parse.dict -max_total_time=600
+```
+
+On macOS, first `export RUSTFLAGS=-Cllvm-args=-asan-globals=0`. Otherwise the targets that
+link arti fail with `ld: initializer pointer has no target`: AddressSanitizer pads the
+constructors `inventory` puts in `__mod_init_func`. Linux needs no such flag.
+
+- `seeds/<target>` holds a few inputs taken from the tests. `corpus/` (git-ignored) keeps what
+  the fuzzer finds, and the first directory named is where it goes.
+- `dicts/<target>.dict`, where there is one, lists the format's tokens for the fuzzer to splice
+  in. Without its dictionary, `source_parse` ran 9.6 million inputs in 11 minutes without
+  finding what a space before a `#` did to a Hyphanet key; with it, it took half a minute.
+- A crash is written to `artifacts/<target>/`, and `cargo fuzz run <target> <file>` replays
+  it. `cargo fuzz tmin <target> <file>` shrinks it. The fix comes with a unit test that holds
+  the shrunk input, in the crate the parser lives in.
+- A new parser of network input gets a target. Private parsers are reached through a
+  `#[cfg(fuzzing)] mod fuzz` beside their tests, re-exported from the crate's `fuzzing`
+  module, which exists only when cargo-fuzz builds it.
+
 ## What the code keeps
 
 These hold everywhere. `AGENTS.md` has the full list.
