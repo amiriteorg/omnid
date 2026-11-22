@@ -575,6 +575,7 @@ fn migrate_index(previous: &Path, dir: &Path) -> Result<()> {
 }
 
 pub fn open_store(data_dir: &Path) -> Result<CrawlStore> {
+    std::fs::create_dir_all(data_dir).with_context(|| format!("creating {}", data_dir.display()))?;
     let path = data_dir.join("crawl.sqlite");
     CrawlStore::open(&path).with_context(|| format!("opening {}", path.display()))
 }
@@ -661,6 +662,17 @@ mod tests {
             "qubesosfasa4zl44o4tws22di6kepyzfeqv3tg4e3ztknltfxqrymdad.onion",
         ];
         assert_eq!(listed, wrongly, "only the five it names wrongly");
+    }
+
+    #[test]
+    fn opens_a_store_where_no_data_directory_is_yet() {
+        // `omnid serve` asks the store for seeds before the daemon starts:
+        // on a first run, nothing has made the directory.
+        let parent = std::env::temp_dir().join(format!("omnid-first-run-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&parent);
+        let store = open_store(&parent.join("omnid")).unwrap();
+        assert_eq!(store.known().unwrap(), 0);
+        let _ = std::fs::remove_dir_all(parent);
     }
 
     #[test]
