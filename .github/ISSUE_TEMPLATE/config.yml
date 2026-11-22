@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security problem
+    url: https://github.com/amiriteorg/omnid/security/advisories/new
+    about: Report it privately. Anything that could reveal who a user is or what they visit belongs here.
+  - name: What is planned
+    url: https://github.com/amiriteorg/omnid/blob/main/ROADMAP.md
+    about: Check the roadmap before asking for a feature.
