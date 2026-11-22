@@ -182,7 +182,8 @@ crawls only on a charger and an unmetered network unless "Crawl on battery
 and mobile data" is on. Share an onion, magnet or link to the app to crawl
 it. The app starts from the default seeds (below), and adds any it is
 missing at every start, so an older install gains new ones without losing its
-index. Magnets are resolved through the DHT on the phone too; the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
+index. On the phone, magnets are looked up on the DHT only while Settings → Torrent lookups is
+on (off by default; see Anonymity), and the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
 from F-Droid and start its router: its HTTP proxy is on 127.0.0.1:4444, where
 omnid looks, so there is nothing to set up. Until then the I2P row under the
 network strip offers "Get i2pd" or "Open i2pd". Turn on SAM in its `i2pd.conf`
@@ -199,8 +200,8 @@ phone at 127.0.0.1:8888, which is also the fallback.
 - **Appearance**: the theme (as the phone, light or dark) for OMNId's screens
   and the search page, and the text size on web pages (85 to 150%).
 - **Browser**: the security level (below), whether pages load images (off,
-  pages load far faster over Tor), and whether screenshots may show the
-  browser.
+  pages load far faster over Tor), whether screenshots may show the
+  browser, and how many connections a download uses.
 - **Search**: the networks a search starts with, the languages to rank first
   (`de, en`; empty for the phone's own), and two lists the crawler reads at
   start: blocked words (a page with one is not indexed and its links are not
@@ -210,6 +211,8 @@ phone at 127.0.0.1:8888, which is also the fallback.
   doubles them; each site still gets one request at a time with its usual
   pause), "Crawl on battery and mobile data", and Ahmia's blocklist (on by
   default; see Safety; `--no-blocklist` on a computer).
+- **Anonymity**: "Crawl the web through Tor" (on by default) and "Torrent
+  lookups" (off by default); see Anonymity.
 - **Networks**: the I2P router and Hyphanet node elsewhere.
 - **Proxy for other apps**: other apps on the phone reach Tor, I2P and Hyphanet
   through OMNId at 127.0.0.1:7172, as SOCKS5 or HTTP, the private proxy above:
