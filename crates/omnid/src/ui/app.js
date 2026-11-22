@@ -13,9 +13,9 @@ if (EMBEDDED) document.documentElement.classList.add("embedded");
 // Languages to rank first, from the app's Settings ("de,en"); the browser's
 // Accept-Language otherwise.
 const LANG = new URLSearchParams(location.search).get("lang");
-const ALL_NETWORKS = 6;
+const ALL_NETWORKS = 7;
 const PAGE = 20;
-const NETWORK_NAMES = { onion: "Onion", clearnet: "Web", magnet: "Torrent", i2p: "I2P", hyphanet: "Hyphanet", ipfs: "IPFS" };
+const NETWORK_NAMES = { onion: "Onion", clearnet: "Web", magnet: "Torrent", i2p: "I2P", hyphanet: "Hyphanet", ipfs: "IPFS", nostr: "Nostr" };
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -108,6 +108,8 @@ function linkable(route) {
   return (web && (route.network === "clearnet" || (EMBEDDED && ["onion", "i2p"].includes(route.network)))) ||
     route.network === "hyphanet" ||
     (route.network === "ipfs" && !EMBEDDED && /^ip[fn]s:\/\//.test(route.url)) ||
+    // nostr: opens a Nostr app, as a magnet opens a torrent app.
+    (route.network === "nostr" && /^nostr:n(?:ote|pub|addr)1[a-z0-9]+$/.test(route.url)) ||
     (route.network === "magnet" && route.url.startsWith("magnet:?xt=urn:btih:"));
 }
 
@@ -139,6 +141,8 @@ function shortAddress(url) {
   if (magnet) return `btih:${magnet[1].slice(0, 12)}…`;
   const ipfs = url.match(/^(ip[fn]s):\/\/([a-z0-9]{8})[a-z0-9]{20,}([a-z0-9]{5})(\/.*?)?\/?$/);
   if (ipfs) return `${ipfs[1]}://${ipfs[2]}…${ipfs[3]}${ipfs[4] ?? ""}`;
+  const nostr = url.match(/^nostr:(n(?:ote|pub|addr)1[a-z0-9]{6})[a-z0-9]+([a-z0-9]{4})$/);
+  if (nostr) return `${nostr[1]}…${nostr[2]}`;
   const key = url.match(/^(?:freenet:|hyphanet:)?([A-Z]{3})@([A-Za-z0-9~-]{8})[^/]*(\/.*?)?\/?$/);
   if (key) return `${key[1]}@${key[2]}…${key[3] ?? ""}`;
   const bare = url.replace(/^[a-z]+:\/\//i, "").replace(/\/$/, "");
@@ -150,7 +154,8 @@ function shortAddress(url) {
 // A title that is only an address says nothing a title should.
 function looksLikeAddress(text) {
   const t = text.trim();
-  return /^(?:https?|ip[fn]s):\/\/\S+$/i.test(t) || /^(?:freenet:|hyphanet:)?(?:USK|SSK|CHK|KSK)@\S+$/.test(t);
+  return /^(?:https?|ip[fn]s):\/\/\S+$/i.test(t) || /^(?:freenet:|hyphanet:)?(?:USK|SSK|CHK|KSK)@\S+$/.test(t) ||
+    /^(?:nostr:)?n(?:ote|pub|addr)1[a-z0-9]+…?/.test(t);
 }
 
 // What to call a page with no title: its address, short; for a Hyphanet key,
@@ -166,6 +171,7 @@ function siteKey(url) {
   if (key) return key[1];
   const root = url.match(/^(ip[fn]s):\/\/([^/?#]+)/);
   if (root) return `${root[1]}:${root[2]}`;
+  if (url.startsWith("nostr:")) return url;
   try {
     return new URL(url).host.replace(/^www\./, "");
   } catch {
@@ -174,9 +180,10 @@ function siteKey(url) {
 }
 
 // What was typed, read as an address: an onion or .i2p host, a web URL, a
-// magnet, a Hyphanet key or an IPFS address (ipfs://, ipns://, /ipfs/…, a
-// bare CID) can be opened or added from the search field as well as searched
-// for. A bare clearnet name ("node.js") stays a search.
+// magnet, a Hyphanet key, an IPFS address (ipfs://, ipns://, /ipfs/…, a
+// bare CID) or a Nostr entity (nostr:npub1…, note1…) can be opened or added
+// from the search field as well as searched for. A bare clearnet name
+// ("node.js") stays a search.
 function typedAddress(text) {
   const t = text.trim();
   if (!t || /\s/.test(t)) return null;
@@ -184,6 +191,8 @@ function typedAddress(text) {
   const ipfs = t.match(/^(?:(ip[fn]s):\/\/|\/(ip[fn]s)\/)(\S+)$/i);
   if (ipfs) return { network: "ipfs", url: `${(ipfs[1] ?? ipfs[2]).toLowerCase()}://${ipfs[3]}` };
   if (/^(?:Qm[1-9A-HJ-NP-Za-km-z]{44}|bafy[a-z2-7]{50,})(?:\/\S*)?$/.test(t)) return { network: "ipfs", url: `ipfs://${t}` };
+  const nostr = t.match(/^(?:nostr:)?(n(?:ote|pub|event|profile|addr)1[a-z0-9]{20,})$/i);
+  if (nostr) return { network: "nostr", url: `nostr:${nostr[1].toLowerCase()}` };
   const key = t.match(/^(?:freenet:|hyphanet:)?((?:USK|SSK|CHK|KSK)@\S+)$/);
   if (key) return { network: "hyphanet", url: `freenet:${key[1]}` };
   const url = /^https?:\/\//i.test(t) ? t : /^[a-z0-9.-]+\.(onion|i2p)(\/\S*)?$/i.test(t) ? `http://${t}` : null;
@@ -289,7 +298,7 @@ function checkedNetworks() {
 
 // Networks with the most results first, so the ones that have any are on
 // screen; ties keep the usual order.
-const NETWORK_ORDER = ["onion", "clearnet", "magnet", "i2p", "hyphanet", "ipfs"];
+const NETWORK_ORDER = ["onion", "clearnet", "magnet", "i2p", "hyphanet", "ipfs", "nostr"];
 const byCount = (counts) => (a, b) => (counts[b] ?? 0) - (counts[a] ?? 0) || NETWORK_ORDER.indexOf(a) - NETWORK_ORDER.indexOf(b);
 
 function showCounts(counts) {
@@ -452,7 +461,7 @@ async function explore(networks) {
   }
 }
 
-const GROUP_TITLES = { onion: "Onion sites", clearnet: "On the web", magnet: "Torrents", i2p: "I2P sites", hyphanet: "Hyphanet sites", ipfs: "On IPFS" };
+const GROUP_TITLES = { onion: "Onion sites", clearnet: "On the web", magnet: "Torrents", i2p: "I2P sites", hyphanet: "Hyphanet sites", ipfs: "On IPFS", nostr: "On Nostr" };
 
 function exploreGroup(network, count, hits) {
   const all = el("button", { type: "button" }, "See all");
@@ -512,6 +521,7 @@ const ROUTERS = [
   { network: "hyphanet", name: "Hyphanet" },
   // Not in the app's strip: the app has no IPFS gateway to show yet.
   { network: "ipfs", name: "IPFS", panelOnly: EMBEDDED },
+  { network: "nostr", name: "Nostr", panelOnly: EMBEDDED },
   { network: "clearnet", name: "Web", panelOnly: true },
 ];
 
@@ -579,6 +589,10 @@ function explain(network, router) {
       if (EMBEDDED) return "IPFS is not in the app yet: OMNId's browser does not open it, and no IPFS gateway is set.";
       if (state === "ready") return `IPFS content comes through the IPFS gateway ${whereIs(detail) || "on this device"}. IPFS is not anonymous: the node asks its peers for content from its own address, so OMNId never follows a link into IPFS from an onion, I2P or Hyphanet page.`;
       return "IPFS content needs an IPFS node with a gateway, such as kubo's on port 8080, or another gateway given with --ipfs-gateway.";
+    case "nostr":
+      if (EMBEDDED) return "Nostr is not in the app yet.";
+      if (state === "ready") return `Notes, articles, profiles and public chat channels come from Nostr ${detail}. Every event's signature is checked, so a relay cannot forge one. Results open in your Nostr app.`;
+      return "Nostr is off (--no-nostr).";
     case "clearnet":
       if (detail === "through Tor") return "OMNId's crawler reads web pages through Tor, as its browser does.";
       return EMBEDDED

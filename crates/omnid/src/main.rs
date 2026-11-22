@@ -69,6 +69,14 @@ struct Common {
     /// Do not join the BitTorrent DHT (magnets are then indexed from their links alone)
     #[arg(long, global = true)]
     no_dht: bool,
+    /// Nostr relays (wss://), asked four at a time. Repeat it (or separate
+    /// with commas) for more. They are reached as the clearnet is: directly,
+    /// or through Tor exits with --clearnet-via-tor
+    #[arg(long, env = "OMNID_NOSTR_RELAY", value_delimiter = ',', default_values = omnid_net::DEFAULT_NOSTR_RELAYS, global = true)]
+    nostr_relay: Vec<Url>,
+    /// Do not read Nostr relays
+    #[arg(long, global = true, conflicts_with = "nostr_relay")]
+    no_nostr: bool,
 }
 
 #[derive(Subcommand)]
@@ -79,7 +87,7 @@ enum Command {
     Crawl(CrawlArgs),
     /// Fetch one address through the gateway and describe the response
     Fetch {
-        /// A URL, bare host, freenet: key, ipfs:// or ipns:// address, or magnet link
+        /// A URL, bare host, freenet: key, ipfs:// or ipns:// address, nostr: entity, or magnet link
         address: String,
     },
     /// Download a file through the gateway: in byte ranges over several
@@ -89,7 +97,7 @@ enum Command {
     /// Search the local index
     Search {
         query: String,
-        /// Only these networks (repeatable): clearnet, onion, i2p, hyphanet, ipfs, magnet
+        /// Only these networks (repeatable): clearnet, onion, i2p, hyphanet, ipfs, nostr, magnet
         #[arg(long = "network", short)]
         networks: Vec<Network>,
         #[arg(long, default_value_t = 10)]
@@ -317,6 +325,23 @@ async fn fetch(common: &Common, data_dir: &Path, address: &str) -> Result<()> {
         return Ok(());
     }
     let gateway = Gateway::new(gateway_config(common, data_dir)).map_err(|e| anyhow!("starting the gateway: {e}"))?;
+    if let Source::Nostr(entity) = &source {
+        let events = gateway.nostr(&omnid_crawl::nostr::filter(&entity.target), &entity.relays).await?;
+        println!("network       nostr");
+        println!("address       {source}");
+        println!("events        {} (each one's ID and signature checked)", events.len());
+        for event in events.iter().take(20) {
+            let first = event.content.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default();
+            let first: String = first.chars().take(100).collect();
+            println!(
+                "  kind {:<5} {}  {}  {first}",
+                event.kind,
+                omnid_core::nostr::npub(&event.pubkey),
+                event.created_at
+            );
+        }
+        return Ok(());
+    }
     // The same content-type gate as the crawler: media is never downloaded.
     let opts = FetchOptions { accept: is_indexable_type, ..FetchOptions::default() };
     let page = gateway.fetch(&source, &opts).await?;
@@ -345,6 +370,7 @@ async fn download(common: &Common, data_dir: &Path, args: DownloadArgs) -> Resul
         Source::Hyphanet(key) => Url::parse(&format!("http://{}/{key}", omnid_net::HYPHANET_HOST))?,
         Source::Magnet(_) => anyhow::bail!("a magnet is not a file; `omnid fetch` shows its metadata"),
         Source::Ipfs(_) => anyhow::bail!("downloading from IPFS is not built yet; `ipfs get` on your node fetches it"),
+        Source::Nostr(_) => anyhow::bail!("a Nostr event is not a file; `omnid fetch` shows it"),
         source => source.url().cloned().context("no URL to download")?,
     };
     // A file named and already there is refused before anything is fetched.
@@ -506,6 +532,7 @@ fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
         },
         fproxies: common.fproxy.clone(),
         ipfs_gateways: common.ipfs_gateway.clone(),
+        nostr_relays: if common.no_nostr { Vec::new() } else { common.nostr_relay.clone() },
         allow_private_addresses: common.allow_private_addresses,
         clearnet_via_tor: common.clearnet_via_tor,
         ..GatewayConfig::default()
