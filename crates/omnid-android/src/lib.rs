@@ -68,6 +68,13 @@ pub struct Options {
     pub hyphanet_node: String,
     /// An i2pd HTTP proxy elsewhere, or empty for only the i2pd app's.
     pub i2p_router: String,
+    /// An IPFS gateway elsewhere (an IPFS node's on the owner's computer),
+    /// or empty for none: no IPFS node runs on a phone.
+    pub ipfs_gateway: String,
+    /// Reads Nostr relays, on unless the app's Settings turn it off. They
+    /// are reached as the clearnet is, through Tor exits unless
+    /// `clearnet_via_tor` is off.
+    pub nostr: bool,
     /// The ordinal of the app's `Settings.CrawlSpeed`.
     pub crawl_speed: i32,
     /// The proxy for other apps on the phone, when it is on.
@@ -92,6 +99,8 @@ impl Default for Options {
         Self {
             hyphanet_node: String::new(),
             i2p_router: String::new(),
+            ipfs_gateway: String::new(),
+            nostr: true,
             crawl_speed: 1,
             app_proxy: None,
             abuse_blocklist: true,
@@ -218,10 +227,9 @@ fn gateway(data_dir: &Path, options: &Options, networks: bool) -> Result<Gateway
     let mut gateway = GatewayConfig {
         tor_dir: networks.then(|| data_dir.join("tor")),
         clearnet_via_tor: networks && options.clearnet_via_tor,
-        // No IPFS node runs on a phone, and nothing in the app sets a gateway
-        // elsewhere yet; nor is Nostr in the app yet.
-        ipfs_gateways: Vec::new(),
-        nostr_relays: Vec::new(),
+        // No IPFS node runs on a phone: only a gateway elsewhere, if one is set.
+        ipfs_gateways: elsewhere(&options.ipfs_gateway, "IPFS gateway", &["http", "https"])?.into_iter().collect(),
+        nostr_relays: if networks && options.nostr { GatewayConfig::default().nostr_relays } else { Vec::new() },
         ..GatewayConfig::default()
     };
     if let Some(node) = elsewhere(&options.hyphanet_node, "Hyphanet node", &["http", "https"])? {
@@ -693,6 +701,23 @@ mod tests {
             .truncate(true)
             .open(dir.join("download"))
             .unwrap()
+    }
+
+    #[test]
+    fn takes_an_ipfs_gateway_elsewhere_and_reads_nostr_unless_told_not_to() {
+        let dir = Path::new("unused");
+        let none = gateway(dir, &Options::default(), true).unwrap();
+        assert!(none.ipfs_gateways.is_empty(), "no IPFS node on a phone");
+        assert_eq!(none.nostr_relays.len(), 4, "the default relays");
+        assert!(none.clearnet_via_tor, "reached through Tor exits");
+        let options: Options =
+            serde_json::from_str(r#"{"ipfsGateway": "http://100.101.102.103:8080/", "nostr": false}"#).unwrap();
+        let set = gateway(dir, &options, true).unwrap();
+        assert_eq!(urls(&set.ipfs_gateways), ["http://100.101.102.103:8080/"]);
+        assert!(set.nostr_relays.is_empty());
+        assert!(gateway(dir, &Options::default(), false).unwrap().nostr_relays.is_empty(), "networks off: none");
+        let bad: Options = serde_json::from_str(r#"{"ipfsGateway": "ftp://x/"}"#).unwrap();
+        assert!(gateway(dir, &bad, true).is_err());
     }
 
     fn routers(hyphanet_node: &str, i2p_router: &str) -> Options {

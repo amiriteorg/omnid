@@ -28,8 +28,8 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Tor fetch, HTTP and HTTPS, via embedded arti, gzip over Tor | done, live tested against real onion services |
 | I2P via i2pd: fetching, crawling and the SOCKS tunnel | done, live tested against i2pd 3.0 (stats.i2p, reg.i2p, notbob.i2p) |
 | Hyphanet via FProxy: fetching, crawling, newer-edition redirects | done, live tested against a Hyphanet 1507 node |
-| IPFS via a gateway: CIDs, IPNS keys and DNSLink names, links through public gateways folded into the content | done, live tested against kubo 0.43.1 (docs.ipfs.tech, Wikipedia on IPFS); not in the app yet |
-| Nostr from relays: notes, articles, profiles and public chat channels, every event's ID and signature checked | done, live tested against nos.lol, Primal and nostr.mom; not in the app yet |
+| IPFS via a gateway: CIDs, IPNS keys and DNSLink names, links through public gateways folded into the content | done, live tested against kubo 0.43.1 (docs.ipfs.tech, Wikipedia on IPFS); in the app through a gateway on your computer, run on the emulator |
+| Nostr from relays: notes, articles, profiles and public chat channels, every event's ID and signature checked | done, live tested against nos.lol, Primal and nostr.mom; in the app through Tor, run on the emulator |
 | Telegram's public channels, through their web previews | done, live tested (the Tor Project's channel) |
 | Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested; 30-minute soak: 30/30 lookups, flat 11–12 MB |
 | DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
@@ -229,7 +229,13 @@ router. ⋮ → Settings → I2P router takes
 a router elsewhere, such as your computer's over Tailscale (see above), asked
 before the i2pd app, which stays the fallback. For Hyphanet, ⋮ → Settings →
 Hyphanet node takes a node elsewhere in the same way; empty means one on the
-phone at 127.0.0.1:8888, which is also the fallback.
+phone at 127.0.0.1:8888, which is also the fallback. ⋮ → Settings → IPFS gateway takes
+an IPFS node's gateway on your computer (`http://<address>:8080`, kubo's); empty, the
+default, means no IPFS, as no IPFS node runs on a phone, and the app's browser never
+opens IPFS (see Anonymity). Nostr's relays are read through Tor while "Crawl the web
+through Tor" is on, as the crawler reads the web; Settings → Nostr relays turns them off.
+A Nostr result opens in a Nostr app, after a dialog saying that the app reaches its
+relays its own way.
 
 ⋮ → Settings (also in the browser's ⋮) holds the rest, saved as they change:
 

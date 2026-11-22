@@ -521,7 +521,7 @@ const ROUTERS = [
   { network: "magnet", name: "Torrents" },
   { network: "i2p", name: "I2P" },
   { network: "hyphanet", name: "Hyphanet" },
-  // Not in the app's strip: the app has no IPFS gateway to show yet.
+  // In the app's panel, not its strip: a phone's width holds five.
   { network: "ipfs", name: "IPFS", panelOnly: EMBEDDED },
   { network: "nostr", name: "Nostr", panelOnly: EMBEDDED },
   { network: "clearnet", name: "Web", panelOnly: true },
@@ -588,13 +588,13 @@ function explain(network, router) {
       if (EMBEDDED) return `No Hyphanet node answers ${whereIs(detail) || "on this device"}. Use one on your own computer, over Tailscale for instance: ⋮ → Settings → Hyphanet node.`;
       return "Hyphanet sites need a Hyphanet node running on this device.";
     case "ipfs":
-      if (EMBEDDED) return "IPFS is not in the app yet: OMNId's browser does not open it, and no IPFS gateway is set.";
+      if (EMBEDDED && state === "ready") return `IPFS content comes through the IPFS gateway ${whereIs(detail)}. OMNId's browser does not open it, as its node would fetch from its own address: results are for copying.`;
+      if (EMBEDDED) return "Reaching IPFS needs an IPFS node's gateway on your own computer, over Tailscale for instance: ⋮ → Settings → IPFS gateway.";
       if (state === "ready") return `IPFS content comes through the IPFS gateway ${whereIs(detail) || "on this device"}. IPFS is not anonymous: the node asks its peers for content from its own address, so OMNId never follows a link into IPFS from an onion, I2P or Hyphanet page.`;
       return "IPFS content needs an IPFS node with a gateway, such as kubo's on port 8080, or another gateway given with --ipfs-gateway.";
     case "nostr":
-      if (EMBEDDED) return "Nostr is not in the app yet.";
       if (state === "ready") return `Notes, articles, profiles and public chat channels come from Nostr ${detail}. Every event's signature is checked, so a relay cannot forge one. Results open in your Nostr app.`;
-      return "Nostr is off (--no-nostr).";
+      return EMBEDDED ? "Nostr is off: ⋮ → Settings → Nostr relays turns it on." : "Nostr is off (--no-nostr).";
     case "clearnet":
       if (detail === "through Tor") return "OMNId's crawler reads web pages through Tor, as its browser does.";
       return EMBEDDED

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The app reaches IPFS and Nostr: ⋮ → Settings → IPFS gateway takes an IPFS node's gateway on
+  your computer (none by default: no IPFS node runs on a phone), and Nostr's relays are read
+  through Tor while "Crawl the web through Tor" is on, with Settings → Nostr relays to turn them
+  off. Both have filters in Settings → Search and rows in the search page's status panel. A Nostr
+  result opens in a Nostr app after a dialog, as a magnet does in a torrent app; only `nostr:`
+  notes, profiles and articles are handed on, never a key.
 - Telegram's public channels are crawled through their web previews: a link to a channel or one of
   its posts (`t.me/<name>`, `t.me/<name>/<post>`, `telegram.me`) is the channel's preview,
   `https://t.me/s/<name>`, with its latest posts, and its `?before=` pages go back through older

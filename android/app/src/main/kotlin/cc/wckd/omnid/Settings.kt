@@ -45,10 +45,16 @@ internal object Settings {
      */
     const val TORRENT_LOOKUPS = "torrent_lookups"
 
+    /**
+     * Whether the daemon reads Nostr relays. On by default: they are reached as the crawler reaches
+     * the web, through Tor while [CRAWL_VIA_TOR] is on.
+     */
+    const val NOSTR = "nostr"
+
     fun crawlSpeed(stored: String?): CrawlSpeed = CrawlSpeed.entries.firstOrNull { it.name == stored } ?: CrawlSpeed.NORMAL
 
     /** The search page's networks, in its own words (app.js), in the order its chips show. */
-    val NETWORKS = listOf("onion", "clearnet", "magnet", "i2p", "hyphanet")
+    val NETWORKS = listOf("onion", "clearnet", "magnet", "i2p", "hyphanet", "ipfs", "nostr")
     const val SEARCH_NETWORKS = "search_networks"
 
     /** The networks a search starts with: every one unless some were stored; never none. */

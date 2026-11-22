@@ -71,6 +71,8 @@ class OmnidService : Service() {
                 val options = JSONObject()
                     .put("hyphanetNode", prefs.getString(HyphanetNode.KEY, "").orEmpty())
                     .put("i2pRouter", prefs.getString(I2pRouter.KEY, "").orEmpty())
+                    .put("ipfsGateway", prefs.getString(IpfsGateway.KEY, "").orEmpty())
+                    .put("nostr", prefs.getBoolean(Settings.NOSTR, true))
                     .put("crawlSpeed", Settings.crawlSpeed(prefs.getString(Settings.CRAWL_SPEED, null)).ordinal)
                     .put("abuseBlocklist", prefs.getBoolean(Settings.ABUSE_BLOCKLIST, true))
                     .put("clearnetViaTor", prefs.getBoolean(Settings.CRAWL_VIA_TOR, true))
