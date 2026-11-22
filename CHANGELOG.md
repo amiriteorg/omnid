@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.5 (2026-11-22)
 
 - Fixed: since 0.1.2, `omnid serve` stopped at once with "unable to open database file" when its data
   directory did not exist yet, as on a first run. It makes the directory now, as `omnid crawl` did.

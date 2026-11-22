@@ -3012,7 +3012,7 @@ dependencies = [
 
 [[package]]
 name = "omnid"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "axum",
@@ -3038,7 +3038,7 @@ dependencies = [
 
 [[package]]
 name = "omnid-android"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "jni",
@@ -3059,7 +3059,7 @@ dependencies = [
 
 [[package]]
 name = "omnid-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "data-encoding",
  "proptest",
@@ -3071,7 +3071,7 @@ dependencies = [
 
 [[package]]
 name = "omnid-crawl"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "axum",
@@ -3095,7 +3095,7 @@ dependencies = [
 
 [[package]]
 name = "omnid-dht"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "omnid-core",
  "proptest",
@@ -3110,7 +3110,7 @@ dependencies = [
 
 [[package]]
 name = "omnid-index"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "omnid-core",
  "serde",
@@ -3121,7 +3121,7 @@ dependencies = [
 
 [[package]]
 name = "omnid-net"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "arti-client",
  "axum",
