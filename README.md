@@ -373,7 +373,7 @@ A new level reloads every open tab.
   Freenet Information Portal, the Freenet Applications FreeSite, the Frost FAQ,
   the Unofficial Guide to FMS, Bombe's flog and jSite, Arne Babenhauserheide's
   site, Sharesite, FLIP and dgof; and on IPFS its documentation,
-  specifications, blog and downloads, and the Distributed Wikipedia Mirror in
+  specifications and blog, and the Distributed Wikipedia Mirror in
   English, Turkish and Russian; and on Nostr fiatjaf, jb55, Vitor Pamplona,
   Edward Snowden and jack (`omnid::DEFAULT_SEEDS`).
   An onion site on Ahmia's blocklist is not made a seed (five older seeds are

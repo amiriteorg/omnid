@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Links whose file name says the crawler would not index them (archives, programs, disk images,
+  media, documents, fonts, checksums and signatures, by a URL's last segment or an IPFS gateway's
+  `?filename=`) are not followed: asking for one cost a fetch over Tor or I2P, and made an IPFS
+  node fetch the file's first blocks. The phone, crawling from IPFS's release downloads
+  (`dist.ipfs.tech`), had visited 2,507 release files in six minutes; that seed is gone.
 - The app reaches IPFS and Nostr: ⋮ → Settings → IPFS gateway takes an IPFS node's gateway on
   your computer (none by default: no IPFS node runs on a phone), and Nostr's relays are read
   through Tor while "Crawl the web through Tor" is on, with Settings → Nostr relays to turn them

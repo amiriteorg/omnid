@@ -569,6 +569,7 @@ impl Context {
         clearnet_link_ok(from, link, self.cfg.clearnet_same_site_only)
             && !self.gateway.leaves_anonymity(from.network(), link.network())
             && !link.url().is_some_and(forums::is_chaff)
+            && !names_a_file(link)
             && self.safety.check_source(link) == Verdict::Allow
     }
 
@@ -714,6 +715,36 @@ fn human_size(bytes: u64) -> String {
 }
 
 /// `www.example.com` and `example.com` are one site.
+/// Endings of file names the crawler would not index: archives, programs, disk
+/// images, media, documents, fonts, and checksums and signatures (text, but no
+/// page).
+const FILE_ENDINGS: [&str; 64] = [
+    "zip", "tar", "gz", "tgz", "bz2", "xz", "zst", "7z", "rar", "exe", "msi", "dmg", "pkg", "deb", "rpm", "apk", "ipa",
+    "iso", "img", "bin", "jar", "whl", "crx", "xpi", "mp3", "mp4", "m4a", "m4v", "mkv", "avi", "mov", "webm", "ogg",
+    "ogv", "opus", "flac", "wav", "jpg", "jpeg", "png", "gif", "webp", "avif", "ico", "svg", "pdf", "epub", "doc",
+    "docx", "xls", "xlsx", "ppt", "pptx", "odt", "woff", "woff2", "ttf", "otf", "sha256", "sha512", "md5", "asc",
+    "sig", "cid",
+];
+
+/// Whether a link names, by its file name, a file the crawler would not index.
+/// Such a link is not fetched at all: the content type would refuse its body,
+/// but asking costs a fetch over Tor or I2P, and makes an IPFS node fetch the
+/// file's first blocks. A gateway's `?filename=` is its name too: crawling
+/// dist.ipfs.tech had visited 2,507 release files from one seed.
+fn names_a_file(link: &Source) -> bool {
+    let (path, filename) = match link {
+        Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) | Source::Ipfs(url) => {
+            let filename = url.query_pairs().find(|(key, _)| key == "filename").map(|(_, name)| name.into_owned());
+            (url.path().to_owned(), filename)
+        }
+        Source::Hyphanet(key) => (key.clone(), None),
+        Source::Nostr(_) | Source::Magnet(_) => return false,
+    };
+    let name = filename.unwrap_or_else(|| path.rsplit('/').next().unwrap_or_default().to_owned());
+    let ending = name.rsplit_once('.').map(|(_, ending)| ending.to_ascii_lowercase());
+    ending.is_some_and(|ending| FILE_ENDINGS.contains(&ending.as_str()))
+}
+
 /// Whether a link to the clearnet may be followed from `from`, before
 /// [`Gateway::leaves_anonymity`] has its say: from a clearnet page, and with
 /// `same_site_only` only within its site; and a public Telegram channel's
@@ -788,6 +819,33 @@ mod tests {
         };
         assert_eq!(describe(&meta), "1 file · 123.3 MB · 322 peers");
         assert_eq!(human_size(512), "512 B");
+    }
+
+    #[test]
+    fn files_the_crawler_would_not_index_are_not_followed() {
+        let file = |s: &str| names_a_file(&Source::parse(s).unwrap());
+        for link in [
+            "https://example.com/release/omnid-0.1.6.tar.gz",
+            "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/img/Logo.PNG",
+            "http://stats.i2p/files/i2pinstall.exe",
+            "ipfs://bafkreia35gizrkdomv4v4oc6uin6kzjpn5hqlnk7wan3qcuvwrzjx7rubu/?filename=ctl_v1.1.6_linux-amd64.tar.gz.cid",
+            "ipns://dist.ipfs.tech/kubo/v0.43.1/kubo_v0.43.1_darwin-arm64.tar.gz.sha512",
+            "freenet:CHK@abc,def,AAMC--8/song.ogg",
+        ] {
+            assert!(file(link), "{link}");
+        }
+        for page in [
+            "https://example.com/",
+            "https://example.com/docs/v1.2",
+            "https://example.com/index.php?file=x.zip",
+            "https://example.com/page.html",
+            "https://example.com/notes.txt",
+            "ipns://docs.ipfs.tech/concepts/",
+            "freenet:USK@abc,def,AQACAAE/site/3/",
+            "magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a&dn=x.iso",
+        ] {
+            assert!(!file(page), "{page}");
+        }
     }
 
     #[test]

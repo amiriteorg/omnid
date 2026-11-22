@@ -215,13 +215,12 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "freenet:USK@dCnkUL22fAmKbKg-Cftx9j2m4IwyWB0QbGoiq1RSLP8,4d1TDqwRr4tYlsubLrQK~c4h0~FtmE-OXCDmFiI8BB4,AQACAAE/Sharesite/41/",
     "freenet:USK@pGQPA-9PcFiE3A2tCuCjacK165UaX07AQYw98iDQrNA,8gwQ67ytBNR03hNj7JU~ceeew22HVq6G50dcEeMcgks,AQACAAE/flip/17/",
     "freenet:USK@nrDOd1piehaN7z7s~~IYwH-2eK7gcQ9wAtPMxD8xPEs,y61pkcoRy-ccB7BHvLCzt3RUjeMILf8ox26NKvPZ-jk,AQACAAE/dgof/292/",
-    // IPFS, by DNSLink name: its documentation, specifications, blog and
-    // release downloads, and the Distributed Wikipedia Mirror's snapshots,
+    // IPFS, by DNSLink name: its documentation, specifications and blog, and
+    // the Distributed Wikipedia Mirror's snapshots,
     // put on IPFS against censorship (English, Turkish, Russian).
     "ipns://docs.ipfs.tech/",
     "ipns://specs.ipfs.tech/",
     "ipns://blog.ipfs.tech/",
-    "ipns://dist.ipfs.tech/",
     "ipns://en.wikipedia-on-ipfs.org/wiki/",
     "ipns://tr.wikipedia-on-ipfs.org/wiki/",
     "ipns://ru.wikipedia-on-ipfs.org/wiki/",

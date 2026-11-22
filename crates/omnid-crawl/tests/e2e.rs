@@ -26,6 +26,7 @@ struct Visits {
     home: AtomicUsize,
     private: AtomicBool,
     behind_blocked: AtomicBool,
+    image: AtomicBool,
 }
 
 async fn serve() -> (String, Arc<Visits>) {
@@ -37,7 +38,7 @@ async fn serve() -> (String, Arc<Visits>) {
         <a href="http://other-site.example/">elsewhere</a>
         <a href="{MAGNET}">torrent</a> <a href="http://{ONION}/">onion</a>"#
     );
-    let (v0, v1, v2) = (visits.clone(), visits.clone(), visits.clone());
+    let (v0, v1, v2, v3) = (visits.clone(), visits.clone(), visits.clone(), visits.clone());
     let app = Router::new()
         .route("/robots.txt", get(|| async { "User-agent: *\nDisallow: /private\n" }))
         .route(
@@ -52,7 +53,13 @@ async fn serve() -> (String, Arc<Visits>) {
         .route("/c", get(|| async { Html("<title>Page C</title><p>all about cherries</p>") }))
         .route("/moved", get(|| async { (StatusCode::MOVED_PERMANENTLY, [(LOCATION, "/c")]) }))
         .route("/away", get(|| async { (StatusCode::FOUND, [(LOCATION, "http://elsewhere.example/")]) }))
-        .route("/img.png", get(|| async { ([(CONTENT_TYPE, "image/png")], vec![0x89u8, b'P', b'N', b'G']) }))
+        .route(
+            "/img.png",
+            get(move || async move {
+                v3.image.store(true, Ordering::SeqCst);
+                ([(CONTENT_TYPE, "image/png")], vec![0x89u8, b'P', b'N', b'G'])
+            }),
+        )
         .route(
             "/blocked",
             get(|| async { Html(r#"<p>this has the forbidden phrase</p><a href="/behind-blocked">x</a>"#) }),
@@ -148,8 +155,9 @@ async fn crawls_a_site_end_to_end() {
     assert!(hits(&index, "forbidden", &[]).is_empty());
     assert!(!visits.behind_blocked.load(Ordering::SeqCst));
 
-    // The image was refused by content type, so it was never indexed.
-    assert!(stats.skipped >= 3, "image and two redirects: {stats:?}");
+    // The image was not even fetched: its name says it is one.
+    assert!(!visits.image.load(Ordering::SeqCst));
+    assert!(stats.skipped >= 2, "two redirects: {stats:?}");
 
     // The magnet link was harvested into the index without a fetch.
     let magnets = hits(&index, "ubuntu", &[Network::Magnet]);
