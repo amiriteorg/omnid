@@ -30,6 +30,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Hyphanet via FProxy: fetching, crawling, newer-edition redirects | done, live tested against a Hyphanet 1507 node |
 | IPFS via a gateway: CIDs, IPNS keys and DNSLink names, links through public gateways folded into the content | done, live tested against kubo 0.43.1 (docs.ipfs.tech, Wikipedia on IPFS); not in the app yet |
 | Nostr from relays: notes, articles, profiles and public chat channels, every event's ID and signature checked | done, live tested against nos.lol, Primal and nostr.mom; not in the app yet |
+| Telegram's public channels, through their web previews | done, live tested (the Tor Project's channel) |
 | Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested; 30-minute soak: 30/30 lookups, flat 11–12 MB |
 | DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
 | Index: stemming, accent folding, snippets, ranking, facets, paging, mirror folding | done, unit tested |
@@ -380,7 +381,12 @@ A new level reloads every open tab.
 - **Link following.** Overlay and magnet links are always harvested.
   Clearnet links are followed only from clearnet pages, and by default only
   within the same site (`www.` included; `--follow-offsite` lifts that), so a
-  seed list of directory pages does not turn into a crawl of the web. IPFS
+  seed list of directory pages does not turn into a crawl of the web. A
+  public Telegram channel is the exception: a link to one, or to one of its
+  posts, is its web preview (`https://t.me/s/<name>`, the latest 20 posts,
+  and older ones through its `?before=` pages), followed from any page from
+  which the clearnet may be reached; Telegram's other pages (bots, invites)
+  show a reader without the app nothing and are not followed. IPFS
   links are followed only from pages fetched from this machine's own address:
   the clearnet (without `--clearnet-via-tor`) and IPFS itself.
 - **HTML is tokenized, not parsed into a tree.** A tree builder does work

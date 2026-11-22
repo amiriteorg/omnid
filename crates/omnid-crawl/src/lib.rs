@@ -566,11 +566,7 @@ impl Context {
     /// anonymously never leads the crawler to a network it reaches from its
     /// own address ([`Gateway::leaves_anonymity`]).
     fn may_follow(&self, from: &Source, link: &Source) -> bool {
-        let clearnet_ok = || {
-            from.network() == Network::Clearnet
-                && (!self.cfg.clearnet_same_site_only || same_site(&from.site_key(), &link.site_key()))
-        };
-        (link.network() != Network::Clearnet || clearnet_ok())
+        clearnet_link_ok(from, link, self.cfg.clearnet_same_site_only)
             && !self.gateway.leaves_anonymity(from.network(), link.network())
             && !link.url().is_some_and(forums::is_chaff)
             && self.safety.check_source(link) == Verdict::Allow
@@ -718,6 +714,21 @@ fn human_size(bytes: u64) -> String {
 }
 
 /// `www.example.com` and `example.com` are one site.
+/// Whether a link to the clearnet may be followed from `from`, before
+/// [`Gateway::leaves_anonymity`] has its say: from a clearnet page, and with
+/// `same_site_only` only within its site; and a public Telegram channel's
+/// preview from any page, as a channel is its own site wherever it is linked.
+/// Telegram's other pages (bots, invites, the app's download page) show a
+/// reader without the app nothing, and are not followed at all.
+fn clearnet_link_ok(from: &Source, link: &Source, same_site_only: bool) -> bool {
+    let host = link.url().and_then(|u| u.host_str()).map(|h| h.trim_start_matches("www."));
+    if matches!(host, Some("t.me" | "telegram.me" | "telegram.dog")) {
+        return link.telegram_channel().is_some();
+    }
+    link.network() != Network::Clearnet
+        || (from.network() == Network::Clearnet && (!same_site_only || same_site(&from.site_key(), &link.site_key())))
+}
+
 /// The page `canonical` names, when `source` is a copy of it on the same site:
 /// the same path with another query (`/post/1?scrollToComments=true` of
 /// `/post/1`, a phpBB topic with other parameters), or a page below it
@@ -725,6 +736,11 @@ fn human_size(bytes: u64) -> String {
 /// canonical address anywhere else, the site's front page above all, is
 /// taken for a mistake and left alone.
 fn copy_of(source: &Source, canonical: &str) -> Option<Source> {
+    // A Telegram channel's preview names the page before its next post, an
+    // address that moves with every post: the preview is its own page.
+    if source.telegram_channel().is_some() {
+        return None;
+    }
     let original = source.join(canonical)?;
     let (from, to) = (source.url()?, original.url()?);
     if to == from || to.host_str() != from.host_str() || to.port() != from.port() {
@@ -775,6 +791,30 @@ mod tests {
     }
 
     #[test]
+    fn telegram_channels_are_followed_from_any_page_other_sites_only_by_choice() {
+        let parse = |s: &str| Source::parse(s).unwrap();
+        let blog = parse("https://blog.example/post");
+        let onion = parse("http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/");
+        let channel = parse("https://t.me/torproject");
+        let elsewhere = parse("https://other.example/");
+        assert!(clearnet_link_ok(&blog, &channel, true));
+        assert!(clearnet_link_ok(&onion, &channel, true), "then leaves_anonymity decides");
+        assert!(!clearnet_link_ok(&blog, &elsewhere, true));
+        assert!(clearnet_link_ok(&blog, &elsewhere, false));
+        assert!(!clearnet_link_ok(&onion, &elsewhere, false), "the clearnet only from the clearnet");
+        assert!(clearnet_link_ok(&blog, &parse("https://blog.example/next"), true));
+        assert!(clearnet_link_ok(&blog, &onion, true));
+        // A channel's older posts are the same site as its preview; its bots
+        // and Telegram's own pages are not followed.
+        assert!(clearnet_link_ok(&channel, &parse("https://t.me/s/torproject?before=41"), true));
+        for page in
+            ["https://t.me/GetBridgesBot", "https://t.me/", "https://t.me/+invite", "https://telegram.me/addstickers/x"]
+        {
+            assert!(!clearnet_link_ok(&channel, &parse(page), false), "{page}");
+        }
+    }
+
+    #[test]
     fn a_copy_names_its_original_on_the_same_site_only() {
         let copy =
             |page: &str, canonical: &str| copy_of(&Source::parse(page).unwrap(), canonical).map(|s| s.to_string());
@@ -806,6 +846,7 @@ mod tests {
         assert_eq!(copy("https://lemmy.ml/post", "/post/5"), None);
         assert_eq!(copy("https://lemmy.ml/postal/5", "/post"), None, "a path prefix is not a parent");
         assert_eq!(copy("freenet:USK@a,b,c/s/1/", "/USK@a,b,c/s/2/"), None);
+        assert_eq!(copy("https://t.me/s/torproject", "/s/torproject?before=63"), None, "Telegram's moving pointer");
     }
 
     #[test]

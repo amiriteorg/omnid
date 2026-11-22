@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Telegram's public channels are crawled through their web previews: a link to a channel or one of
+  its posts (`t.me/<name>`, `t.me/<name>/<post>`, `telegram.me`) is the channel's preview,
+  `https://t.me/s/<name>`, with its latest posts, and its `?before=` pages go back through older
+  ones. A channel is followed from any page the clearnet may be reached from, other sites
+  included; bots, invites and Telegram's own pages are not followed. The search page labels them
+  Telegram.
 - Nostr is a network: notes, long-form articles, profiles and public chat channels (NIP-28, with
   their latest messages), read from relays over WebSocket and crawled through what they mention.
   `nostr:` entities (NIP-19) and pages of web clients that show one (njump.me, primal.net and the

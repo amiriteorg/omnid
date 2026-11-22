@@ -210,10 +210,12 @@ function sealed(route) {
   return ["onion", "i2p", "hyphanet"].includes(route.network) || route.url.startsWith("https:");
 }
 
+// A public Telegram channel's preview is on the web, and named as Telegram.
 function badge(route) {
+  const telegram = route.network === "clearnet" && /^https:\/\/t\.me\/s\/[a-z0-9_]+/.test(route.url);
   return el("span", { class: `badge net-${route.network}` },
     route.network === "magnet" ? icon("magnet") : icon(sealed(route) ? "lock" : "unlock"),
-    NETWORK_NAMES[route.network] ?? route.network);
+    telegram ? "Telegram" : NETWORK_NAMES[route.network] ?? route.network);
 }
 
 // The typed address, with what can be done with it: open it (where this
