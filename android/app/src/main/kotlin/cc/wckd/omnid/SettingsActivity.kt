@@ -173,6 +173,8 @@ class SettingsActivity : Activity() {
         toggle(R.string.settings_crawl_via_tor, R.string.settings_crawl_via_tor_about, Settings.CRAWL_VIA_TOR, default = true) { restartDaemon() }
         divider()
         toggle(R.string.settings_torrent_lookups, R.string.settings_torrent_lookups_about, Settings.TORRENT_LOOKUPS, default = false) { restartDaemon() }
+        divider()
+        toggle(R.string.settings_nostr, R.string.settings_nostr_about, Settings.NOSTR, default = true) { restartDaemon() }
 
         section(R.string.settings_routers)
         choice(R.string.i2p_router, prefs.getString(I2pRouter.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_phone) }) {
@@ -181,6 +183,10 @@ class SettingsActivity : Activity() {
         divider()
         choice(R.string.hyphanet_node, prefs.getString(HyphanetNode.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_phone) }) {
             askRouter(R.string.hyphanet_node, R.string.hyphanet_node_detail, R.string.hyphanet_node_hint, R.string.hyphanet_node_invalid, HyphanetNode.KEY, HyphanetNode::parse)
+        }
+        divider()
+        choice(R.string.ipfs_gateway, prefs.getString(IpfsGateway.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_none) }) {
+            askRouter(R.string.ipfs_gateway, R.string.ipfs_gateway_detail, R.string.ipfs_gateway_hint, R.string.ipfs_gateway_invalid, IpfsGateway.KEY, IpfsGateway::parse)
         }
 
         section(R.string.settings_app_proxy)
@@ -346,6 +352,8 @@ class SettingsActivity : Activity() {
             "clearnet" -> R.string.network_web
             "magnet" -> R.string.network_torrents
             "i2p" -> R.string.network_i2p
+            "ipfs" -> R.string.network_ipfs
+            "nostr" -> R.string.network_nostr
             else -> R.string.network_hyphanet
         },
     )

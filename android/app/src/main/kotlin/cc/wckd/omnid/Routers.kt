@@ -29,6 +29,18 @@ internal object I2pRouter {
 }
 
 /**
+ * Where omnid reaches IPFS: an IPFS node's gateway elsewhere, such as kubo's on the owner's
+ * computer over Tailscale. Empty means none: no IPFS node runs on a phone.
+ */
+internal object IpfsGateway {
+    /** The preference, in [CrawlPolicy.PREFS], that [OmnidService] starts the daemon with. */
+    const val KEY = "ipfs_gateway"
+
+    /** A gateway's address as `http://host:port/`; see [routerAddress]. kubo's gateway is on 8080. */
+    fun parse(typed: String): String? = routerAddress(typed, 8080, setOf("http", "https"))
+}
+
+/**
  * What was typed as a router's address, as `scheme://host:port/`, with http and [defaultPort]
  * filled in when left out; "" for none (the one on this phone); null when it is not a router's
  * address.

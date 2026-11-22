@@ -1343,6 +1343,27 @@ internal class TabButton(context: Context) : FrameLayout(context) {
  * trackers and peers a page can plant in it ([Magnets.safe]). [offerIndex] adds the choice of
  * OMNId's own index instead, which needs no torrent app.
  */
+/** Hands a Nostr result to a Nostr app, after saying that the app goes to its relays its own way. */
+internal fun Activity.askNostrApp(link: String) {
+    val safe = NostrLinks.safe(link)
+    if (safe == null) {
+        Toast.makeText(this, R.string.nostr_invalid, Toast.LENGTH_LONG).show()
+        return
+    }
+    AlertDialog.Builder(this)
+        .setTitle(R.string.nostr_ask)
+        .setMessage(R.string.nostr_ask_detail)
+        .setPositiveButton(R.string.nostr_open) { _, _ ->
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(safe)))
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(this, R.string.nostr_no_app, Toast.LENGTH_LONG).show()
+            }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+}
+
 internal fun Activity.askTorrentApp(link: String, offerIndex: Boolean) {
     val safe = Magnets.safe(link)
     if (safe == null) {

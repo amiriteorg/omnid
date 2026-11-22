@@ -1,4 +1,5 @@
-//! Live tests against the real Tor network, i2pd and a Hyphanet node.
+//! Live tests against the real Tor network, i2pd, a Hyphanet node and an IPFS
+//! node.
 //! Ignored by default; `scripts/live-routers.sh all` starts the routers and
 //! runs them. A test whose router is not running fails and says how to start
 //! it, rather than passing.
@@ -242,4 +243,46 @@ async fn live_hyphanet_follows_newer_editions() {
     let edition: u32 = page.source.to_string().split('/').nth(2).and_then(|e| e.parse().ok()).unwrap();
     assert!(edition >= 24, "{}", page.source);
     assert!(text(&page).contains("Freenet First Steps"));
+}
+
+#[tokio::test]
+#[ignore = "live: needs an IPFS node (scripts/live-routers.sh up)"]
+async fn live_ipfs_fetches_cids_and_dnslink_sites() {
+    require_router(8080, "An IPFS node's gateway");
+    let gateway = Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap();
+    // The empty directory, which every kubo repo holds, asked for by its
+    // CIDv0: the gateway gets the CIDv1 and lists the directory.
+    let page = fetch(&gateway, "ipfs://QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn/").await;
+    assert_eq!(page.status, 200);
+    assert_eq!(page.source.to_string(), "ipfs://bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354/");
+    // A DNSLink site, over the IPFS network: the directory's redirect to its
+    // slash stays in IPFS.
+    let page = fetch_with_retries(&gateway, "ipns://docs.ipfs.tech/concepts").await;
+    assert_eq!(page.source.to_string(), "ipns://docs.ipfs.tech/concepts/");
+    assert!(text(&page).contains("IPFS Docs"), "{}", text(&page).chars().take(200).collect::<String>());
+}
+
+#[tokio::test]
+#[ignore = "live: Nostr relays"]
+async fn live_nostr_reads_a_profile_from_relays() {
+    let gateway = Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap();
+    // fiatjaf, who made Nostr.
+    let fiatjaf: [u8; 32] = (0..32)
+        .map(|i| {
+            u8::from_str_radix(
+                &"3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d"[2 * i..2 * i + 2],
+                16,
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    let filter =
+        omnid_net::NostrFilter { authors: vec![fiatjaf], kinds: vec![0], limit: Some(1), ..Default::default() };
+    let events = gateway.nostr(&filter, &[]).await.unwrap();
+    assert!(!events.is_empty(), "no default relay had the profile");
+    // Every event came back checked; the newest names him.
+    let newest = events.iter().max_by_key(|e| e.created_at).unwrap();
+    assert!(newest.content.contains("fiatjaf"), "{}", newest.content);
 }

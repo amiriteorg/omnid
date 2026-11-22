@@ -20,6 +20,9 @@ pub(crate) struct RawResponse {
     pub status: u16,
     pub content_type: Option<String>,
     pub location: Option<String>,
+    /// Whether the answer carries an IPFS gateway's headers: `Ipfs-Uri` or
+    /// `X-Ipfs-Roots` (kubo 0.43 sends both), or the older `X-Ipfs-Path`.
+    pub ipfs_gateway: bool,
     pub body: Option<Bytes>,
     pub truncated: bool,
 }
@@ -30,6 +33,7 @@ impl RawResponse {
             status,
             content_type: header(headers, CONTENT_TYPE),
             location: header(headers, LOCATION),
+            ipfs_gateway: ["ipfs-uri", "x-ipfs-roots", "x-ipfs-path"].iter().any(|name| headers.contains_key(*name)),
             body: None,
             truncated: false,
         }

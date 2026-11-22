@@ -8,6 +8,8 @@
 //! | i2p      | i2pd's HTTP proxy, of one router or several; SAM    |
 //! |          | for the browser, an I2P identity per site           |
 //! | hyphanet | a node's FProxy, of one node or several             |
+//! | ipfs     | an IPFS gateway's paths, of one gateway or several  |
+//! | nostr    | relays over WebSocket, [`Gateway::nostr`]            |
 //! | magnet   | not yet: needs the DHT module                       |
 //!
 //! Redirects are resolved here, against the source that issued them, so a
@@ -19,10 +21,12 @@
 mod download;
 mod guard;
 mod http;
+mod nostr;
 mod routers;
 mod sam;
 mod tailnet;
 mod tor;
+mod ws;
 
 /// The parsers' entry points for the fuzz targets in `fuzz/`, built only by
 /// cargo-fuzz (`cfg(fuzzing)`). Not part of the API.
@@ -51,6 +55,7 @@ pub use download::{
     Download, DownloadError, DownloadOptions, Expected, MAX_CONNECTIONS, Progress, Route, sanitize_filename,
 };
 pub use guard::is_public_ip;
+pub use nostr::{Event as NostrEvent, Filter as NostrFilter, MAX_EVENTS as NOSTR_MAX_EVENTS};
 pub use sam::{DEFAULT_PORT as DEFAULT_SAM_PORT, beside as sam_beside};
 
 /// The name `http://hyphanet/USK@…` gives the Hyphanet node's FProxy, for the
@@ -60,9 +65,14 @@ pub const HYPHANET_HOST: &str = "hyphanet";
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-/// Where i2pd's HTTP proxy and a Hyphanet node's FProxy listen by default.
+/// Where i2pd's HTTP proxy, a Hyphanet node's FProxy and an IPFS node's
+/// gateway (kubo's) listen by default.
 pub const DEFAULT_I2P_PROXY: &str = "http://127.0.0.1:4444";
 pub const DEFAULT_FPROXY: &str = "http://127.0.0.1:8888";
+pub const DEFAULT_IPFS_GATEWAY: &str = "http://127.0.0.1:8080";
+/// Relays that let anyone read, asked for Nostr events by default.
+pub const DEFAULT_NOSTR_RELAYS: [&str; 4] =
+    ["wss://nos.lol", "wss://relay.primal.net", "wss://nostr.mom", "wss://relay.damus.io"];
 
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
@@ -86,6 +96,18 @@ pub struct GatewayConfig {
     /// Hyphanet nodes' FProxy, best first, in the same way. Empty disables
     /// Hyphanet.
     pub fproxies: Vec<Url>,
+    /// IPFS gateways, best first, in the same way: path gateways that serve
+    /// `/ipfs/<CID>/…` and `/ipns/<name>/…`, such as an IPFS node's own. A
+    /// page without a gateway's headers (`Ipfs-Uri`, `X-Ipfs-Roots` or
+    /// `X-Ipfs-Path`) is not from one, and is not taken. IPFS
+    /// is no anonymity network: the node asks its peers for the content
+    /// from its own address. Empty disables IPFS.
+    pub ipfs_gateways: Vec<Url>,
+    /// Nostr relays (`wss://`, `ws://`), asked four at a time; a link's own
+    /// relay hints first. They are clearnet hosts (or onions), reached as the
+    /// clearnet is: directly, or through Tor exits with `clearnet_via_tor`.
+    /// Empty disables Nostr.
+    pub nostr_relays: Vec<Url>,
     /// Lets clearnet fetches reach loopback, private and link-local
     /// addresses. Off by default: otherwise any submitted URL turns the
     /// daemon into a proxy into the operator's LAN.
@@ -106,6 +128,8 @@ impl Default for GatewayConfig {
             i2p_proxies: vec![Url::parse(DEFAULT_I2P_PROXY).expect("valid default")],
             i2p_sam: Vec::new(),
             fproxies: vec![Url::parse(DEFAULT_FPROXY).expect("valid default")],
+            ipfs_gateways: vec![Url::parse(DEFAULT_IPFS_GATEWAY).expect("valid default")],
+            nostr_relays: DEFAULT_NOSTR_RELAYS.iter().map(|r| Url::parse(r).expect("valid default")).collect(),
             allow_private_addresses: false,
             clearnet_via_tor: false,
         }
@@ -206,6 +230,7 @@ pub struct Gateway {
     i2p: Routers,
     sam: sam::Sam,
     fproxy: Routers,
+    ipfs: Routers,
     tor: Option<tor::TorTransport>,
     /// Cancelled by [`Gateway::new_identity`], then replaced: the browser's
     /// streams opened before it end with it ([`Gateway::identity`]).
@@ -264,12 +289,13 @@ impl Gateway {
         };
         let i2p = Routers::new(Network::I2p, &cfg.i2p_proxies, |proxy| overlay(Some(proxy)))?;
         let fproxy = Routers::new(Network::Hyphanet, &cfg.fproxies, |_| overlay(None))?;
+        let ipfs = Routers::new(Network::Ipfs, &cfg.ipfs_gateways, |_| overlay(None))?;
         let tor = match &cfg.tor_dir {
             Some(dir) => Some(tor::TorTransport::new(dir, &cfg.user_agent)?),
             None => None,
         };
         let sam = sam::Sam::new(&cfg.i2p_sam)?;
-        Ok(Self { clearnet: clearnet.build()?, i2p, sam, fproxy, tor, cfg, identity: Default::default() })
+        Ok(Self { clearnet: clearnet.build()?, i2p, sam, fproxy, ipfs, tor, cfg, identity: Default::default() })
     }
 
     pub async fn fetch(&self, source: &Source, opts: &FetchOptions) -> Result<Page, FetchError> {
@@ -320,12 +346,30 @@ impl Gateway {
             tor,
             self.i2p_status().await,
             probe(&self.fproxy, Network::Hyphanet, "FProxy").await,
+            probe(&self.ipfs, Network::Ipfs, "IPFS gateway").await,
+            self.nostr_status(),
             RouterStatus {
                 network: Network::Magnet,
                 state: RouterState::Unsupported,
                 detail: "magnet links are indexed; metadata needs the DHT module".into(),
             },
         ]
+    }
+
+    /// Nostr's relays, as configured: they are not probed, as a probe would be
+    /// a connection to each every 30 seconds.
+    fn nostr_status(&self) -> RouterStatus {
+        let relays = &self.cfg.nostr_relays;
+        if relays.is_empty() {
+            return disabled(Network::Nostr);
+        }
+        let way = if self.cfg.clearnet_via_tor { " through Tor" } else { "" };
+        let names: Vec<&str> = relays.iter().filter_map(Url::host_str).collect();
+        RouterStatus {
+            network: Network::Nostr,
+            state: RouterState::Ready,
+            detail: format!("relays{way}: {}", names.join(", ")),
+        }
     }
 
     /// The HTTP proxies' state, and the SAM bridges': whether the browser's
@@ -373,13 +417,22 @@ impl Gateway {
                     tor.get(url, opts).await.map_err(|error| FetchError::Transport { network, error })
                 }
                 Source::I2p(url) => {
-                    via_routers(&self.i2p, network, "no I2P proxy configured", |_| Ok(url.clone()), opts).await
+                    let page = |_: &Url| Ok(url.clone());
+                    via_routers(&self.i2p, network, "no I2P proxy configured", page, any_answer, opts).await
                 }
                 Source::Hyphanet(key) => {
                     let page =
                         |node: &Url| node.join(key).map_err(|e| FetchError::Transport { network, error: e.into() });
-                    via_routers(&self.fproxy, network, "no FProxy configured", page, opts).await
+                    via_routers(&self.fproxy, network, "no FProxy configured", page, any_answer, opts).await
                 }
+                Source::Ipfs(_) => {
+                    let path = source.gateway_path().unwrap_or_default();
+                    let page = |gateway: &Url| {
+                        gateway.join(&path).map_err(|e| FetchError::Transport { network, error: e.into() })
+                    };
+                    via_routers(&self.ipfs, network, "no IPFS gateway configured", page, ipfs_answer, opts).await
+                }
+                Source::Nostr(_) => Err(unavailable(network, "Nostr events come from relays: Gateway::nostr")),
                 Source::Magnet(_) => Err(unavailable(
                     network,
                     "fetching torrent metadata (BEP 9) needs the DHT module, which is not built yet",
@@ -466,19 +519,39 @@ impl Gateway {
     }
 
     /// Whether a step from `from` to `to` (a redirect, say) would leave an
-    /// anonymity network for a direct clearnet connection, from this
-    /// machine's own address. A site on an onion, I2P or Hyphanet, or a
-    /// magnet, could point at a clearnet address its author watches and so
-    /// learn who followed it; only with `clearnet_via_tor` does the clearnet
-    /// go through Tor too. [`Gateway::fetch`] leaves such a redirect
-    /// unfollowed, whatever `max_redirects` says.
+    /// anonymity network for a fetch from this machine's own address: a direct
+    /// clearnet connection, or IPFS ([`Gateway::reaches_directly`]). A site on
+    /// an onion, I2P or Hyphanet, or a magnet, could point at a clearnet
+    /// address or a CID its author watches and so learn who followed it; only
+    /// with `clearnet_via_tor` does the clearnet go through Tor too.
+    /// [`Gateway::fetch`] leaves such a redirect unfollowed, whatever
+    /// `max_redirects` says.
     pub fn leaves_anonymity(&self, from: Network, to: Network) -> bool {
-        from != Network::Clearnet && to == Network::Clearnet && !self.cfg.clearnet_via_tor
+        !self.reaches_directly(from) && self.reaches_directly(to)
+    }
+
+    /// Whether a fetch on `network` comes from this machine's own address, or
+    /// one of the owner's: the clearnet and Nostr's relays without
+    /// `clearnet_via_tor`, and IPFS,
+    /// whose node asks its peers for the content itself. An onion site linking
+    /// a CID of its own could learn who fetched it as easily as from a
+    /// clearnet address.
+    pub fn reaches_directly(&self, network: Network) -> bool {
+        match network {
+            Network::Clearnet | Network::Nostr => !self.cfg.clearnet_via_tor,
+            Network::Ipfs => true,
+            Network::Onion | Network::I2p | Network::Hyphanet | Network::Magnet => false,
+        }
     }
 
     /// The best Hyphanet node's FProxy, if one is configured.
     pub fn fproxy(&self) -> Option<&Url> {
         self.fproxy.best()
+    }
+
+    /// The best IPFS gateway, if one is configured.
+    pub fn ipfs_gateway(&self) -> Option<&Url> {
+        self.ipfs.best()
     }
 
     /// New Tor circuits and I2P identities for every site the browser visits
@@ -565,17 +638,16 @@ impl Gateway {
         }
     }
 
-    /// FProxy may redirect to its own absolute URL; strip the origin so the
-    /// redirect resolves to a key rather than to a loopback clearnet URL.
+    /// FProxy and IPFS gateways may redirect to their own absolute URLs;
+    /// strip the origin so the redirect resolves to a key or a gateway path
+    /// rather than to a loopback clearnet URL.
     fn localize<'a>(&self, current: &Source, location: &'a str) -> &'a str {
-        match current {
-            Source::Hyphanet(_) => self
-                .fproxy
-                .urls()
-                .find_map(|node| location.strip_prefix(node.as_str().trim_end_matches('/')))
-                .unwrap_or(location),
-            _ => location,
-        }
+        let routers = match current {
+            Source::Hyphanet(_) => &self.fproxy,
+            Source::Ipfs(_) => &self.ipfs,
+            _ => return location,
+        };
+        routers.urls().find_map(|node| location.strip_prefix(node.as_str().trim_end_matches('/'))).unwrap_or(location)
     }
 }
 
@@ -619,14 +691,31 @@ fn is_gateway_error(status: u16) -> bool {
     matches!(status, 500 | 502 | 503 | 504)
 }
 
+/// Whether an answer from a router is one: any is, from i2pd and FProxy.
+fn any_answer(_: &http::RawResponse) -> Result<(), &'static str> {
+    Ok(())
+}
+
+/// A page from an IPFS gateway carries its headers. Without them, whatever
+/// else listens on the port (8080 is a popular one) answered, and its pages
+/// are not IPFS content.
+fn ipfs_answer(response: &http::RawResponse) -> Result<(), &'static str> {
+    if (200..300).contains(&response.status) && !response.ipfs_gateway {
+        return Err("without an IPFS gateway's headers (Ipfs-Uri, X-Ipfs-Roots); is something else on that port?");
+    }
+    Ok(())
+}
+
 /// A GET through a network's routers, best first, at the URL `page` gives for
-/// each. The next router is asked when one cannot be reached or answers with a
-/// gateway error; with none doing better, the last answer stands.
+/// each. The next router is asked when one cannot be reached, answers with a
+/// gateway error, or gives an answer `genuine` refuses (that router rests);
+/// with none doing better, the last answer stands.
 async fn via_routers(
     routers: &Routers,
     network: Network,
     none: &str,
     page: impl Fn(&Url) -> Result<Url, FetchError>,
+    genuine: fn(&http::RawResponse) -> Result<(), &'static str>,
     opts: &FetchOptions,
 ) -> Result<http::RawResponse, FetchError> {
     let mut last = Err(unavailable(network, none));
@@ -638,13 +727,19 @@ async fn via_routers(
         }
         let url = page(&router.url)?;
         match http::reqwest_get(&router.client, url.as_str(), opts).await {
-            Ok(response) => {
-                router.succeeded();
-                if !is_gateway_error(response.status) {
-                    return Ok(response);
+            Ok(response) => match genuine(&response) {
+                Err(why) => {
+                    router.failed();
+                    last = Err(unavailable(network, &format!("{} answered {why}", router.url)));
                 }
-                last = Ok(response);
-            }
+                Ok(()) => {
+                    router.succeeded();
+                    if !is_gateway_error(response.status) {
+                        return Ok(response);
+                    }
+                    last = Ok(response);
+                }
+            },
             Err(e) => {
                 let error = router_error(network, &router.url, e);
                 if routers::is_unreachable(&error) {

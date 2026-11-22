@@ -18,6 +18,10 @@
     <string name="hyphanet_node_detail">OMNId reaches Hyphanet through a node\'s FProxy. Leave this empty for a node on this phone, or enter one on your own computer, over Tailscale for instance. A node on this phone stays the fallback. OMNId does not encrypt the way to a node: use one only over a network you trust, such as Tailscale.</string>
     <string name="hyphanet_node_hint">http://100.x.y.z:8888</string>
     <string name="hyphanet_node_invalid">That is not a node\'s address: use http://host:port</string>
+    <string name="ipfs_gateway">IPFS gateway</string>
+    <string name="ipfs_gateway_detail">OMNId reaches IPFS through an IPFS node\'s gateway, such as kubo\'s on port 8080, on your own computer, over Tailscale for instance. Leave this empty for none: no IPFS node runs on a phone. IPFS is not anonymous: the node asks its peers for content from its own address. OMNId does not encrypt the way to a gateway: use one only over a network you trust, such as Tailscale.</string>
+    <string name="ipfs_gateway_hint">http://100.x.y.z:8080</string>
+    <string name="ipfs_gateway_invalid">That is not a gateway\'s address: use http://host:port</string>
     <string name="i2p_router">I2P router</string>
     <string name="i2p_router_detail">OMNId reaches I2P through a router: leave this empty for the i2pd app on this phone, or enter a router on your own computer, over Tailscale for instance. The i2pd app stays the fallback. Where the router has SAM on (port 7656), each site you open gets an I2P identity of its own, on 3-hop tunnels OMNId asks for; otherwise every site shares the router\'s HTTP proxy and its one I2P address. The i2pd app ships with SAM off and 1-hop tunnels for its proxy: turn SAM on in its i2pd.conf ([sam] enabled = true), or use a router like the one on your computer. OMNId does not encrypt the way to a router: use one only over a network you trust, such as Tailscale; a router at a Tailscale address is asked only while Tailscale is on.</string>
     <string name="i2p_router_hint">http://100.x.y.z:4444</string>
@@ -145,6 +149,9 @@
     <string name="settings_torrent_lookups_about">Finds torrents\' names and file lists on the BitTorrent network. It cannot go through Tor: that network sees your phone\'s address and every torrent it looks up, those found on onion sites too. While off, torrents are listed from their links alone.</string>
     <string name="settings_routers">Networks</string>
     <string name="settings_router_phone">On this phone</string>
+    <string name="settings_router_none">None</string>
+    <string name="settings_nostr">Nostr relays</string>
+    <string name="settings_nostr_about">Reads public Nostr notes, articles, profiles and chat channels from relays, through Tor while Crawl the web through Tor is on. Every event\'s signature is checked, so a relay cannot forge one.</string>
     <string name="settings_app_proxy">Proxy for other apps</string>
     <string name="settings_app_proxy_on">Proxy for other apps</string>
     <string name="settings_app_proxy_about">Other apps on this phone reach Tor, I2P and Hyphanet through OMNId, as a SOCKS5 or HTTP proxy. Nothing goes direct, and each username gets Tor circuits of its own.</string>
@@ -171,6 +178,8 @@
     <string name="network_torrents">Torrents</string>
     <string name="network_i2p">I2P</string>
     <string name="network_hyphanet">Hyphanet</string>
+    <string name="network_ipfs">IPFS</string>
+    <string name="network_nostr">Nostr</string>
 
     <!-- Downloads. -->
     <string name="download">Download</string>
@@ -194,6 +203,11 @@
     <string name="magnet_add">Add to OMNId</string>
     <string name="magnet_invalid">Not a torrent link OMNId can hand on: it has no valid info hash.</string>
     <string name="magnet_no_app">No torrent app is installed.</string>
+    <string name="nostr_ask">Open this in a Nostr app?</string>
+    <string name="nostr_ask_detail">A Nostr app reaches its relays its own way, outside OMNId and Tor unless you set it up otherwise: they see your address and what you asked for.</string>
+    <string name="nostr_open">Open in Nostr app</string>
+    <string name="nostr_invalid">Not a Nostr link OMNId can hand on.</string>
+    <string name="nostr_no_app">No Nostr app is installed.</string>
 
     <!-- The browser's menu. -->
     <string name="browser_share">Share</string>
