@@ -1,7 +1,7 @@
 # The fast gate (.agents/engineering.json) on GitHub's runners, for every pull
 # request and every push to main, plus rustdoc, the Android app's JVM unit
-# tests and the security scanners. Live tests stay off: they need real
-# routers. Actions are pinned to commits.
+# tests, the release's license check and the security scanners. Live tests
+# stay off: they need real routers. Actions are pinned to commits.
 name: CI
 
 on:
@@ -38,9 +38,9 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   android:
-    name: Android unit tests
+    name: Android unit tests, licenses
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,6 +53,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - run: ./gradlew --no-daemon testDebugUnitTest
         working-directory: android
+      # The release's license check (docs/releasing.md), on every pull request:
+      # a dependency under a license scripts/licenses/about.toml does not
+      # accept, or a Java library under one the script does not know, fails
+      # here instead of stopping the release. It needs Gradle for the app's
+      # Java libraries, so it runs in this job; the notices it writes are
+      # thrown away.
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-targets: false
+      - run: cargo install --locked --features cli cargo-about@0.9.3
+      - name: Third-party licenses
+        run: |
+          set -euo pipefail
+          scripts/third-party-notices.py macos "$RUNNER_TEMP/notices/macos.txt"
+          scripts/third-party-notices.py android "$RUNNER_TEMP/notices/android.txt"
 
   security:
     name: Security scanners
@@ -90,3 +108,4 @@ jobs:
             echo "a scanner did not pass" >&2
             exit 1
           fi
+

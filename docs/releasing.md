@@ -68,7 +68,9 @@ scripts/third-party-notices.py android android/app/src/main/assets/licenses/thir
 
 The notices cover the Rust crates in each build and, in the app, the Java and Kotlin libraries
 that come with GeckoView. The script stops at a license it does not know rather than leave a
-notice out. The app's copy is git-ignored, and `assembleRelease` packs it into the APK.
+notice out. CI's Android job runs it for both builds on every pull request, so such a
+license shows up there first. The app's copy is git-ignored, and `assembleRelease` packs it
+into the APK.
 
 `target/dist/` keeps the files out of the tree, which `release-check` requires to be clean.
 `COPYFILE_DISABLE=1` keeps macOS metadata files out of the tarball.
