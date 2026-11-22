@@ -192,6 +192,75 @@ fn header(headers: &HeaderMap, name: HeaderName) -> Option<String> {
     headers.get(name).and_then(|v| v.to_str().ok()).map(|v| v.trim().to_owned())
 }
 
+/// For the fuzz targets in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::*;
+
+    /// A body under `Content-Encoding`, cut at the cap as [`get`] cuts one.
+    /// `input`'s first byte picks the encoding, the next two the cap.
+    pub fn decode(input: &[u8]) {
+        let Some((&[pick, high, low], body)) = input.split_first_chunk() else { return };
+        let encodings = [None, Some("gzip"), Some("X-Gzip"), Some("deflate"), Some("identity"), Some("br")];
+        let encoding = encodings[usize::from(pick) % encodings.len()];
+        let max = usize::from(u16::from_be_bytes([high, low]));
+        let (body, cut_short) = (&body[..body.len().min(max)], body.len() > max);
+        if let Ok((out, truncated)) = super::decode(encoding, Bytes::copy_from_slice(body), cut_short, max) {
+            assert!(out.len() <= max, "{} bytes decoded past a cap of {max}", out.len());
+            assert!(truncated || !cut_short);
+            if matches!(encoding, None | Some("identity")) {
+                assert_eq!(&out[..], body);
+            }
+        }
+    }
+
+    /// A server's answer to a GET on an open connection, as on a Tor stream.
+    /// `input`'s first byte picks the cap and whether only text is wanted,
+    /// the rest is what the server sends. A body is read only when its type
+    /// is wanted, and never past the cap.
+    pub fn response(input: &[u8]) {
+        let Some((&pick, answer)) = input.split_first() else { return };
+        let text: fn(Option<&str>) -> bool = |ct| ct.is_some_and(|ct| ct.starts_with("text/"));
+        let opts = FetchOptions {
+            max_bytes: [0, 16, 1 << 10, 64 << 10][usize::from(pick & 3)],
+            accept: if pick & 4 == 0 { text } else { |_| true },
+            max_redirects: 0,
+        };
+        let url = Url::parse("http://example.com/page").expect("a URL");
+        // In memory, so without IO or a clock.
+        let runtime = tokio::runtime::Builder::new_current_thread().build().expect("a runtime");
+        let (client, mut server) = tokio::io::duplex(answer.len() + (64 << 10));
+        let serve = async {
+            // Answers once the request is in: a client takes bytes that come
+            // before it asked for anything as an error.
+            let mut request = Vec::new();
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                let mut chunk = [0; 1024];
+                match server.read(&mut chunk).await {
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => request.extend_from_slice(&chunk[..n]),
+                }
+            }
+            server.write_all(answer).await.expect("room for the answer");
+            server.shutdown().await.expect("an open stream");
+        };
+        let fetch = async {
+            let mut sender = handshake(client).await?;
+            get(&mut sender, &url, "omnid", &opts).await
+        };
+        let ((), got) = runtime.block_on(async { tokio::join!(serve, fetch) });
+        if let Ok((raw, _)) = got {
+            if let Some(body) = &raw.body {
+                assert!(body.len() <= opts.max_bytes);
+                assert!((opts.accept)(raw.content_type.as_deref()), "read a body of a type not wanted");
+            }
+            assert!(raw.body.is_some() || !raw.truncated);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;

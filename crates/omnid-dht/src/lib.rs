@@ -26,6 +26,16 @@ mod peer;
 mod routing;
 mod rpc;
 
+/// The parsers' entry points for the fuzz targets in `fuzz/`, built only by
+/// cargo-fuzz (`cfg(fuzzing)`). Not part of the API.
+#[cfg(fuzzing)]
+#[doc(hidden)]
+pub mod fuzzing {
+    pub use crate::bencode::fuzz::decode as bencode;
+    pub use crate::krpc::fuzz::decode as krpc;
+    pub use crate::peer::fuzz::wire as peer_wire;
+}
+
 use std::io;
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;

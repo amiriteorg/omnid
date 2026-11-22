@@ -1221,6 +1221,41 @@ fn is_hidden(c: char) -> bool {
         || matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{feff}')
 }
 
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use super::*;
+
+    /// A download answer's headers. `input` is a `Content-Range`; up to its
+    /// first newline it is also the path of the URL, and after it a
+    /// `Content-Disposition`, which together name the file.
+    pub fn headers(input: &[u8]) {
+        let text = String::from_utf8_lossy(input);
+        if let Some(ContentRange::Bytes { first, last, total }) = parse_content_range(&text) {
+            assert!(first <= last && total.is_none_or(|total| last < total));
+        }
+        check_name(&sanitize_filename(&text));
+        let (path, disposition) = input.split_at(input.iter().position(|&b| b == b'\n').unwrap_or(input.len()));
+        let Ok(url) = Url::parse("https://example.com/").and_then(|base| base.join(&String::from_utf8_lossy(path)))
+        else {
+            return;
+        };
+        let mut headers = HeaderMap::new();
+        if let Ok(value) = HeaderValue::from_bytes(disposition.get(1..).unwrap_or_default()) {
+            headers.insert(CONTENT_DISPOSITION, value);
+        }
+        check_name(&suggested_filename(&headers, &url));
+    }
+
+    /// What [`sanitize_filename`] promises.
+    fn check_name(name: &str) {
+        let edge = |c: char| c.is_whitespace() || c == '.';
+        assert!(!name.is_empty() && name.len() <= MAX_FILENAME, "{name:?}");
+        assert!(!name.starts_with(edge) && !name.ends_with(edge), "{name:?}");
+        assert!(!name.chars().any(|c| is_hidden(c) || "/\\<>:\"|?*".contains(c)), "{name:?}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

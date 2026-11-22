@@ -24,6 +24,16 @@ mod sam;
 mod tailnet;
 mod tor;
 
+/// The parsers' entry points for the fuzz targets in `fuzz/`, built only by
+/// cargo-fuzz (`cfg(fuzzing)`). Not part of the API.
+#[cfg(fuzzing)]
+#[doc(hidden)]
+pub mod fuzzing {
+    pub use crate::download::fuzz::headers as download_headers;
+    pub use crate::http::fuzz::{decode as http_decode, response as http_response};
+    pub use crate::sam::fuzz::replies as sam_replies;
+}
+
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;

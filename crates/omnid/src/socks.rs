@@ -475,6 +475,45 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.to_owned())
 }
 
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use super::*;
+
+    /// A client's first bytes, as [`handshake`] reads them. `input`'s first
+    /// byte picks who may use the listener; the rest is what the client
+    /// sends. A request that passes names a host a router can be asked for,
+    /// was let in only with the password where there is one, and is passed
+    /// on as a head that parses as strictly as the client's had to.
+    pub fn handshake(input: &[u8]) {
+        let Some((&pick, sent)) = input.split_first() else { return };
+        let password = || "s3cret".to_owned();
+        let access = match pick % 4 {
+            0 => Access::Open,
+            1 => Access::Browser { password: password() },
+            2 => Access::Apps { password: None },
+            _ => Access::Apps { password: Some(password()) },
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread().build().expect("a runtime");
+        let (mut client, mut server) = tokio::io::duplex(sent.len() + MAX_HTTP_HEAD);
+        let Ok(request) = runtime.block_on(async {
+            client.write_all(sent).await.expect("room for the request");
+            client.shutdown().await.expect("an open stream");
+            super::handshake(&mut server, &access).await
+        }) else {
+            return;
+        };
+        assert!(valid_host(&request.host), "{:?}", request.host);
+        assert!(access.password().is_none() || request.username.is_some(), "let in without the password");
+        if let Reply::HttpForward(head) = &request.reply {
+            let head = parse_head(head).expect("a forwarded head that parses");
+            assert!(head.target.starts_with('/'), "{:?}", head.target);
+            assert!(head.header("proxy-authorization").is_none());
+            assert_eq!(head.headers.last(), Some(&("Connection", "close")));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use omnid_net::GatewayConfig;

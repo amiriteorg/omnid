@@ -19,3 +19,7 @@ tracing.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 tracing-subscriber.workspace = true
+
+[lints.rust]
+# cargo-fuzz builds with `--cfg fuzzing`, which adds `mod fuzzing` for fuzz/.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }

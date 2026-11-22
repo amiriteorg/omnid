@@ -343,6 +343,66 @@ async fn timed<T>(io: impl Future<Output = io::Result<T>>) -> Result<T, PeerErro
     tokio::time::timeout(READ_TIMEOUT, io).await.map_err(|_| PeerError::Timeout)?.map_err(PeerError::from)
 }
 
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use std::pin::Pin;
+    use std::sync::LazyLock;
+    use std::task::{Context, Poll};
+
+    use tokio::io::ReadBuf;
+    use tokio::runtime::Runtime;
+
+    use super::*;
+
+    /// Reads time out, so the exchange runs on a runtime with a clock.
+    static RUNTIME: LazyLock<Runtime> =
+        LazyLock::new(|| tokio::runtime::Builder::new_current_thread().enable_time().build().expect("a runtime"));
+
+    /// What a peer sends: its handshake, then the messages of a metadata
+    /// exchange, which [`exchange`] reads. The input is also read as each of
+    /// the messages on its own.
+    pub fn wire(input: &[u8]) {
+        let _ = parse_extended_handshake(input);
+        if let Ok(MetadataMessage::Data { data, .. }) = parse_metadata_message(input) {
+            assert!(data.len() < input.len());
+        }
+        let Some((handshake, messages)) = input.split_first_chunk() else { return };
+        let Ok(theirs) = parse_handshake(handshake) else { return };
+        let max = crate::DhtConfig::default().max_metadata_bytes;
+        if let Ok(info) = RUNTIME.block_on(exchange(Peer(messages), &theirs.info_hash, max)) {
+            assert!(info.len() <= max);
+        }
+    }
+
+    /// A peer whose bytes are all there at once, and which takes whatever it
+    /// is sent.
+    struct Peer<'a>(&'a [u8]);
+
+    impl AsyncRead for Peer<'_> {
+        fn poll_read(mut self: Pin<&mut Self>, _: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+            let n = self.0.len().min(buf.remaining());
+            buf.put_slice(&self.0[..n]);
+            self.0 = &self.0[n..];
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for Peer<'_> {
+        fn poll_write(self: Pin<&mut Self>, _: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+}
+
 /// A peer that serves metadata, for tests. It records the IDs of the
 /// non-extended messages the client sends, which must stay empty.
 #[cfg(test)]

@@ -32,3 +32,7 @@ webpki-roots.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+
+[lints.rust]
+# cargo-fuzz builds with `--cfg fuzzing`, which adds `mod fuzzing` for fuzz/.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
