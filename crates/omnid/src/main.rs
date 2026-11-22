@@ -41,6 +41,16 @@ struct Common {
     /// routers, best first: one that cannot be reached is passed over
     #[arg(long, env = "OMNID_I2P_PROXY", value_delimiter = ',', default_value = omnid_net::DEFAULT_I2P_PROXY, global = true)]
     i2p_proxy: Vec<Url>,
+    /// I2P routers' SAM bridges (sam://host:port), best first: through one,
+    /// each site the app's browser is on and each user of the password proxy
+    /// gets an I2P identity of its own [default: port 7656 on each
+    /// --i2p-proxy's host]
+    #[arg(long, env = "OMNID_I2P_SAM", value_delimiter = ',', global = true)]
+    i2p_sam: Vec<Url>,
+    /// Reach I2P through the HTTP proxies alone, where every site shares their
+    /// one destination
+    #[arg(long, global = true, conflicts_with = "i2p_sam")]
+    no_i2p_sam: bool,
     /// A Hyphanet node's FProxy. Repeat it (or separate with commas) for more
     /// nodes, best first
     #[arg(long, env = "OMNID_FPROXY", value_delimiter = ',', default_value = omnid_net::DEFAULT_FPROXY, global = true)]
@@ -483,6 +493,11 @@ fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
     GatewayConfig {
         tor_dir: (!common.no_tor).then(|| data_dir.join("tor")),
         i2p_proxies: common.i2p_proxy.clone(),
+        i2p_sam: match (common.no_i2p_sam, common.i2p_sam.is_empty()) {
+            (true, _) => Vec::new(),
+            (false, true) => omnid_net::sam_beside(&common.i2p_proxy),
+            (false, false) => common.i2p_sam.clone(),
+        },
         fproxies: common.fproxy.clone(),
         allow_private_addresses: common.allow_private_addresses,
         clearnet_via_tor: common.clearnet_via_tor,

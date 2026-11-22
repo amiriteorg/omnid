@@ -13,7 +13,7 @@
 # pinned hashes and the Hyphanet release key before anything runs.
 #
 # Needs: i2pd (brew install i2pd, or your package manager), Java 17+, curl,
-# gpg. Ports: 4444/4447/7070 (i2pd) and 8888/9481 (Hyphanet), all on 127.0.0.1.
+# gpg. Ports: 4444/4447/7070/7656 (i2pd) and 8888/9481 (Hyphanet), all on 127.0.0.1.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -73,6 +73,7 @@ start_i2pd() {
     (cd "$dir" && exec nohup i2pd --datadir="$dir" --notransit --upnp.enabled=false \
       --httpproxy.address=127.0.0.1 --httpproxy.port=4444 \
       --socksproxy.address=127.0.0.1 --socksproxy.port=4447 \
+      --sam.enabled=true --sam.address=127.0.0.1 --sam.port=7656 \
       --http.address=127.0.0.1 --http.port=7070 \
       --log=file --logfile="$dir/i2pd.log" --loglevel=warn --pidfile="$dir/i2pd.pid" >"$dir/stdout.log" 2>&1) &
   fi

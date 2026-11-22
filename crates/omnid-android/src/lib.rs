@@ -229,6 +229,9 @@ fn gateway(data_dir: &Path, options: &Options, networks: bool) -> Result<Gateway
         gateway.i2p_proxies.retain(|r| *r != router);
         gateway.i2p_proxies.insert(0, router);
     }
+    // Each router's SAM bridge, where it has one on: the browser's sites then
+    // get I2P identities of their own.
+    gateway.i2p_sam = omnid_net::sam_beside(&gateway.i2p_proxies);
     Ok(gateway)
 }
 
@@ -705,6 +708,8 @@ mod tests {
             gateway(dir, &routers("http://100.101.102.103:8888/", "http://100.101.102.103:4444/"), false).unwrap();
         assert_eq!(urls(&remote.fproxies), ["http://100.101.102.103:8888/", "http://127.0.0.1:8888/"]);
         assert_eq!(urls(&remote.i2p_proxies), ["http://100.101.102.103:4444/", "http://127.0.0.1:4444/"]);
+        assert_eq!(urls(&remote.i2p_sam), ["sam://100.101.102.103:7656", "sam://127.0.0.1:7656"], "each router's SAM");
+        assert_eq!(urls(&local.i2p_sam), ["sam://127.0.0.1:7656"], "the i2pd app's, when it is on");
 
         let same = gateway(dir, &routers("", "http://127.0.0.1:4444/"), false).unwrap();
         assert_eq!(urls(&same.i2p_proxies), ["http://127.0.0.1:4444/"], "the phone's own, once");

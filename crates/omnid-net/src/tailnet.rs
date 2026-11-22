@@ -24,6 +24,9 @@ fn shared_space(ip: Ipv4Addr) -> bool {
 pub(crate) fn needs_tailnet(url: &Url) -> bool {
     match url.host() {
         Some(url::Host::Ipv4(ip)) => shared_space(ip),
+        // The host of a scheme the URL standard does not know (a SAM bridge's
+        // sam://100.74.26.84:7656) stays text, address or not.
+        Some(url::Host::Domain(host)) => host.parse().is_ok_and(shared_space),
         _ => false,
     }
 }
@@ -85,6 +88,8 @@ mod tests {
         assert!(!needs_tailnet(&url("http://100.63.255.255/")) && !needs_tailnet(&url("http://100.128.0.1/")));
         assert!(!needs_tailnet(&url("http://127.0.0.1:4444/")) && !needs_tailnet(&url("http://192.168.1.5:8888/")));
         assert!(!needs_tailnet(&url("http://galahads-mac-mini:8888/")), "a name resolves where it is meant to");
+        assert!(needs_tailnet(&url("sam://100.74.26.84:7656")), "a SAM bridge's host is text");
+        assert!(!needs_tailnet(&url("sam://127.0.0.1:7656")) && !needs_tailnet(&url("sam://galahads-mac-mini:7656")));
     }
 
     #[test]

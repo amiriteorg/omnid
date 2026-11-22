@@ -5,7 +5,8 @@
 //! |----------|-----------------------------------------------------|
 //! | clearnet | reqwest, with a resolver that refuses private IPs   |
 //! | onion    | arti, in-process, HTTP/1.1 over a Tor stream        |
-//! | i2p      | i2pd's HTTP proxy, of one router or several         |
+//! | i2p      | i2pd's HTTP proxy, of one router or several; SAM    |
+//! |          | for the browser, an I2P identity per site           |
 //! | hyphanet | a node's FProxy, of one node or several             |
 //! | magnet   | not yet: needs the DHT module                       |
 //!
@@ -19,6 +20,7 @@ mod download;
 mod guard;
 mod http;
 mod routers;
+mod sam;
 mod tailnet;
 mod tor;
 
@@ -39,6 +41,7 @@ pub use download::{
     Download, DownloadError, DownloadOptions, Expected, MAX_CONNECTIONS, Progress, Route, sanitize_filename,
 };
 pub use guard::is_public_ip;
+pub use sam::{DEFAULT_PORT as DEFAULT_SAM_PORT, beside as sam_beside};
 
 /// The name `http://hyphanet/USK@…` gives the Hyphanet node's FProxy, for the
 /// app's browser and the SOCKS proxy. A single label, so no real host has it;
@@ -64,6 +67,12 @@ pub struct GatewayConfig {
     /// one that cannot be reached is passed over until it is back. Empty
     /// disables I2P.
     pub i2p_proxies: Vec<Url>,
+    /// I2P routers' SAM bridges, `sam://host:port`, best first. Through one,
+    /// each site the browser is on and each user of the proxy for other apps
+    /// gets an I2P identity of its own, on 3-hop tunnels; without one that
+    /// answers, they share the HTTP proxy's one destination. Empty by
+    /// default; [`sam_beside`] gives routers' usual ones.
+    pub i2p_sam: Vec<Url>,
     /// Hyphanet nodes' FProxy, best first, in the same way. Empty disables
     /// Hyphanet.
     pub fproxies: Vec<Url>,
@@ -85,6 +94,7 @@ impl Default for GatewayConfig {
             overlay_timeout: Duration::from_secs(90),
             tor_dir: None,
             i2p_proxies: vec![Url::parse(DEFAULT_I2P_PROXY).expect("valid default")],
+            i2p_sam: Vec::new(),
             fproxies: vec![Url::parse(DEFAULT_FPROXY).expect("valid default")],
             allow_private_addresses: false,
             clearnet_via_tor: false,
@@ -184,6 +194,7 @@ pub struct Gateway {
     cfg: GatewayConfig,
     clearnet: reqwest::Client,
     i2p: Routers,
+    sam: sam::Sam,
     fproxy: Routers,
     tor: Option<tor::TorTransport>,
     /// Cancelled by [`Gateway::new_identity`], then replaced: the browser's
@@ -247,7 +258,8 @@ impl Gateway {
             Some(dir) => Some(tor::TorTransport::new(dir, &cfg.user_agent)?),
             None => None,
         };
-        Ok(Self { clearnet: clearnet.build()?, i2p, fproxy, tor, cfg, identity: Default::default() })
+        let sam = sam::Sam::new(&cfg.i2p_sam)?;
+        Ok(Self { clearnet: clearnet.build()?, i2p, sam, fproxy, tor, cfg, identity: Default::default() })
     }
 
     pub async fn fetch(&self, source: &Source, opts: &FetchOptions) -> Result<Page, FetchError> {
@@ -296,7 +308,7 @@ impl Gateway {
                 detail: if self.cfg.clearnet_via_tor { "through Tor" } else { "direct" }.into(),
             },
             tor,
-            probe(&self.i2p, Network::I2p, "i2pd HTTP proxy").await,
+            self.i2p_status().await,
             probe(&self.fproxy, Network::Hyphanet, "FProxy").await,
             RouterStatus {
                 network: Network::Magnet,
@@ -304,6 +316,16 @@ impl Gateway {
                 detail: "magnet links are indexed; metadata needs the DHT module".into(),
             },
         ]
+    }
+
+    /// The HTTP proxies' state, and the SAM bridges': whether the browser's
+    /// sites get I2P identities of their own.
+    async fn i2p_status(&self) -> RouterStatus {
+        let (mut status, sam) = tokio::join!(probe(&self.i2p, Network::I2p, "i2pd HTTP proxy"), self.sam.describe());
+        if status.state != RouterState::Disabled {
+            status.detail = format!("{}; {sam}", status.detail);
+        }
+        status
     }
 
     async fn fetch_once(&self, source: &Source, opts: &FetchOptions) -> Result<http::RawResponse, FetchError> {
@@ -401,8 +423,9 @@ impl Gateway {
 
     /// A stream for the built-in browser, which is on `site`: `.onion` and
     /// the clearnet through Tor, on circuits no other site and not the
-    /// crawler uses; `.i2p` through i2pd; [`HYPHANET_HOST`] to the Hyphanet
-    /// node. Never a direct connection to anywhere else, whatever
+    /// crawler uses; `.i2p` through a SAM bridge on an I2P identity of the
+    /// site's own, or through i2pd's HTTP proxy when no bridge answers;
+    /// [`HYPHANET_HOST`] to the Hyphanet node. Never a direct connection to anywhere else, whatever
     /// `clearnet_via_tor` says: without Tor the clearnet is unavailable.
     pub async fn connect_browser(&self, host: &str, port: u16, site: &str) -> Result<BoxStream, FetchError> {
         self.connect_browser_on(host, port, Circuits::Site(site)).await
@@ -420,7 +443,7 @@ impl Gateway {
         let timeout = self.cfg.overlay_timeout;
         let connect = async {
             match network {
-                Network::I2p => return self.i2p_tunnel(&host, port).await,
+                Network::I2p => return self.i2p_isolated(&host, port, circuits).await,
                 Network::Hyphanet => return self.fproxy_stream(port).await,
                 _ => {}
             }
@@ -448,13 +471,15 @@ impl Gateway {
         self.fproxy.best()
     }
 
-    /// New Tor circuits for every site the browser visits from now on, and
-    /// the end of the streams it opened before: a page reopened soon after
-    /// must not come back on a kept-alive connection over the old circuits.
+    /// New Tor circuits and I2P identities for every site the browser visits
+    /// from now on, and the end of the streams it opened before: a page
+    /// reopened soon after must not come back on a kept-alive connection over
+    /// the old circuits.
     pub fn new_identity(&self) {
         if let Some(tor) = &self.tor {
             tor.new_identity();
         }
+        self.sam.reset();
         let old = std::mem::take(&mut *self.identity.lock().expect("identity lock poisoned"));
         old.cancel();
     }
@@ -513,6 +538,21 @@ impl Gateway {
     async fn i2p_tunnel(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
         let target = format!("{host}:{port}");
         self.i2p.race(routers::STAGGER, |proxy| i2p_tunnel(proxy, target.clone())).await
+    }
+
+    /// A stream to an eepsite on the I2P identity `circuits` picks: a site's,
+    /// or one of its own, through a SAM bridge. The crawler's, and every
+    /// stream's when no bridge answers, is the HTTP proxy's.
+    async fn i2p_isolated(&self, host: &str, port: u16, circuits: Circuits<'_>) -> Result<BoxStream, FetchError> {
+        let key = match circuits {
+            Circuits::Site(site) => Some(site),
+            Circuits::Own(_) => None,
+            Circuits::Shared => return self.i2p_tunnel(host, port).await,
+        };
+        match self.sam.stream(host, port, key).await? {
+            Some(stream) => Ok(Box::new(stream)),
+            None => self.i2p_tunnel(host, port).await,
+        }
     }
 
     /// FProxy may redirect to its own absolute URL; strip the origin so the

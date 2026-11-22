@@ -9,7 +9,9 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
 - `crates/omnid-core` — `Source` (address parsing, canonical form, link joining) and `IndexedDoc`.
 - `crates/omnid-net` — `Gateway::fetch` / `Gateway::connect`: every outbound connection, the
   private-address guard, Tor (arti), TLS, decompression caps, and the router pool
-  (`routers.rs`: several i2pd proxies or Hyphanet nodes, best first, with failover and racing).
+  (`routers.rs`: several i2pd proxies or Hyphanet nodes, best first, with failover and racing),
+  SAM (`sam.rs`: an I2P destination per browser site, kept in a bounded pool with spares made
+  ahead; tests in `tests/sam.rs` against a stand-in bridge).
   `Gateway::download` (`download.rs`): a file the user asked for, in parallel byte ranges, each
   connection on Tor circuits of its own (`tor::Circuits::Own`), work stealing, retries on new
   circuits, `If-Range` so a changed file fails instead of being spliced. Tests in
@@ -52,7 +54,8 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
 - Only `omnid-net` and `omnid-dht` open network connections. Clearnet connections go through the
   private-address guard unless `allow_private_addresses` is set.
 - The app's browser (GeckoView) reaches the network only through the daemon's browser proxy
-  (`socks::Access::Browser` → `Gateway::connect_browser`: password required, Tor or i2pd, or the
+  (`socks::Access::Browser` → `Gateway::connect_browser`: password required, Tor or i2pd (through
+  SAM, a destination per site, when the router offers it; never the crawler's), or the
   configured Hyphanet node for the reserved name `omnid_net::HYPHANET_HOST`; never direct anywhere
   else). Its extension keeps pages from loading I2P or Hyphanet resources unless they are there
   themselves. Its Gecko prefs send anything else to a dead-end port and are read back before a page

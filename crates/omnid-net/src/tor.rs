@@ -25,7 +25,7 @@ const MAX_ISOLATED_SITES: usize = 4_096;
 /// A site key that starts with this is used once (the browser's proxy
 /// extension gives one to a request it cannot place): its stream gets circuits
 /// no other stream shares, and it takes no room among the sites kept.
-const ONE_OFF: char = '~';
+pub(crate) const ONE_OFF: char = '~';
 
 pub(crate) struct TorTransport {
     client: Arc<TorClient<PreferredRuntime>>,
