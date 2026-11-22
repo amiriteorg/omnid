@@ -5,6 +5,8 @@
 - Fixed: a Hyphanet address with whitespace before its `#fragment`
   (`freenet:USK@…/site/3/ #top`) kept the whitespace in its key, so the address the crawler
   stored named another key, or none.
+- Proxy clients' host names are checked on plain HTTP requests (`GET http://host/`) too, not
+  only on CONNECT and SOCKS: a name such as `a)b.i2p` gets a 400 instead of reaching a router.
 
 ## 0.1.6 (2026-11-22)
 

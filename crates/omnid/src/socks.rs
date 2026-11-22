@@ -317,6 +317,11 @@ async fn http_handshake<S: AsyncRead + AsyncWrite + Unpin>(
         return Err(invalid("not an absolute http:// target"));
     };
     let host = url.host_str().unwrap_or_default().trim_start_matches('[').trim_end_matches(']').to_owned();
+    // The URL parser takes names, such as `)`, that no router should see.
+    if !valid_host(&host) {
+        reply_http(s, 400, "Bad Request", "not a host name").await?;
+        return Err(invalid("not a host name"));
+    }
     let port = url.port_or_known_default().unwrap_or(80);
     let mut forward =
         format!("{} {} {}\r\n", head.method, &url[url::Position::BeforePath..url::Position::AfterQuery], head.version);
@@ -875,6 +880,22 @@ mod tests {
         assert_eq!(written[2..4], [5, NOT_ALLOWED]);
         assert!(valid_host("stats.i2p") && valid_host("_dmarc.example") && valid_host("::1") && valid_host("10.0.0.1"));
         assert!(!valid_host("") && !valid_host("a b") && !valid_host("a/b") && !valid_host(&"a".repeat(254)));
+    }
+
+    #[tokio::test]
+    async fn checks_the_host_of_a_request_in_absolute_form_too() {
+        // Found by fuzz/fuzz_targets/proxy_handshake.rs: `G http:) HTTP/1.1`
+        // asked for the host `)`. The URL parser takes such names, and only
+        // CONNECT's and SOCKS's were checked.
+        for request in
+            [&b"G http:) HTTP/1.1\r\n\r\n"[..], b"GET http://stats.)2p/a?b=1 HTTP/1.1\r\nHost: stats.i2p\r\n\r\n"]
+        {
+            let (target, written) = negotiate(request).await;
+            assert!(target.is_err(), "{}", String::from_utf8_lossy(request));
+            assert!(written.starts_with(b"HTTP/1.1 400 "), "{}", String::from_utf8_lossy(&written));
+        }
+        let (target, _) = negotiate(b"GET http://stats.i2p/a?b=1 HTTP/1.1\r\n\r\n").await;
+        assert_eq!(target.unwrap(), ("stats.i2p".into(), 80));
     }
 
     /// An i2pd stand-in: answers every CONNECT with 200, then echoes.
