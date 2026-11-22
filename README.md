@@ -87,7 +87,10 @@ is tried last until it is back; one that answers with a gateway error (5xx,
 as i2pd does when it cannot reach a site) hands the request to the next. The
 browser's and the SOCKS proxy's streams also start on the next router when
 the first has not answered within 3 seconds, and take whichever connects
-first. omnid joins the BitTorrent DHT as a
+first. Where a router has SAM on (port 7656 on its host by default;
+`--i2p-sam sam://host:port` to name others, `--no-i2p-sam` for none), the app's
+browser and the password proxy reach I2P through it instead, each site from
+an I2P identity of its own (see Anonymity). omnid joins the BitTorrent DHT as a
 read-only node to resolve magnets (`--no-dht` to stay out); `--dht-harvest`
 also indexes info hashes sampled from the whole DHT. Data lives in the platform data
 directory (`--data-dir` to override): the index in `index-v3/`, the crawl
@@ -123,9 +126,13 @@ one address and has no access list, so keep it on loopback and put a relay that
 admits only your devices' addresses on the private one; Tailscale ties each
 peer's address to its key, so the address is who is connecting. Leave
 `httpproxy.outproxy` unset, so the proxy reaches `.i2p` sites and nothing
-else, and turn off what omnid does not use (`socksproxy`, `sam`, `bob`,
-`i2cp`, `i2pcontrol`). A participating router (no `notransit`) keeps its own
-tunnels healthier than a client-only one.
+else. Turn SAM on (`[sam]` with `enabled = true` and `address = 127.0.0.1`)
+and relay its port, 7656, the same way, for the browser's per-site identities;
+anyone who reaches SAM can make destinations on the router, so only your
+devices. A relay that closes quiet connections is fine: omnid pings each
+session every two minutes. Turn off what omnid does not use (`socksproxy`,
+`bob`, `i2cp`, `i2pcontrol`). A participating router (no `notransit`) keeps
+its own tunnels healthier than a client-only one.
 
 Search syntax: words (all required, falling back to any word when nothing has
 all of them), `"a phrase"`, `-exclude`, `title:word`, `site:host`,
@@ -178,7 +185,10 @@ missing at every start, so an older install gains new ones without losing its
 index. Magnets are resolved through the DHT on the phone too; the phone never harvests the DHT. For `.i2p`, install the [i2pd app](https://f-droid.org/packages/org.purplei2p.i2pd/)
 from F-Droid and start its router: its HTTP proxy is on 127.0.0.1:4444, where
 omnid looks, so there is nothing to set up. Until then the I2P row under the
-network strip offers "Get i2pd" or "Open i2pd". ⋮ → Settings → I2P router takes
+network strip offers "Get i2pd" or "Open i2pd". Turn on SAM in its `i2pd.conf`
+(`enabled = true` under `[sam]`) for an I2P identity per site (see
+Anonymity); while every site shares one, the I2P row offers Settings → I2P
+router. ⋮ → Settings → I2P router takes
 a router elsewhere, such as your computer's over Tailscale (see above), asked
 before the i2pd app, which stays the fallback. For Hyphanet, ⋮ → Settings →
 Hyphanet node takes a node elsewhere in the same way; empty means one on the
@@ -375,7 +385,8 @@ What OMNId hides, and from whom:
 
 - **Your browsing.** Every page the app's browser opens goes through the
   daemon: the clearnet and onion sites through Tor, each site on circuits of
-  its own; `.i2p` through your I2P router; Hyphanet pages through your node.
+  its own; `.i2p` through your I2P router, each site from an I2P identity of
+  its own where the router has SAM on; Hyphanet pages through your node.
   Nothing in the browser connects directly: its Gecko prefs send whatever the
   proxy extension does not route to a dead-end port, checked before a page
   loads. It resists fingerprinting as Firefox's resist-fingerprinting does,
@@ -390,8 +401,17 @@ What OMNId hides, and from whom:
   defaults (direct clearnet, the DHT on), says so in its log at start, and
   takes `--clearnet-via-tor --no-dht` for the same protection.
 - **Your other apps**, through the private proxy (Settings → Proxy for other
-  apps, or `--socks-password`): never direct, each username on circuits of its
-  own.
+  apps, or `--socks-password`): never direct, each username on circuits, and
+  with SAM an I2P identity, of its own.
+- **One eepsite from the next.** Through a router's SAM bridge, each site the
+  browser is on gets a destination of its own, as each gets Tor circuits of
+  its own: new, never published, on 3-hop tunnels whatever the router's
+  defaults (the i2pd app's are 1 hop), and closed after ten minutes unused or
+  at New identity. What a page loads from other eepsites comes from the
+  page's site's destination. Two are kept made ahead, since one takes 5 to 60
+  seconds to build; a site's first page waits only when both are taken. The
+  crawler keeps the router's HTTP proxy and its destination, so it never
+  shares one with your browsing.
 - **Downloads** go the browser's way, never direct. Their parallel
   connections use circuits of their own, so more exits see parts of a file
   being fetched (encrypted where the site uses HTTPS), each only its part.
@@ -418,17 +438,18 @@ What it does not hide:
   your own devices only.
 - **A file you open in another app**, which may go online by itself, and the
   torrent app a magnet is handed to, which goes online directly.
-- **The i2pd app's defaults.** The i2pd app for Android ships with 1-hop
-  tunnels for its HTTP proxy, where I2P's own default is 3, and one lasting
-  I2P address (`keys = proxy-keys.dat`) that its SOCKS proxy shares: easier to
-  trace, and linkable from one day to the next. In its `i2pd.conf`, set the
-  `[httpproxy]` section's `inbound.length` and `outbound.length` to 3 and
-  `keys` to `transient`, or use a router on your own computer (the setup in
-  Quick start uses 3 hops and a new address at every start).
-- **One I2P identity.** Your I2P router's HTTP proxy sends everything through
+- **One I2P identity, without SAM.** A router without SAM on, such as the
+  i2pd app as it ships, leaves its HTTP proxy, which sends everything through
   one I2P destination: the browser's eepsites, the crawler's and the apps
   behind the proxy, so eepsites can link those visits to each other (though
-  not to your IP). There is no per-site isolation on I2P as there is on Tor.
+  not to your IP). The search page's I2P row says which you have, and offers
+  Settings → I2P router when it is one. The i2pd app's proxy also has 1-hop
+  tunnels, where I2P's own default is 3, and one lasting address
+  (`keys = proxy-keys.dat`) that its SOCKS proxy shares: easier to trace, and
+  linkable from one day to the next. In its `i2pd.conf`, set `enabled = true`
+  under `[sam]` (and, for the crawler and other apps, the `[httpproxy]`
+  section's `inbound.length` and `outbound.length` to 3 and `keys` to
+  `transient`), or use a router on your own computer.
 - **How OMNId downloads.** The daemon's download requests differ from the
   browser's own (their headers, HTTP/1.1, several exits within a second), so a
   server can tell an OMNId download apart.

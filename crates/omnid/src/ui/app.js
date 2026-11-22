@@ -510,6 +510,9 @@ window.omnidApp = {
   },
 };
 
+// The end of the I2P router's detail (omnid-net's SAM status) when each site gets an I2P identity of its own.
+const PER_SITE = "an I2P identity per site";
+
 // Where a router's detail says it listens, in words: on this device, or the
 // other machine's address. With several routers ("…; no … at …"), the first
 // that answers.
@@ -536,14 +539,21 @@ function explain(network, router) {
       return EMBEDDED
         ? "Torrent lookups are off: torrents are listed from their links alone. ⋮ → Settings → Torrent lookups turns them on, but the BitTorrent network cannot go through Tor and sees your address."
         : "Torrent lookups are off.";
-    case "i2p":
-      if (state === "ready" && EMBEDDED && (whereIs(detail) || "on this device") === "on this device") {
-        return "I2P sites go through the i2pd app on this phone. It ships with 1-hop tunnels and one lasting I2P address for its proxy, which makes you easier to trace: in its i2pd.conf, set the httpproxy's inbound.length and outbound.length to 3 and its keys to transient, or use a router on your own computer (⋮ → Settings → I2P router).";
+    case "i2p": {
+      const where = whereIs(detail) || "on this device";
+      if (state === "ready" && detail.includes(PER_SITE)) {
+        return `I2P sites go through the I2P router ${where}. Each site you open gets an I2P identity of its own, on 3-hop tunnels OMNId asks for.`;
       }
-      if (state === "ready") return `I2P sites go through the I2P router ${whereIs(detail) || "on this device"}.`;
+      if (state === "ready" && EMBEDDED && where === "on this device") {
+        return "I2P sites go through the i2pd app on this phone, with its defaults: 1-hop tunnels, and one lasting I2P address for every site, which makes you easier to trace. Turn on SAM in its i2pd.conf ([sam] enabled = true) and OMNId gives each site an identity of its own, on 3 hops; or use a router on your own computer.";
+      }
+      if (state === "ready") {
+        return `I2P sites go through the I2P router ${where}, every one from its HTTP proxy's one I2P address. Turn on its SAM bridge (port 7656) and OMNId gives each site an identity of its own.`;
+      }
       if (i2pdInstalled === true) return "The i2pd app is installed, but its router is not running. Start it there and OMNId uses it right away, or use a router on your own computer: ⋮ → Settings → I2P router.";
       if (i2pdInstalled === false) return "Reaching .i2p sites needs an I2P router: the free i2pd app on this phone, from F-Droid, which OMNId uses as soon as it runs, or one on your own computer, over Tailscale for instance: ⋮ → Settings → I2P router.";
       return "Reaching .i2p sites needs an I2P router, such as the i2pd app, running on this device.";
+    }
     case "hyphanet":
       if (state === "ready") return `Hyphanet sites come through the Hyphanet node ${whereIs(detail) || "on this device"}.`;
       if (EMBEDDED) return `No Hyphanet node answers ${whereIs(detail) || "on this device"}. Use one on your own computer, over Tailscale for instance: ⋮ → Settings → Hyphanet node.`;
@@ -557,9 +567,13 @@ function explain(network, router) {
   return detail;
 }
 
-// The I2P row's way to the i2pd app, inside the Android app, which opens it or its F-Droid page.
-function routerAction(network, state) {
-  if (network !== "i2p" || state === "ready" || i2pdInstalled === null) return null;
+// The I2P row's way on, inside the Android app: to the i2pd app (which opens it or its F-Droid
+// page) while no router runs, and to Settings → I2P router while every site shares one identity.
+function routerAction(network, router) {
+  if (network !== "i2p" || i2pdInstalled === null) return null;
+  if (router?.state === "ready") {
+    return router.detail.includes(PER_SITE) ? null : el("a", { class: "button small", href: "omnid:i2p-router" }, "I2P router settings");
+  }
   return el("a", { class: "button small", href: "omnid:i2pd" }, i2pdInstalled ? "Open i2pd" : "Get i2pd");
 }
 
@@ -584,7 +598,7 @@ async function refreshStatus() {
         el("span", { class: "state-dot" }),
         el("b", {}, name, el("span", {}, STATE_WORDS[state] ?? state)),
         el("p", {}, explain(network, byNetwork[network])),
-        routerAction(network, state));
+        routerAction(network, byNetwork[network]));
     }));
 
     const reason = status.pause_reason ? `: ${status.pause_reason}` : "";

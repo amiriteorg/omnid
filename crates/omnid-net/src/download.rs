@@ -517,14 +517,19 @@ impl Job<'_> {
     /// A new HTTP/1.1 connection to `url`'s host, routed as the options say.
     async fn open(&self, url: &Url, circuits: Circuits<'_>) -> Result<Sender, DownloadError> {
         let (host, port) = target(url)?;
+        let network = stream_target(&host).1;
         // Boxed: on top of arti's, the download's future would nest deeper
         // than the compiler lays types out.
         let connect: Pin<Box<dyn Future<Output = Result<_, FetchError>> + Send + '_>> = match &self.opts.route {
             Route::Direct => Box::pin(self.gateway.connect_on(&host, port, circuits)),
+            // I2P has no circuits to spread connections over: they all come
+            // from the site's identity, as its pages do.
+            Route::Browser { site } if network == Network::I2p => {
+                Box::pin(self.gateway.connect_browser_on(&host, port, Circuits::Site(site)))
+            }
             Route::Browser { .. } => Box::pin(self.gateway.connect_browser_on(&host, port, circuits)),
         };
         let stream = self.stoppable(async { Ok(connect.await?) }).await?;
-        let network = stream_target(&host).1;
         let transport = |error: BoxError| DownloadError::Fetch(FetchError::Transport { network, error });
         self.timed(async {
             if url.scheme() == "https" {

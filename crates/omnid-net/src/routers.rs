@@ -1,8 +1,8 @@
-//! Several routers for one overlay network: i2pd HTTP proxies for I2P, nodes'
-//! FProxy for Hyphanet. Each reaches the whole network, so a request goes to
-//! the best one that answers: the first in the order given that is not
-//! resting. A router that could not be reached rests, longer each time it
-//! fails again, and is tried last until it is back.
+//! Several routers for one overlay network: i2pd HTTP proxies or SAM bridges
+//! for I2P, nodes' FProxy for Hyphanet. Each reaches the whole network, so a
+//! request goes to the best one that answers: the first in the order given
+//! that is not resting. A router that could not be reached rests, longer each
+//! time it fails again, and is tried last until it is back.
 
 use std::future::Future;
 use std::sync::Mutex;
@@ -25,11 +25,11 @@ pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long a stream waits on one router before also asking the next.
 pub(crate) const STAGGER: Duration = Duration::from_secs(3);
 
-pub(crate) struct Router {
+/// A router, with what requests through it need: for HTTP, a proxy client
+/// for i2pd or a plain one for FProxy; nothing for a SAM bridge.
+pub(crate) struct Router<C = reqwest::Client> {
     pub(crate) url: Url,
-    /// For HTTP requests through it: a proxy client for i2pd, a plain one for
-    /// FProxy.
-    pub(crate) client: reqwest::Client,
+    pub(crate) client: C,
     health: Mutex<Health>,
 }
 
@@ -39,7 +39,7 @@ struct Health {
     resting_until: Option<Instant>,
 }
 
-impl Router {
+impl<C> Router<C> {
     pub(crate) fn succeeded(&self) {
         *self.health.lock().expect("router lock poisoned") = Health::default();
     }
@@ -57,16 +57,16 @@ impl Router {
     }
 }
 
-pub(crate) struct Routers {
+pub(crate) struct Routers<C = reqwest::Client> {
     network: Network,
-    routers: Vec<Router>,
+    routers: Vec<Router<C>>,
 }
 
-impl Routers {
+impl<C> Routers<C> {
     pub(crate) fn new(
         network: Network,
         urls: &[Url],
-        client: impl Fn(&Url) -> Result<reqwest::Client, BoxError>,
+        client: impl Fn(&Url) -> Result<C, BoxError>,
     ) -> Result<Self, BoxError> {
         let routers = urls
             .iter()
@@ -76,7 +76,7 @@ impl Routers {
     }
 
     /// In the order given.
-    pub(crate) fn all(&self) -> &[Router] {
+    pub(crate) fn all(&self) -> &[Router<C>] {
         &self.routers
     }
 
@@ -86,12 +86,18 @@ impl Routers {
 
     /// Best first: the routers that are not resting, in the order given, then
     /// the resting ones, the soonest back first. Empty when none is configured.
-    pub(crate) fn order(&self) -> Vec<&Router> {
+    pub(crate) fn order(&self) -> Vec<&Router<C>> {
         let now = Instant::now();
-        let mut order: Vec<(Option<Instant>, usize, &Router)> =
+        let mut order: Vec<(Option<Instant>, usize, &Router<C>)> =
             self.routers.iter().enumerate().map(|(i, r)| (r.resting_until(now), i, r)).collect();
         order.sort_by_key(|(resting, i, _)| (resting.is_some(), *resting, *i));
         order.into_iter().map(|(_, _, r)| r).collect()
+    }
+
+    /// The routers that are not resting, in the order given.
+    pub(crate) fn awake(&self) -> Vec<&Router<C>> {
+        let now = Instant::now();
+        self.routers.iter().filter(|r| r.resting_until(now).is_none()).collect()
     }
 
     /// The best router's address, for links into it.
@@ -225,6 +231,7 @@ mod tests {
         assert_eq!(hosts(&routers.order()), ["127.0.0.2", "127.0.0.3", "127.0.0.1"]);
         routers.order()[0].failed();
         assert_eq!(hosts(&routers.order()), ["127.0.0.3", "127.0.0.1", "127.0.0.2"], "the soonest back first");
+        assert_eq!(hosts(&routers.awake()), ["127.0.0.3"], "the resting ones are left out");
         routers.routers[0].succeeded();
         assert_eq!(hosts(&routers.order()), ["127.0.0.1", "127.0.0.3", "127.0.0.2"]);
         assert_eq!(routers.best().unwrap().host_str(), Some("127.0.0.1"));
@@ -302,7 +309,7 @@ mod tests {
         assert!(error.to_string().contains("127.0.0.1 could not"), "{error}");
         assert_eq!(hosts(&routers.order()), ["127.0.0.1", "127.0.0.2"], "they answered: nobody rests");
 
-        let none = Routers::new(Network::Hyphanet, &[], |_| Ok(reqwest::Client::new())).unwrap();
+        let none: Routers = Routers::new(Network::Hyphanet, &[], |_| Ok(reqwest::Client::new())).unwrap();
         assert!(matches!(none.race(STAGGER, |_| async { Ok(()) }).await, Err(FetchError::Unavailable { .. })));
     }
 

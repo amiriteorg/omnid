@@ -90,6 +90,7 @@ class SettingsActivity : Activity() {
         }
         setContentView(scroll)
         render()
+        if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_I2P_ROUTER, false)) askI2pRouter()
     }
 
     /** The daemon restarting changes what the proxy for other apps shows. */
@@ -172,7 +173,7 @@ class SettingsActivity : Activity() {
 
         section(R.string.settings_routers)
         choice(R.string.i2p_router, prefs.getString(I2pRouter.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_phone) }) {
-            askRouter(R.string.i2p_router, R.string.i2p_router_detail, R.string.i2p_router_hint, R.string.i2p_router_invalid, I2pRouter.KEY, I2pRouter::parse)
+            askI2pRouter()
         }
         divider()
         choice(R.string.hyphanet_node, prefs.getString(HyphanetNode.KEY, "").orEmpty().ifEmpty { getString(R.string.settings_router_phone) }) {
@@ -488,6 +489,9 @@ class SettingsActivity : Activity() {
      * A router elsewhere that omnid reaches a network through, saved under [key] as [parse] reads
      * it; a change restarts the daemon, which takes it at start.
      */
+    private fun askI2pRouter() =
+        askRouter(R.string.i2p_router, R.string.i2p_router_detail, R.string.i2p_router_hint, R.string.i2p_router_invalid, I2pRouter.KEY, I2pRouter::parse)
+
     private fun askRouter(title: Int, detail: Int, hint: Int, invalid: Int, key: String, parse: (String) -> String?) {
         val current = prefs().getString(key, "").orEmpty()
         val input = textField(current, hint).apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI }
@@ -575,8 +579,10 @@ class SettingsActivity : Activity() {
 
     private fun dp(value: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
-    private companion object {
-        const val SOURCE = "https://github.com/amiriteorg/omnid"
+    companion object {
+        /** Opens the I2P router's dialog at once: the search page's way to it. */
+        const val EXTRA_I2P_ROUTER = "i2p_router"
+        private const val SOURCE = "https://github.com/amiriteorg/omnid"
     }
 }
 

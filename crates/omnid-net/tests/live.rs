@@ -208,6 +208,31 @@ async fn live_browser_reaches_eepsites_through_i2pd() {
 }
 
 #[tokio::test]
+#[ignore = "live: needs i2pd with SAM on (scripts/live-routers.sh up)"]
+async fn live_browser_reaches_eepsites_through_sam() {
+    // The browser's route through SAM alone, with no HTTP proxy to fall back
+    // on: each site from a destination of its own, on 3-hop tunnels.
+    require_router(omnid_net::DEFAULT_SAM_PORT, "i2pd's SAM bridge");
+    let sam = format!("sam://127.0.0.1:{}", omnid_net::DEFAULT_SAM_PORT).parse().unwrap();
+    let cfg = GatewayConfig { tor_dir: None, i2p_proxies: vec![], i2p_sam: vec![sam], ..GatewayConfig::default() };
+    let gateway = Gateway::new(cfg).unwrap();
+    for site in ["reg.i2p", "stats.i2p"] {
+        let mut last = String::new();
+        for _ in 0..3 {
+            match gateway.connect_browser(site, 80, site).await {
+                Ok(mut stream) => last = status_line(&mut stream, site, I2P_USER_AGENT).await,
+                Err(e) => last = e.to_string(),
+            }
+            if last.starts_with("HTTP/1.1 ") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+        assert!(last.starts_with("HTTP/1.1 "), "{site} through SAM: {last}");
+    }
+}
+
+#[tokio::test]
 #[ignore = "live: needs a Hyphanet node (scripts/live-routers.sh up)"]
 async fn live_hyphanet_follows_newer_editions() {
     require_router(8888, "Hyphanet's FProxy");
