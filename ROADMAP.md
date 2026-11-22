@@ -25,24 +25,19 @@ from one index, with a private browser in the app.
    - crawling on a charger: heat, battery, and whether Android stops the service.
 
    This needs the owner's phone.
-2. **Ship third-party license notices.** The README says binary releases should carry their
-   dependencies' notices. The macOS tarball and the APK carry only OMNId's license and Space
-   Mono's.
-   - Generate one notice file from `cargo metadata` at release time and ship it in both.
-   - In the APK it goes under `assets/licenses/`, and Settings → About should open it.
-3. **Typed `http://` eepsites without the wait.** The browser's HTTPS-only mode tries
+2. **Typed `http://` eepsites without the wait.** The browser's HTTPS-only mode tries
    `https://` first, which took about 25 s on the test eepsites before the page loaded over
    HTTP.
    - `.i2p` and the Hyphanet host should load as typed, as onions already do.
    - The clearnet stays HTTPS-only.
-4. **Builds anyone can check.** Releases are built on one Mac and signed by hand
+3. **Builds anyone can check.** Releases are built on one Mac and signed by hand
    ([docs/releasing.md](docs/releasing.md)).
    - Build the binaries in CI from the tag, and check them against the local build: the APK
      build is reproducible.
    - Publish build provenance.
    - Add Linux binaries (x86_64 and aarch64).
    - The signing key stays offline.
-5. **Tor bridges** (**needs a go-ahead**). They are for networks that block Tor; arti 0.48,
+4. **Tor bridges** (**needs a go-ahead**). They are for networks that block Tor; arti 0.48,
    which OMNId already uses, supports them. There are three phases, each depending on the one
    before.
    - **A: the daemon and desktop.**
@@ -63,7 +58,7 @@ from one index, with a private browser in the app.
      to try bridges.
      - It asks Tor's circumvention API for your country's settings, through the built-in meek
        bridge, and applies them, as Tor Browser does.
-6. **A built-in I2P router** (**needs a go-ahead**). The aim is to embed
+5. **A built-in I2P router** (**needs a go-ahead**). The aim is to embed
    [emissary](https://github.com/eepnet/emissary), a Rust I2P router (MIT), in the daemon, as
    arti is for Tor. Then the phone needs no i2pd app, and OMNId controls tunnel lengths and
    identities.

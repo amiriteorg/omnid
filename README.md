@@ -622,10 +622,14 @@ Releases are cut as [docs/releasing.md](docs/releasing.md) describes, and the pl
 ## License
 
 MIT, see [LICENSE](LICENSE). Dependencies are permissively licensed (MIT,
-Apache-2.0, BSD, ISC, Zlib, Unicode) except `option-ext`, an unmodified
+Apache-2.0, BSD, ISC, Zlib, Unicode, CC0, the Unlicense, and CDLA-Permissive-2.0
+for `webpki-roots`' root certificates) except `option-ext`, an unmodified
 MPL-2.0 dependency of arti, and GeckoView in the Android app, MPL-2.0 and
-unmodified (its licenses are at `about:license` in the browser); binary
-distributions, the APK included, should ship the dependencies' license
-notices. The typeface is Space Mono, under the SIL Open Font License 1.1
+unmodified (its licenses are at `about:license` in the browser). The app's Java
+and Kotlin libraries, which come with GeckoView (AndroidX, Media3, Guava,
+kotlinx.coroutines, the Kotlin standard library), are under Apache-2.0. Each
+release ships the notices of all of these: `THIRD-PARTY-NOTICES.txt` in the macOS
+tarball, and Settings → About → Licenses → Third-party notices in the app, both
+written by `scripts/third-party-notices.py`. The typeface is Space Mono, under the SIL Open Font License 1.1
 (`crates/omnid/src/ui/space-mono-OFL.txt`, and in the APK's
 `assets/licenses/`); the font files carry it too.

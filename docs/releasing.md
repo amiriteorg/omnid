@@ -11,7 +11,9 @@ It needs an Apple-silicon Mac with:
 - the Android SDK with an NDK and the `aarch64-linux-android` target;
 - JDK 17;
 - an arm64 emulator image (see `scripts/android-smoke.sh`);
-- `gh`, logged in to the repository.
+- `gh`, logged in to the repository;
+- cargo-about 0.9.3 (`cargo install --locked --features cli cargo-about@0.9.3`), for the
+  third-party notices.
 
 The release key lives outside the repository. `android/keystore.properties` names it and is
 git-ignored.
@@ -56,11 +58,17 @@ Run both from a clean checkout of the release commit:
 cargo build --release --locked -p omnid
 mkdir -p target/dist/omnid-<version>-aarch64-apple-darwin
 cp target/release/omnid LICENSE README.md CHANGELOG.md target/dist/omnid-<version>-aarch64-apple-darwin/
+scripts/third-party-notices.py macos target/dist/omnid-<version>-aarch64-apple-darwin/THIRD-PARTY-NOTICES.txt
 (cd target/dist && COPYFILE_DISABLE=1 tar -czf omnid-<version>-aarch64-apple-darwin.tar.gz omnid-<version>-aarch64-apple-darwin)
 
 android/build-rust.sh release
+scripts/third-party-notices.py android android/app/src/main/assets/licenses/third-party.txt
 (cd android && ./gradlew assembleRelease)
 ```
+
+The notices cover the Rust crates in each build and, in the app, the Java and Kotlin libraries
+that come with GeckoView. The script stops at a license it does not know rather than leave a
+notice out. The app's copy is git-ignored, and `assembleRelease` packs it into the APK.
 
 `target/dist/` keeps the files out of the tree, which `release-check` requires to be clean.
 `COPYFILE_DISABLE=1` keeps macOS metadata files out of the tarball.
@@ -84,12 +92,14 @@ Then check the APK and write the checksums:
 ```sh
 apksigner verify -v --print-certs omnid-<version>-arm64.apk
 aapt2 dump badging omnid-<version>-arm64.apk | head -1
+unzip -l omnid-<version>-arm64.apk | grep assets/licenses/third-party.txt
 shasum -a 256 omnid-<version>-arm64.apk omnid-<version>-aarch64-apple-darwin.tar.gz > SHA256SUMS
 ```
 
 - `apksigner` must report the certificate SHA-256 digest
   `7ca1d0f66bfa1e50e3c258b158779ef7aa6957c1ef00c2c18a385659af812a53`.
 - `aapt2` must show the new `versionCode` and `versionName`.
+- `unzip` must list the notices. An APK without them must not be published.
 
 ## 5. Test the artifacts themselves
 

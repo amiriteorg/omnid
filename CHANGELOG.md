@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Releases carry their third-party license notices, which the README said they should and none
+  did: `THIRD-PARTY-NOTICES.txt` in the macOS tarball, and Settings → About → Licenses →
+  Third-party notices in the app, for the Rust crates and the Java and Kotlin libraries inside
+  each. `scripts/third-party-notices.py` writes them at release time.
+
 ## 0.1.5 (2026-11-22)
 
 - Fixed: since 0.1.2, `omnid serve` stopped at once with "unable to open database file" when its data
