@@ -198,6 +198,13 @@ before the i2pd app, which stays the fallback. For Hyphanet, ⋮ → Settings �
 Hyphanet node takes a node elsewhere in the same way; empty means one on the
 phone at 127.0.0.1:8888, which is also the fallback.
 
+When a page does not load in the app's browser, the daemon logs why, under the
+tag `omnid`: `adb logcat -s omnid` shows lines such as "browser: a connection to
+an I2P site failed: …", with the network and the router's or Tor's own words,
+and every site's name replaced by `<site>`. An I2P router that started a
+moment ago, or that Android paused in the background, fails every eepsite
+until its tunnels are built; give the i2pd app unrestricted battery use.
+
 ⋮ → Settings (also in the browser's ⋮) holds the rest, saved as they change:
 
 - **Appearance**: the theme (as the phone, light or dark) for OMNId's screens

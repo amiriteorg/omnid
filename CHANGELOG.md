@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- When the app's browser or the proxy for other apps cannot reach a site, the daemon logs why
+  (`adb logcat -s omnid`): the network and Tor's or the router's reason, never the site, whose
+  name is replaced. It had logged nothing a phone shows, so a failure on a real phone could not
+  be told apart from another.
+
 ## 0.1.6 (2026-11-22)
 
 - Releases carry their third-party license notices, which the README said they should and none
