@@ -342,11 +342,13 @@ fn name(job: &Job) -> Option<&str> {
 }
 
 /// How long a page that answered stays fresh. Onion and I2P sites churn more
-/// than the clearnet; Hyphanet content is immutable per edition.
+/// than the clearnet; Hyphanet content is immutable per edition, and IPFS
+/// content per CID (an IPNS name moves, but is checked as seldom). A Nostr
+/// event never changes, but a profile's latest notes do.
 fn revisit_after(network: Network) -> i64 {
     match network {
-        Network::Onion | Network::I2p | Network::Magnet => 3 * DAY,
-        Network::Clearnet | Network::Hyphanet => 7 * DAY,
+        Network::Onion | Network::I2p | Network::Magnet | Network::Nostr => 3 * DAY,
+        Network::Clearnet | Network::Hyphanet | Network::Ipfs => 7 * DAY,
     }
 }
 

@@ -5,10 +5,11 @@ Where OMNId goes next, in the order the work is planned. What has shipped is in
 [Status](README.md#status). Items marked **needs a go-ahead** wait on the owner's decision
 before any work starts.
 
-## Where it stands: 0.1.5
+## Where it stands: 0.1.6
 
 One daemon and an Android app search the clearnet, Tor, I2P, Hyphanet and BitTorrent magnets
-from one index, with a private browser in the app.
+from one index, with a private browser in the app. Unreleased: IPFS (in the app through a
+gateway on the owner's computer), Nostr and Telegram's public channels.
 
 - Each browser site gets Tor circuits of its own, and an I2P identity of its own where the
   router offers SAM.
@@ -18,8 +19,10 @@ from one index, with a private browser in the app.
 
 ## Next
 
-1. **Run it on a physical phone.** Every release so far was tested on an emulator. A real
-   arm64 phone should cover:
+1. **Run it on a physical phone.** Releases were tested on an emulator. The owner now runs
+   0.1.6 on a Pixel with GrapheneOS and a OnePlus 15. On the Pixel, onion and `.i2p` pages
+   failed in the browser for a while, then loaded; the daemon now logs why a browser
+   connection fails, without the site, for the next time. Still to cover:
    - per-site I2P identities through the i2pd app's own SAM bridge;
    - the Tailscale address rule, with Tailscale on and off;
    - crawling on a charger: heat, battery, and whether Android stops the service.

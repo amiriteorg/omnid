@@ -6,6 +6,50 @@
   (`adb logcat -s omnid`): the network and Tor's or the router's reason, never the site, whose
   name is replaced. It had logged nothing a phone shows, so a failure on a real phone could not
   be told apart from another.
+- Links whose file name says the crawler would not index them (archives, programs, disk images,
+  media, documents, fonts, checksums and signatures, by a URL's last segment or an IPFS gateway's
+  `?filename=`) are not followed: asking for one cost a fetch over Tor or I2P, and made an IPFS
+  node fetch the file's first blocks. The phone, crawling from IPFS's release downloads
+  (`dist.ipfs.tech`), had visited 2,507 release files in six minutes; that seed is gone.
+- The app reaches IPFS and Nostr: ⋮ → Settings → IPFS gateway takes an IPFS node's gateway on
+  your computer (none by default: no IPFS node runs on a phone), and Nostr's relays are read
+  through Tor while "Crawl the web through Tor" is on, with Settings → Nostr relays to turn them
+  off. Both have filters in Settings → Search and rows in the search page's status panel. A Nostr
+  result opens in a Nostr app after a dialog, as a magnet does in a torrent app; only `nostr:`
+  notes, profiles and articles are handed on, never a key.
+- Telegram's public channels are crawled through their web previews: a link to a channel or one of
+  its posts (`t.me/<name>`, `t.me/<name>/<post>`, `telegram.me`) is the channel's preview,
+  `https://t.me/s/<name>`, with its latest posts, and its `?before=` pages go back through older
+  ones. A channel is followed from any page the clearnet may be reached from, other sites
+  included; bots, invites and Telegram's own pages are not followed. The search page labels them
+  Telegram.
+- Nostr is a network: notes, long-form articles, profiles and public chat channels (NIP-28, with
+  their latest messages), read from relays over WebSocket and crawled through what they mention.
+  `nostr:` entities (NIP-19) and pages of web clients that show one (njump.me, primal.net and the
+  like) are addresses. Every event's ID and BIP-340 signature is checked, so a relay cannot forge
+  or alter one. Relays are reached as the clearnet is, and `--nostr-relay` and `--no-nostr` set
+  them. A denied `nostr:npub1…` keeps out all its author signed. New dependency: `k256`
+  (RustCrypto, for the signatures). `/api/status` lists a `nostr` row, between `ipfs` and
+  `magnet`. Not in the app yet.
+- Forums crawl better. Their sign-in, sign-up, member, profile, search, reply and print pages are
+  no longer fetched (on Discourse Meta they had been 45 of the first 80 addresses). Session IDs
+  (`sid`, vBulletin's `s`, `PHPSESSID`, `jsessionid`) are dropped from addresses, which changes the
+  address a page with one is indexed under. A page that names a canonical address on its site, at
+  the same path or above it (`/post/1?scrollToComments=true`, a post's place in its topic), is
+  crawled at that address instead. A captcha or bot-check page (MyBB's hCaptcha, Cloudflare's) is
+  no longer indexed. `<noscript>` content is read as markup, since omnid runs no scripts: a
+  Flarum forum's discussions are all there, and it had yielded 2 links.
+- IPFS is a network: `ipfs://<CID>/…` and `ipns://<name>/…` (IPNS keys and DNSLink names), fetched
+  and crawled through an IPFS gateway, by default an IPFS node's on 127.0.0.1:8080 (kubo's);
+  `--ipfs-gateway` takes others, best first, as `--fproxy` does. A CID in any base is one address
+  (CIDv1 in base32), and links through public gateways (`https://ipfs.io/ipfs/…`,
+  `https://<CID>.ipfs.dweb.link/…`) are the content itself. An answer without a gateway's headers
+  is refused, so another server on the port is not indexed as IPFS. IPFS is not anonymous, so the
+  crawler never follows a link into it from an onion, I2P or Hyphanet page, and the app's browser
+  never reaches it. New default seeds: IPFS's documentation and the Distributed Wikipedia Mirror.
+  The search page has an IPFS filter and opens IPFS results through `/ipfs/…` and `/ipns/…`, which
+  redirect to the gateway. `/api/status` lists an `ipfs` router, between `hyphanet` and `magnet`.
+  Not in the app yet.
 
 ## 0.1.6 (2026-11-22)
 

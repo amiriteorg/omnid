@@ -2,7 +2,9 @@
 //! safety → index, with discovered links written back to the store.
 
 pub mod extract;
+mod forums;
 mod frontier;
+pub mod nostr;
 mod robots;
 pub mod safety;
 mod store;
@@ -12,6 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use omnid_core::nostr::{Nostr, NostrTarget};
 use omnid_core::{IndexedDoc, Magnet, Network, Source, now_secs};
 use omnid_dht::{Dht, TorrentMeta};
 use omnid_index::SearchIndex;
@@ -35,6 +38,10 @@ pub const HARVESTED_TRUST: f32 = 0.3;
 const HEALTHY_SWARM: f32 = 20.0;
 /// File names kept in the index per torrent; the description keeps the count.
 const MAX_INDEXED_FILES: usize = 1_000;
+/// A page with a captcha or bot check in its markup and less visible text
+/// than this is the check itself: MyBB's "Human Verification" was 300 bytes,
+/// a forum thread is several thousand.
+const CHALLENGE_TEXT: usize = 1_500;
 
 #[derive(Debug, Clone)]
 pub struct CrawlConfig {
@@ -367,6 +374,9 @@ impl Context {
         if let Source::Magnet(magnet) = source {
             return self.magnet(magnet, job).await;
         }
+        if let Source::Nostr(entity) = source {
+            return self.nostr(entity, job).await;
+        }
         match self.robots.allowed(&self.gateway, source).await {
             Ok(true) => {}
             Ok(false) => return Outcome::NotIndexed { reason: "disallowed by robots.txt".into(), links: vec![] },
@@ -395,6 +405,10 @@ impl Context {
         };
 
         let page = extract::extract(page.content_type.as_deref(), &body);
+        if page.challenge && page.text.len() < CHALLENGE_TEXT {
+            // Asked again later, as a failure is: the check may let it through.
+            return Outcome::Failed { visit: Visit::Failed, error: "a captcha or bot check".into() };
+        }
         let url = source.to_string();
         let verdict = self.safety.check_content(&[&url, &page.title, &page.description, &page.text]);
         if verdict != Verdict::Allow {
@@ -403,6 +417,13 @@ impl Context {
         let links = if page.nofollow { vec![] } else { self.follow(source, &page.links) };
         if page.noindex {
             return Outcome::NotIndexed { reason: "noindex".into(), links };
+        }
+        if let Some(original) = page.canonical.as_deref().and_then(|c| copy_of(source, c)) {
+            // The original goes through the store like any link, so it is
+            // crawled once however many copies point at it.
+            let mut links = links;
+            links.extend(self.follow(source, &[original.to_string()]));
+            return Outcome::NotIndexed { reason: format!("a copy of {original}"), links };
         }
 
         let now = now_secs();
@@ -476,6 +497,61 @@ impl Context {
         Outcome::Indexed { doc: Box::new(doc), links: vec![] }
     }
 
+    /// A Nostr event, article or profile, from the relays: each event the
+    /// gateway hands over is checked, and its author must not be denied.
+    async fn nostr(&self, entity: &Nostr, job: &Job) -> Outcome {
+        let ask = |filter| async move { self.gateway.nostr(&filter, &entity.relays).await };
+        let found = match ask(nostr::filter(&entity.target)).await {
+            Ok(events) => events,
+            Err(e) => return failed(&e, ""),
+        };
+        CrawlStats::bump(&self.control.stats.fetched);
+        let Some(event) = nostr::newest(found) else {
+            return Outcome::Failed { visit: Visit::Failed, error: "no relay asked has it".into() };
+        };
+        let author = Source::Nostr(Nostr { target: NostrTarget::Profile(event.pubkey), relays: vec![] });
+        if self.safety.check_source(&author) != Verdict::Allow {
+            return Outcome::Blocked(Verdict::DeniedSite);
+        }
+        // Whatever fails here leaves the event itself to index.
+        let fields = match (&entity.target, event.kind) {
+            (NostrTarget::Profile(pubkey), _) => {
+                let events = ask(nostr::profile_events(*pubkey)).await.unwrap_or_default();
+                nostr::profile(&event, &events)
+            }
+            (_, nostr::CHANNEL) => {
+                let messages = ask(nostr::channel_messages(event.id)).await.unwrap_or_default();
+                nostr::event(&event, &messages)
+            }
+            _ => nostr::event(&event, &[]),
+        };
+        let url = job.source.to_string();
+        let verdict = self.safety.check_content(&[&url, &fields.title, &fields.description, &fields.body]);
+        if verdict != Verdict::Allow {
+            return Outcome::Blocked(verdict);
+        }
+        let links = self.follow(&job.source, &fields.links);
+        let now = now_secs();
+        let doc = IndexedDoc {
+            network: Network::Nostr,
+            site: author.site_key(),
+            title: fields.title,
+            description: fields.description,
+            keywords: fields.keywords,
+            content_hash: content_hash(&fields.body, &event.id),
+            body: fields.body,
+            info_hash: None,
+            files: vec![],
+            first_seen: now,
+            last_seen: now,
+            liveness: 1.0,
+            trust: job.trust,
+            lang: None,
+            url,
+        };
+        Outcome::Indexed { doc: Box::new(doc), links }
+    }
+
     fn follow(&self, from: &Source, hrefs: &[String]) -> Vec<Source> {
         let mut seen = HashSet::new();
         hrefs
@@ -486,13 +562,15 @@ impl Context {
             .collect()
     }
 
-    /// The link policy, for links and redirects alike.
+    /// The link policy, for links and redirects alike. A page reached
+    /// anonymously never leads the crawler to a network it reaches from its
+    /// own address ([`Gateway::leaves_anonymity`]).
     fn may_follow(&self, from: &Source, link: &Source) -> bool {
-        let clearnet_ok = || {
-            from.network() == Network::Clearnet
-                && (!self.cfg.clearnet_same_site_only || same_site(&from.site_key(), &link.site_key()))
-        };
-        (link.network() != Network::Clearnet || clearnet_ok()) && self.safety.check_source(link) == Verdict::Allow
+        clearnet_link_ok(from, link, self.cfg.clearnet_same_site_only)
+            && !self.gateway.leaves_anonymity(from.network(), link.network())
+            && !link.url().is_some_and(forums::is_chaff)
+            && !names_a_file(link)
+            && self.safety.check_source(link) == Verdict::Allow
     }
 
     /// Updates the store, the index and the counters for a finished job.
@@ -637,6 +715,73 @@ fn human_size(bytes: u64) -> String {
 }
 
 /// `www.example.com` and `example.com` are one site.
+/// Endings of file names the crawler would not index: archives, programs, disk
+/// images, media, documents, fonts, and checksums and signatures (text, but no
+/// page).
+const FILE_ENDINGS: [&str; 64] = [
+    "zip", "tar", "gz", "tgz", "bz2", "xz", "zst", "7z", "rar", "exe", "msi", "dmg", "pkg", "deb", "rpm", "apk", "ipa",
+    "iso", "img", "bin", "jar", "whl", "crx", "xpi", "mp3", "mp4", "m4a", "m4v", "mkv", "avi", "mov", "webm", "ogg",
+    "ogv", "opus", "flac", "wav", "jpg", "jpeg", "png", "gif", "webp", "avif", "ico", "svg", "pdf", "epub", "doc",
+    "docx", "xls", "xlsx", "ppt", "pptx", "odt", "woff", "woff2", "ttf", "otf", "sha256", "sha512", "md5", "asc",
+    "sig", "cid",
+];
+
+/// Whether a link names, by its file name, a file the crawler would not index.
+/// Such a link is not fetched at all: the content type would refuse its body,
+/// but asking costs a fetch over Tor or I2P, and makes an IPFS node fetch the
+/// file's first blocks. A gateway's `?filename=` is its name too: crawling
+/// dist.ipfs.tech had visited 2,507 release files from one seed.
+fn names_a_file(link: &Source) -> bool {
+    let (path, filename) = match link {
+        Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) | Source::Ipfs(url) => {
+            let filename = url.query_pairs().find(|(key, _)| key == "filename").map(|(_, name)| name.into_owned());
+            (url.path().to_owned(), filename)
+        }
+        Source::Hyphanet(key) => (key.clone(), None),
+        Source::Nostr(_) | Source::Magnet(_) => return false,
+    };
+    let name = filename.unwrap_or_else(|| path.rsplit('/').next().unwrap_or_default().to_owned());
+    let ending = name.rsplit_once('.').map(|(_, ending)| ending.to_ascii_lowercase());
+    ending.is_some_and(|ending| FILE_ENDINGS.contains(&ending.as_str()))
+}
+
+/// Whether a link to the clearnet may be followed from `from`, before
+/// [`Gateway::leaves_anonymity`] has its say: from a clearnet page, and with
+/// `same_site_only` only within its site; and a public Telegram channel's
+/// preview from any page, as a channel is its own site wherever it is linked.
+/// Telegram's other pages (bots, invites, the app's download page) show a
+/// reader without the app nothing, and are not followed at all.
+fn clearnet_link_ok(from: &Source, link: &Source, same_site_only: bool) -> bool {
+    let host = link.url().and_then(|u| u.host_str()).map(|h| h.trim_start_matches("www."));
+    if matches!(host, Some("t.me" | "telegram.me" | "telegram.dog")) {
+        return link.telegram_channel().is_some();
+    }
+    link.network() != Network::Clearnet
+        || (from.network() == Network::Clearnet && (!same_site_only || same_site(&from.site_key(), &link.site_key())))
+}
+
+/// The page `canonical` names, when `source` is a copy of it on the same site:
+/// the same path with another query (`/post/1?scrollToComments=true` of
+/// `/post/1`, a phpBB topic with other parameters), or a page below it
+/// (`/t/topic/123/4`, a post's place in its topic, of `/t/topic/123`). A
+/// canonical address anywhere else, the site's front page above all, is
+/// taken for a mistake and left alone.
+fn copy_of(source: &Source, canonical: &str) -> Option<Source> {
+    // A Telegram channel's preview names the page before its next post, an
+    // address that moves with every post: the preview is its own page.
+    if source.telegram_channel().is_some() {
+        return None;
+    }
+    let original = source.join(canonical)?;
+    let (from, to) = (source.url()?, original.url()?);
+    if to == from || to.host_str() != from.host_str() || to.port() != from.port() {
+        return None;
+    }
+    let below = from.path().strip_prefix(to.path().trim_end_matches('/')).is_some_and(|rest| rest.starts_with('/'));
+    let same_path = to.path() == from.path();
+    (same_path || (below && to.path() != "/")).then_some(original)
+}
+
 fn same_site(a: &str, b: &str) -> bool {
     a.strip_prefix("www.").unwrap_or(a) == b.strip_prefix("www.").unwrap_or(b)
 }
@@ -674,6 +819,92 @@ mod tests {
         };
         assert_eq!(describe(&meta), "1 file · 123.3 MB · 322 peers");
         assert_eq!(human_size(512), "512 B");
+    }
+
+    #[test]
+    fn files_the_crawler_would_not_index_are_not_followed() {
+        let file = |s: &str| names_a_file(&Source::parse(s).unwrap());
+        for link in [
+            "https://example.com/release/omnid-0.1.6.tar.gz",
+            "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/img/Logo.PNG",
+            "http://stats.i2p/files/i2pinstall.exe",
+            "ipfs://bafkreia35gizrkdomv4v4oc6uin6kzjpn5hqlnk7wan3qcuvwrzjx7rubu/?filename=ctl_v1.1.6_linux-amd64.tar.gz.cid",
+            "ipns://dist.ipfs.tech/kubo/v0.43.1/kubo_v0.43.1_darwin-arm64.tar.gz.sha512",
+            "freenet:CHK@abc,def,AAMC--8/song.ogg",
+        ] {
+            assert!(file(link), "{link}");
+        }
+        for page in [
+            "https://example.com/",
+            "https://example.com/docs/v1.2",
+            "https://example.com/index.php?file=x.zip",
+            "https://example.com/page.html",
+            "https://example.com/notes.txt",
+            "ipns://docs.ipfs.tech/concepts/",
+            "freenet:USK@abc,def,AQACAAE/site/3/",
+            "magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a&dn=x.iso",
+        ] {
+            assert!(!file(page), "{page}");
+        }
+    }
+
+    #[test]
+    fn telegram_channels_are_followed_from_any_page_other_sites_only_by_choice() {
+        let parse = |s: &str| Source::parse(s).unwrap();
+        let blog = parse("https://blog.example/post");
+        let onion = parse("http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/");
+        let channel = parse("https://t.me/torproject");
+        let elsewhere = parse("https://other.example/");
+        assert!(clearnet_link_ok(&blog, &channel, true));
+        assert!(clearnet_link_ok(&onion, &channel, true), "then leaves_anonymity decides");
+        assert!(!clearnet_link_ok(&blog, &elsewhere, true));
+        assert!(clearnet_link_ok(&blog, &elsewhere, false));
+        assert!(!clearnet_link_ok(&onion, &elsewhere, false), "the clearnet only from the clearnet");
+        assert!(clearnet_link_ok(&blog, &parse("https://blog.example/next"), true));
+        assert!(clearnet_link_ok(&blog, &onion, true));
+        // A channel's older posts are the same site as its preview; its bots
+        // and Telegram's own pages are not followed.
+        assert!(clearnet_link_ok(&channel, &parse("https://t.me/s/torproject?before=41"), true));
+        for page in
+            ["https://t.me/GetBridgesBot", "https://t.me/", "https://t.me/+invite", "https://telegram.me/addstickers/x"]
+        {
+            assert!(!clearnet_link_ok(&channel, &parse(page), false), "{page}");
+        }
+    }
+
+    #[test]
+    fn a_copy_names_its_original_on_the_same_site_only() {
+        let copy =
+            |page: &str, canonical: &str| copy_of(&Source::parse(page).unwrap(), canonical).map(|s| s.to_string());
+        // Lemmy, NodeBB, phpBB, Discourse, as they say it.
+        assert_eq!(
+            copy("https://lemmy.ml/post/5?scrollToComments=true", "https://lemmy.ml/post/5").as_deref(),
+            Some("https://lemmy.ml/post/5")
+        );
+        assert_eq!(
+            copy("https://community.nodebb.org/topic/18883/push/4", "https://community.nodebb.org/topic/18883/push")
+                .as_deref(),
+            Some("https://community.nodebb.org/topic/18883/push")
+        );
+        assert_eq!(
+            copy("http://f.example/viewtopic.php?f=2&t=9", "viewtopic.php?t=9").as_deref(),
+            Some("http://f.example/viewtopic.php?t=9")
+        );
+        assert_eq!(copy("https://d.example/t/x/7/3", "/t/x/7/").as_deref(), Some("https://d.example/t/x/7/"));
+        assert_eq!(
+            copy("http://d.example/a?x=1", "https://d.example/a").as_deref(),
+            Some("https://d.example/a"),
+            "to https"
+        );
+        // Not copies: itself, elsewhere, the front page, a sibling, a page below.
+        assert_eq!(copy("https://lemmy.ml/post/5", "https://lemmy.ml/post/5"), None);
+        assert_eq!(copy("https://lemmy.ml/post/5", "https://other.example/post/5"), None);
+        assert_eq!(copy("https://lemmy.ml/post/5", "/"), None);
+        assert_eq!(copy("https://lemmy.ml/post/5", "/post/6"), None);
+        assert_eq!(copy("https://lemmy.ml/post", "/post/5"), None);
+        assert_eq!(copy("https://lemmy.ml/postal/5", "/post"), None, "a path prefix is not a parent");
+        assert_eq!(copy("freenet:USK@a,b,c/s/1/", "/USK@a,b,c/s/2/"), None);
+        assert_eq!(copy("https://t.me/s/torproject", "/s/torproject?before=63"), None, "Telegram's moving pointer");
     }
 
     #[test]

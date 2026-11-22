@@ -110,6 +110,8 @@ class MainActivity : Activity() {
                     } else if (uri.scheme.equals("magnet", ignoreCase = true)) {
                         // A result: already in the index, so only the torrent app, after asking.
                         askTorrentApp(uri.toString(), offerIndex = false)
+                    } else if (uri.scheme.equals("nostr", ignoreCase = true)) {
+                        askNostrApp(uri.toString())
                     } else if (BrowserConfig.isWebPage(uri.scheme, uri.host)) {
                         val open = ActivityOptions.makeCustomAnimation(this@MainActivity, R.anim.browser_open_enter, R.anim.browser_open_exit)
                         startActivity(

@@ -4,7 +4,10 @@ use std::str::FromStr;
 
 use data_encoding::{BASE32_NOPAD, HEXLOWER, HEXLOWER_PERMISSIVE};
 use serde::{Deserialize, Serialize};
-use url::{Host, Url};
+use url::{Host, Position, Url};
+
+use crate::ipfs::{self, Namespace};
+use crate::nostr::{self, Nostr};
 
 /// Origin used to resolve relative links inside a freesite. FProxy serves keys
 /// at the root of its origin, so a key behaves like an absolute path there.
@@ -22,11 +25,24 @@ pub enum Network {
     /// Hyphanet, formerly Freenet: the Java node and its `USK@`/`SSK@`/`CHK@`
     /// keys. Not the newer, unrelated network that now uses the Freenet name.
     Hyphanet,
+    /// IPFS content (`ipfs://<CID>/…`) and IPNS names (`ipns://<name>/…`),
+    /// through an IPFS gateway.
+    Ipfs,
+    /// Nostr events, profiles and articles (`nostr:note1…`), from relays.
+    Nostr,
     Magnet,
 }
 
 impl Network {
-    pub const ALL: [Network; 5] = [Network::Clearnet, Network::Onion, Network::I2p, Network::Hyphanet, Network::Magnet];
+    pub const ALL: [Network; 7] = [
+        Network::Clearnet,
+        Network::Onion,
+        Network::I2p,
+        Network::Hyphanet,
+        Network::Ipfs,
+        Network::Nostr,
+        Network::Magnet,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -34,6 +50,8 @@ impl Network {
             Network::Onion => "onion",
             Network::I2p => "i2p",
             Network::Hyphanet => "hyphanet",
+            Network::Ipfs => "ipfs",
+            Network::Nostr => "nostr",
             Network::Magnet => "magnet",
         }
     }
@@ -54,6 +72,8 @@ impl FromStr for Network {
             "onion" | "tor" => Ok(Network::Onion),
             "i2p" => Ok(Network::I2p),
             "hyphanet" | "freenet" => Ok(Network::Hyphanet),
+            "ipfs" | "ipns" => Ok(Network::Ipfs),
+            "nostr" => Ok(Network::Nostr),
             "magnet" | "dht" | "torrent" => Ok(Network::Magnet),
             _ => Err(SourceError::UnknownNetwork(s.to_owned())),
         }
@@ -70,6 +90,10 @@ pub enum SourceError {
     OnionV2,
     #[error("malformed onion address `{0}`")]
     BadOnion(String),
+    #[error("not an IPFS CID or IPNS name: `{0}`")]
+    BadIpfs(String),
+    #[error("not a Nostr note, profile or address: `{0}`")]
+    BadNostr(String),
     #[error("magnet link has no BitTorrent v1 info hash (xt=urn:btih:...)")]
     NoInfoHash,
     #[error("unknown network `{0}`")]
@@ -86,22 +110,35 @@ pub enum Source {
     I2p(Url),
     /// A Hyphanet key with its path, e.g. `USK@…/site/4/index.html`.
     Hyphanet(String),
+    /// `ipfs://<CID>/<path>` or `ipns://<name>/<path>`, the CID or name in its
+    /// canonical form: a CID as CIDv1 in base32, an IPNS key as CIDv1 in
+    /// base36, a DNSLink name as its lowercase hostname.
+    Ipfs(Url),
+    Nostr(Nostr),
     Magnet(Magnet),
 }
 
 impl Source {
     /// Parses anything a user might paste: a URL, a bare host
-    /// (`xyz.onion`), a `freenet:`/`hyphanet:` key or a magnet link.
+    /// (`xyz.onion`), a `freenet:`/`hyphanet:` key, an IPFS address
+    /// (`ipfs://`, `ipns://`, `/ipfs/…`, `dweb:/ipfs/…` or a bare CID), a
+    /// Nostr entity (`nostr:npub1…`, or bare) or a magnet link.
     pub fn parse(input: &str) -> Result<Self, SourceError> {
         let input = input.trim();
         if input.is_empty() {
             return Err(SourceError::Invalid(String::new()));
+        }
+        if let Some(entity) = nostr_entity(input) {
+            return entity;
         }
         if strip_prefix_ignore_case(input, "magnet:").is_some() {
             return Magnet::parse(input).map(Source::Magnet);
         }
         if let Some(key) = hyphanet_key(input) {
             return Ok(Source::Hyphanet(key));
+        }
+        if let Some(source) = ipfs_path(input).or_else(|| bare_cid(input)) {
+            return source;
         }
         let with_scheme;
         let input = if input.contains("://") {
@@ -114,12 +151,23 @@ impl Source {
         Self::from_url(url)
     }
 
-    /// Classifies an http(s) URL by its host.
+    /// Classifies an http(s) URL by its host, and takes an `ipfs://` or
+    /// `ipns://` one. An http(s) URL through a public IPFS gateway is the
+    /// content it serves.
     pub fn from_url(mut url: Url) -> Result<Self, SourceError> {
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err(SourceError::UnsupportedScheme(url.scheme().to_owned()));
+        match url.scheme() {
+            "http" | "https" => {}
+            "nostr" => return Nostr::parse(url.as_str()).map(Source::Nostr).ok_or(SourceError::BadNostr(url.into())),
+            scheme => match Namespace::from_name(scheme) {
+                Some(namespace) => {
+                    let id = url.host_str().ok_or_else(|| SourceError::BadIpfs(url.to_string()))?;
+                    return ipfs_source(namespace, id, &url[Position::BeforePath..Position::AfterQuery]);
+                }
+                None => return Err(SourceError::UnsupportedScheme(scheme.to_owned())),
+            },
         }
         url.set_fragment(None);
+        drop_session(&mut url);
         let network = match url.host() {
             Some(Host::Domain(domain)) if domain.ends_with(".onion") => {
                 validate_onion(domain)?;
@@ -132,7 +180,10 @@ impl Source {
         Ok(match network {
             Network::Onion => Source::Onion(url),
             Network::I2p => Source::I2p(url),
-            _ => Source::Clearnet(url),
+            _ => through_gateway(&url)
+                .or_else(|| through_nostr_client(&url))
+                .or_else(|| telegram_preview(&url))
+                .unwrap_or(Source::Clearnet(url)),
         })
     }
 
@@ -142,6 +193,8 @@ impl Source {
             Source::Onion(_) => Network::Onion,
             Source::I2p(_) => Network::I2p,
             Source::Hyphanet(_) => Network::Hyphanet,
+            Source::Ipfs(_) => Network::Ipfs,
+            Source::Nostr(_) => Network::Nostr,
             Source::Magnet(_) => Network::Magnet,
         }
     }
@@ -150,17 +203,42 @@ impl Source {
     pub fn url(&self) -> Option<&Url> {
         match self {
             Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => Some(url),
-            Source::Hyphanet(_) | Source::Magnet(_) => None,
+            Source::Hyphanet(_) | Source::Ipfs(_) | Source::Nostr(_) | Source::Magnet(_) => None,
         }
     }
 
-    /// Groups requests for politeness: a host, a freesite, or one torrent.
+    /// The public Telegram channel this is the web preview of
+    /// (`https://t.me/s/<name>`), its name lower case.
+    pub fn telegram_channel(&self) -> Option<&str> {
+        let url = match self {
+            Source::Clearnet(url) if url.host_str() == Some("t.me") => url,
+            _ => return None,
+        };
+        let mut segments = url.path_segments()?;
+        (segments.next() == Some("s")).then(|| segments.next()).flatten().filter(|name| !name.is_empty())
+    }
+
+    /// Where a gateway serves an IPFS address: `ipfs/<CID>/<path>` or
+    /// `ipns/<name>/<path>`, relative to the gateway's root.
+    pub fn gateway_path(&self) -> Option<String> {
+        let Source::Ipfs(url) = self else { return None };
+        Some(format!("{}/{}{}", url.scheme(), url.host_str()?, &url[Position::BeforePath..Position::AfterQuery]))
+    }
+
+    /// Groups requests for politeness: a host, a freesite, one IPFS root or
+    /// IPNS name, one Nostr author (an event's own ID until its author is
+    /// known), or one torrent.
     pub fn site_key(&self) -> String {
         match self {
             Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => {
                 url.host_str().unwrap_or_default().to_owned()
             }
             Source::Hyphanet(key) => key.split('/').next().unwrap_or(key).to_owned(),
+            Source::Ipfs(url) => format!("{}:{}", url.scheme(), url.host_str().unwrap_or_default()),
+            Source::Nostr(entity) => match entity.author() {
+                Some(author) => format!("nostr:{}", nostr::npub(&author)),
+                None => entity.to_string(),
+            },
             Source::Magnet(magnet) => format!("btih:{}", magnet.info_hash_hex()),
         }
     }
@@ -179,9 +257,26 @@ impl Source {
         {
             return hyphanet_key(href).map(Source::Hyphanet);
         }
+        if strip_prefix_ignore_case(href, "nostr:").is_some() {
+            return Nostr::parse(href).map(Source::Nostr);
+        }
         let base = match self {
             Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => url.clone(),
             Source::Hyphanet(key) => Url::parse(HYPHANET_BASE).ok()?.join(key).ok()?,
+            Source::Ipfs(url) => {
+                // Pages on IPFS link other content as gateway paths, and a
+                // link without a scheme leaves for the web, as it does in a
+                // browser on a gateway.
+                if let Some(source) = ipfs_path(href) {
+                    return source.ok();
+                }
+                if href.starts_with("//") {
+                    return Source::from_url(Url::parse(&format!("https:{href}")).ok()?).ok();
+                }
+                url.clone()
+            }
+            // Nostr content links only by full address.
+            Source::Nostr(_) => return Source::from_url(Url::parse(href).ok()?).ok(),
             Source::Magnet(_) => return None,
         };
         let joined = base.join(href).ok()?;
@@ -202,8 +297,11 @@ impl Source {
 impl fmt::Display for Source {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => f.write_str(url.as_str()),
+            Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) | Source::Ipfs(url) => {
+                f.write_str(url.as_str())
+            }
             Source::Hyphanet(key) => write!(f, "freenet:{key}"),
+            Source::Nostr(entity) => write!(f, "{entity}"),
             Source::Magnet(magnet) => write!(f, "magnet:?xt=urn:btih:{}", magnet.info_hash_hex()),
         }
     }
@@ -311,6 +409,182 @@ fn hyphanet_key(input: &str) -> Option<String> {
     Some(format!("{key_type}{}", &rest[key_type.len()..]))
 }
 
+/// A `nostr:` URI, or a bare entity (`npub1…`, `note1…`, `nevent1…`,
+/// `nprofile1…`, `naddr1…`). `None` when it is neither; an error when it
+/// looks like one and does not decode.
+fn nostr_entity(input: &str) -> Option<Result<Source, SourceError>> {
+    let scheme = strip_prefix_ignore_case(input, "nostr:").is_some();
+    let bare = ["npub1", "note1", "nevent1", "nprofile1", "naddr1"]
+        .iter()
+        .any(|hrp| strip_prefix_ignore_case(input, hrp).is_some() && !input.contains(['/', '.', ':']));
+    (scheme || bare).then(|| Nostr::parse(input).map(Source::Nostr).ok_or_else(|| SourceError::BadNostr(input.into())))
+}
+
+/// The Nostr entity a known web client's page shows: njump.me/<entity>,
+/// primal.net/e/<entity> and the like.
+fn through_nostr_client(url: &Url) -> Option<Source> {
+    let host = url.host_str()?.trim_start_matches("www.");
+    if !nostr::KNOWN_CLIENTS.contains(&host) {
+        return None;
+    }
+    url.path_segments()?.take(2).find_map(Nostr::parse).map(Source::Nostr)
+}
+
+/// The hosts of links to Telegram.
+const TELEGRAM_HOSTS: [&str; 3] = ["t.me", "telegram.me", "telegram.dog"];
+/// First path segments that are Telegram's own pages, not a channel's name.
+const TELEGRAM_PAGES: [&str; 22] = [
+    "s",
+    "c",
+    "joinchat",
+    "addstickers",
+    "addemoji",
+    "addtheme",
+    "addlist",
+    "setlanguage",
+    "share",
+    "proxy",
+    "socks",
+    "iv",
+    "login",
+    "bg",
+    "boost",
+    "contact",
+    "invoice",
+    "giftcode",
+    "confirmphone",
+    "nft",
+    "m",
+    "k",
+];
+
+/// A link to a public Telegram channel or one of its posts, as the web
+/// preview of the channel's latest posts (`https://t.me/s/<name>`); the
+/// preview's `?before=<post>`, which pages back through older posts, is
+/// kept. `t.me/<name>` and a post's own page show no posts to a reader
+/// without the app. Bots (names ending in `bot`) have no preview.
+fn telegram_preview(url: &Url) -> Option<Source> {
+    let host = url.host_str()?.trim_start_matches("www.");
+    if !TELEGRAM_HOSTS.contains(&host) {
+        return None;
+    }
+    let mut segments = url.path_segments()?.filter(|s| !s.is_empty());
+    let first = segments.next()?;
+    let (name, preview) = if first == "s" { (segments.next()?, true) } else { (first, false) };
+    let rest: Vec<&str> = segments.collect();
+    let a_post = rest.len() == 1 && rest[0].bytes().all(|b| b.is_ascii_digit());
+    if !(rest.is_empty() || a_post) {
+        return None;
+    }
+    let name = name.to_ascii_lowercase();
+    let valid = (5..=32).contains(&name.len())
+        && name.starts_with(|c: char| c.is_ascii_alphabetic())
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && !name.ends_with("bot")
+        && !TELEGRAM_PAGES.contains(&name.as_str());
+    if !valid {
+        return None;
+    }
+    let before = (preview && rest.is_empty())
+        .then(|| url.query_pairs().find(|(key, _)| key == "before").map(|(_, value)| value.into_owned()))
+        .flatten()
+        .filter(|post| !post.is_empty() && post.len() <= 12 && post.bytes().all(|b| b.is_ascii_digit()));
+    let preview = match before {
+        Some(post) => format!("https://t.me/s/{name}?before={post}"),
+        None => format!("https://t.me/s/{name}"),
+    };
+    Url::parse(&preview).ok().map(Source::Clearnet)
+}
+
+/// Drops what carries a visitor's session rather than a page: phpBB's `sid`,
+/// vBulletin's `s`, PHP's and Java's session IDs. Forum software adds them to
+/// every link for visitors without cookies, as a crawler is, so one thread
+/// would have an address per visit. Only values shaped like a session token
+/// go (`?s=search+words` stays); the rest of the query is kept as written.
+fn drop_session(url: &mut Url) {
+    let path = url.path();
+    if let Some(at) = path.to_ascii_lowercase().find(";jsessionid=") {
+        let kept = path[..at].to_owned();
+        url.set_path(&kept);
+    }
+    let Some(query) = url.query() else { return };
+    let pairs: Vec<&str> = query.split('&').collect();
+    let kept: Vec<&str> = pairs.iter().copied().filter(|pair| !is_session(pair)).collect();
+    if kept.len() < pairs.len() {
+        let kept = kept.join("&");
+        url.set_query(Some(&kept).filter(|q| !q.is_empty()).map(String::as_str));
+    }
+}
+
+fn is_session(pair: &str) -> bool {
+    let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+    let hex32 = value.len() == 32 && value.bytes().all(|b| b.is_ascii_hexdigit());
+    let token =
+        (16..=128).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_,".contains(&b));
+    match key.to_ascii_lowercase().as_str() {
+        "sid" | "s" => hex32,
+        "phpsessid" | "jsessionid" | "sessionid" | "oscsid" | "zenid" => token,
+        _ => false,
+    }
+}
+
+/// An IPFS address in its canonical form, from a CID or IPNS name and what
+/// follows it: a path, a query, a fragment (dropped), or nothing.
+fn ipfs_source(namespace: Namespace, id: &str, rest: &str) -> Result<Source, SourceError> {
+    let bad = || SourceError::BadIpfs(id.to_owned());
+    let id = namespace.canonical(id).ok_or_else(bad)?;
+    let slash = if rest.starts_with('/') { "" } else { "/" };
+    let mut url = Url::parse(&format!("{}://{id}{slash}{rest}", namespace.as_str())).map_err(|_| bad())?;
+    url.set_fragment(None);
+    Ok(Source::Ipfs(url))
+}
+
+/// A gateway path, `/ipfs/<CID>/…` or `/ipns/<name>/…`, or the same after
+/// `dweb:`. `None` when it is not one; an error when its CID or name is bad.
+fn ipfs_path(input: &str) -> Option<Result<Source, SourceError>> {
+    let path = strip_prefix_ignore_case(input, "dweb:").unwrap_or(input).strip_prefix('/')?;
+    let (namespace, rest) = path.split_once('/')?;
+    let namespace = Namespace::from_name(namespace)?;
+    let (id, rest) = split_id(rest);
+    Some(ipfs_source(namespace, id, rest))
+}
+
+/// A CID on its own, or with a path after it.
+fn bare_cid(input: &str) -> Option<Result<Source, SourceError>> {
+    let (id, rest) = split_id(input);
+    ipfs::canonical_cid(id).map(|_| ipfs_source(Namespace::Ipfs, id, rest))
+}
+
+fn split_id(s: &str) -> (&str, &str) {
+    s.split_at(s.find(['/', '?', '#']).unwrap_or(s.len()))
+}
+
+/// The IPFS content an http(s) URL through a gateway serves: a subdomain
+/// gateway's `<CID>.ipfs.<host>` or `<key>.ipns.<host>`, on any host, as the
+/// label is a CID; a DNSLink name's label (`docs-ipfs-tech.ipns.<host>`) or
+/// a path gateway's `/ipfs/<CID>`, only on a known public gateway.
+fn through_gateway(url: &Url) -> Option<Source> {
+    let host = url.host_str()?;
+    let rest = &url[Position::BeforePath..Position::AfterQuery];
+    let mut labels = host.splitn(3, '.');
+    if let (Some(id), Some(namespace), Some(gateway)) = (labels.next(), labels.next(), labels.next()) {
+        let known = ipfs::KNOWN_GATEWAYS.contains(&gateway) || gateway == "localhost";
+        let id = match Namespace::from_name(namespace) {
+            Some(Namespace::Ipfs) => Some((Namespace::Ipfs, id.to_owned())),
+            Some(Namespace::Ipns) if ipfs::is_ipns_key(id) => Some((Namespace::Ipns, id.to_owned())),
+            Some(Namespace::Ipns) if known => Some((Namespace::Ipns, ipfs::uninline_dnslink(id))),
+            _ => None,
+        };
+        if let Some(Ok(source)) = id.map(|(namespace, id)| ipfs_source(namespace, &id, rest)) {
+            return Some(source);
+        }
+    }
+    if ipfs::KNOWN_GATEWAYS.contains(&host) {
+        return ipfs_path(rest).and_then(Result::ok);
+    }
+    None
+}
+
 fn strip_prefix_ignore_case<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
     let head = s.get(..prefix.len())?;
     head.eq_ignore_ascii_case(prefix).then(|| &s[prefix.len()..])
@@ -355,6 +629,73 @@ mod tests {
     fn canonical_form_drops_fragment() {
         let s = Source::parse("https://example.com/a?b=1#frag").unwrap();
         assert_eq!(s.to_string(), "https://example.com/a?b=1");
+    }
+
+    #[test]
+    fn telegram_links_are_their_channels_preview() {
+        let canonical = |s: &str| Source::parse(s).unwrap().to_string();
+        for link in [
+            "https://t.me/TorProject",
+            "https://t.me/torproject/63",
+            "https://telegram.me/torproject",
+            "http://www.t.me/s/torproject/41",
+            "t.me/s/torproject?q=bridges",
+            "https://t.me/s/torproject#latest",
+        ] {
+            assert_eq!(canonical(link), "https://t.me/s/torproject", "{link}");
+        }
+        assert_eq!(canonical("https://t.me/s/torproject?before=41"), "https://t.me/s/torproject?before=41");
+        let channel = Source::parse("https://t.me/durov").unwrap();
+        assert_eq!(channel.telegram_channel(), Some("durov"));
+        assert_eq!(channel.site_key(), "t.me", "one site, for politeness");
+        // Not channels: invites, Telegram's own pages, bots, a channel's deeper pages, other sites.
+        for kept in [
+            "https://t.me/+AbCdEf123",
+            "https://t.me/joinchat/AbCdEf",
+            "https://t.me/addstickers/pack",
+            "https://t.me/GetBridgesBot",
+            "https://t.me/abc",
+            "https://t.me/torproject/63/extra",
+            "https://telegram.org/blog",
+        ] {
+            let source = Source::parse(kept).unwrap();
+            assert_eq!(source.telegram_channel(), None, "{kept}");
+            assert!(!source.to_string().starts_with("https://t.me/s/"), "{kept}");
+        }
+        assert_eq!(canonical("https://t.me/s/torproject?before=12x"), "https://t.me/s/torproject", "a bad page number");
+    }
+
+    #[test]
+    fn drops_session_ids_and_keeps_the_rest_of_the_query() {
+        let canonical = |s: &str| Source::parse(s).unwrap().to_string();
+        let sid = "0123456789abcdef0123456789ABCDEF";
+        // phpBB, vBulletin, SMF, a Java forum; on an onion too.
+        assert_eq!(
+            canonical(&format!("http://f.example/viewtopic.php?f=2&t=9&sid={sid}")),
+            "http://f.example/viewtopic.php?f=2&t=9"
+        );
+        assert_eq!(
+            canonical(&format!("http://f.example/showthread.php?s={sid}&t=5")),
+            "http://f.example/showthread.php?t=5"
+        );
+        assert_eq!(
+            canonical("http://f.example/index.php?PHPSESSID=3k1m2n4b5v6c7x8z9a0s1d2f3g&topic=5.0"),
+            "http://f.example/index.php?topic=5.0"
+        );
+        assert_eq!(
+            canonical("http://f.example/thread.jsp;jsessionid=A1B2C3D4E5F6A7B8C9D0?id=4"),
+            "http://f.example/thread.jsp?id=4"
+        );
+        assert_eq!(canonical(&format!("http://{ONION}/index.php?sid={sid}")), format!("http://{ONION}/index.php"));
+        // Not sessions: a search, a short id, something else's hex, an encoded query kept as written.
+        for kept in [
+            "https://blog.example/?s=privacy+tools",
+            "http://f.example/viewtopic.php?t=9&sid=12",
+            &format!("https://example.com/file?hash={sid}"),
+            "https://example.com/q?a=%2F%20b&b=2",
+        ] {
+            assert_eq!(canonical(kept), kept);
+        }
     }
 
     #[test]
@@ -430,6 +771,133 @@ mod tests {
     fn network_names_parse_with_aliases() {
         assert_eq!("tor".parse::<Network>().unwrap(), Network::Onion);
         assert_eq!("Freenet".parse::<Network>().unwrap(), Network::Hyphanet);
+        assert_eq!("ipns".parse::<Network>().unwrap(), Network::Ipfs);
         assert!("gopher".parse::<Network>().is_err());
+    }
+
+    const NPUB: &str = "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg";
+    const NPROFILE: &str = "nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p";
+
+    #[test]
+    fn parses_nostr_entities_and_their_web_pages() {
+        for input in [
+            format!("nostr:{NPUB}"),
+            NPUB.to_owned(),
+            NPUB.to_ascii_uppercase(),
+            format!("https://njump.me/{NPUB}"),
+            format!("https://primal.net/p/{NPUB}"),
+        ] {
+            let source = Source::parse(&input).unwrap_or_else(|e| panic!("{input}: {e}"));
+            assert_eq!(source.network(), Network::Nostr, "{input}");
+            assert_eq!(source.to_string(), format!("nostr:{NPUB}"), "{input}");
+            assert_eq!(source.site_key(), format!("nostr:{NPUB}"));
+            assert!(source.url().is_none() && source.robots_txt().is_none());
+        }
+        let profile = Source::parse(&format!("nostr:{NPROFILE}")).unwrap();
+        assert!(profile.to_string().starts_with("nostr:npub1"), "relay hints are not the address");
+        assert!(matches!(Source::parse("nostr:npub1nothing"), Err(SourceError::BadNostr(_))));
+        assert!(matches!(Source::parse("npub1qqqqqqqqqq"), Err(SourceError::BadNostr(_))));
+        assert_eq!(Source::parse("https://njump.me/about").unwrap().network(), Network::Clearnet);
+        assert_eq!(Source::parse("npub1.example.com").unwrap().network(), Network::Clearnet, "a host, not an entity");
+    }
+
+    #[test]
+    fn joins_nostr_links() {
+        let web = Source::parse("https://example.com/").unwrap();
+        assert_eq!(web.join(&format!("nostr:{NPUB}")).unwrap().network(), Network::Nostr);
+        let note = Source::parse(&format!("nostr:{NPUB}")).unwrap();
+        assert_eq!(note.join("https://example.com/x").unwrap().to_string(), "https://example.com/x");
+        assert_eq!(note.join(&format!("nostr:{NPROFILE}")).unwrap().network(), Network::Nostr);
+        assert_eq!(note.join("relative/page"), None, "nothing is relative to a note");
+        assert_eq!(note.join("#tag"), None);
+    }
+
+    const CID_V0: &str = "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn";
+    const CID: &str = "bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354";
+    const KEY: &str = "k51qzi5uqu5dm49nrgwrw7omae4hd3dwbtd7s12zlq7vf2nphu4x6xv25dcl3c";
+
+    #[test]
+    fn parses_ipfs_addresses_in_every_form() {
+        let want = format!("ipfs://{CID}/wiki/Page.html");
+        for input in [
+            format!("ipfs://{CID}/wiki/Page.html"),
+            format!("ipfs://{CID_V0}/wiki/Page.html"),
+            format!("/ipfs/{CID_V0}/wiki/Page.html"),
+            format!("dweb:/ipfs/{CID}/wiki/Page.html#top"),
+            format!("{CID_V0}/wiki/Page.html"),
+            format!("https://ipfs.io/ipfs/{CID_V0}/wiki/Page.html"),
+            format!("https://{CID}.ipfs.dweb.link/wiki/Page.html"),
+            format!("http://{CID}.ipfs.localhost:8080/wiki/Page.html"),
+        ] {
+            let source = Source::parse(&input).unwrap_or_else(|e| panic!("{input}: {e}"));
+            assert_eq!(source.network(), Network::Ipfs, "{input}");
+            assert_eq!(source.to_string(), want, "{input}");
+        }
+        let root = Source::parse(&format!("ipfs://{CID}")).unwrap();
+        assert_eq!(root.to_string(), format!("ipfs://{CID}/"));
+        assert_eq!(root.site_key(), format!("ipfs:{CID}"));
+        assert_eq!(root.gateway_path().unwrap(), format!("ipfs/{CID}/"));
+        assert!(root.url().is_none() && root.robots_txt().is_none());
+        let query = Source::parse(&format!("/ipfs/{CID}/a b?filename=x.txt")).unwrap();
+        assert_eq!(query.gateway_path().unwrap(), format!("ipfs/{CID}/a%20b?filename=x.txt"));
+    }
+
+    #[test]
+    fn parses_ipns_keys_and_dnslink_names() {
+        let docs = Source::parse("ipns://Docs.IPFS.tech/concepts/").unwrap();
+        assert_eq!(docs.to_string(), "ipns://docs.ipfs.tech/concepts/");
+        assert_eq!(docs.site_key(), "ipns:docs.ipfs.tech");
+        for input in [
+            "https://en-wikipedia--on--ipfs-org.ipns.dweb.link/wiki/",
+            "https://dweb.link/ipns/en.wikipedia-on-ipfs.org/wiki/",
+            "/ipns/en.wikipedia-on-ipfs.org/wiki/",
+        ] {
+            assert_eq!(Source::parse(input).unwrap().to_string(), "ipns://en.wikipedia-on-ipfs.org/wiki/", "{input}");
+        }
+        let key = format!("ipns://{KEY}/");
+        assert_eq!(
+            Source::parse("/ipns/12D3KooWRqzDGv6bWUyeQRA2GsiZJCGnw4eQGwcjV39aM87DL4hM").unwrap().to_string(),
+            key
+        );
+        assert_eq!(Source::parse(&format!("https://{KEY}.ipns.gateway.example/")).unwrap().to_string(), key);
+    }
+
+    #[test]
+    fn leaves_what_only_looks_like_a_gateway_on_the_web() {
+        for input in [
+            // A DNSLink label folds only on a known gateway: elsewhere it is a site.
+            "https://my-site.ipns.example.com/",
+            "https://docs.ipfs.tech/install/",
+            "https://example.com/ipfs/bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354/",
+            "https://ipfs.io/ipfs/not-a-cid/",
+            "https://ipfs.io/",
+        ] {
+            assert_eq!(Source::parse(input).unwrap().network(), Network::Clearnet, "{input}");
+        }
+        for bad in ["ipfs://not-a-cid/", "/ipfs/Qm123/", "ipns://x.onion/", "ipns://localhost/", "ipfs:///x"] {
+            assert!(Source::parse(bad).is_err(), "{bad}");
+        }
+        assert!(Source::parse("bafy").unwrap().network() == Network::Clearnet, "a bare name that is no CID");
+    }
+
+    #[test]
+    fn joins_links_inside_ipfs_content() {
+        let page = Source::parse(&format!("ipfs://{CID}/docs/intro.html")).unwrap();
+        let at = |href: &str| page.join(href).map(|s| s.to_string());
+        assert_eq!(at("next.html").unwrap(), format!("ipfs://{CID}/docs/next.html"));
+        assert_eq!(at("../../../up.html").unwrap(), format!("ipfs://{CID}/up.html"));
+        assert_eq!(at("/about/").unwrap(), format!("ipfs://{CID}/about/"), "the root is the CID's");
+        assert_eq!(at(&format!("/ipfs/{CID_V0}/x")).unwrap(), format!("ipfs://{CID}/x"), "a gateway path");
+        assert_eq!(at("/ipns/docs.ipfs.tech/").unwrap(), "ipns://docs.ipfs.tech/");
+        assert_eq!(at(&format!("ipfs://{CID}/y")).unwrap(), format!("ipfs://{CID}/y"));
+        assert_eq!(at("https://example.com/").unwrap(), "https://example.com/");
+        assert_eq!(at("//example.com/x").unwrap(), "https://example.com/x", "scheme-relative goes to the web");
+        assert_eq!(at(&format!("https://ipfs.io/ipfs/{CID}/z")).unwrap(), format!("ipfs://{CID}/z"));
+        assert_eq!(at("#section"), None);
+        assert_eq!(at("/ipfs/not-a-cid/"), None);
+        // From the web into IPFS.
+        let web = Source::parse("https://example.com/links.html").unwrap();
+        assert_eq!(web.join(&format!("ipfs://{CID_V0}/")).unwrap().to_string(), format!("ipfs://{CID}/"));
+        assert_eq!(web.join("ipns://docs.ipfs.tech").unwrap().network(), Network::Ipfs);
     }
 }

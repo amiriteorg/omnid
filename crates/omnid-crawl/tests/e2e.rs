@@ -26,6 +26,7 @@ struct Visits {
     home: AtomicUsize,
     private: AtomicBool,
     behind_blocked: AtomicBool,
+    image: AtomicBool,
 }
 
 async fn serve() -> (String, Arc<Visits>) {
@@ -37,7 +38,7 @@ async fn serve() -> (String, Arc<Visits>) {
         <a href="http://other-site.example/">elsewhere</a>
         <a href="{MAGNET}">torrent</a> <a href="http://{ONION}/">onion</a>"#
     );
-    let (v0, v1, v2) = (visits.clone(), visits.clone(), visits.clone());
+    let (v0, v1, v2, v3) = (visits.clone(), visits.clone(), visits.clone(), visits.clone());
     let app = Router::new()
         .route("/robots.txt", get(|| async { "User-agent: *\nDisallow: /private\n" }))
         .route(
@@ -52,7 +53,13 @@ async fn serve() -> (String, Arc<Visits>) {
         .route("/c", get(|| async { Html("<title>Page C</title><p>all about cherries</p>") }))
         .route("/moved", get(|| async { (StatusCode::MOVED_PERMANENTLY, [(LOCATION, "/c")]) }))
         .route("/away", get(|| async { (StatusCode::FOUND, [(LOCATION, "http://elsewhere.example/")]) }))
-        .route("/img.png", get(|| async { ([(CONTENT_TYPE, "image/png")], vec![0x89u8, b'P', b'N', b'G']) }))
+        .route(
+            "/img.png",
+            get(move || async move {
+                v3.image.store(true, Ordering::SeqCst);
+                ([(CONTENT_TYPE, "image/png")], vec![0x89u8, b'P', b'N', b'G'])
+            }),
+        )
         .route(
             "/blocked",
             get(|| async { Html(r#"<p>this has the forbidden phrase</p><a href="/behind-blocked">x</a>"#) }),
@@ -148,8 +155,9 @@ async fn crawls_a_site_end_to_end() {
     assert!(hits(&index, "forbidden", &[]).is_empty());
     assert!(!visits.behind_blocked.load(Ordering::SeqCst));
 
-    // The image was refused by content type, so it was never indexed.
-    assert!(stats.skipped >= 3, "image and two redirects: {stats:?}");
+    // The image was not even fetched: its name says it is one.
+    assert!(!visits.image.load(Ordering::SeqCst));
+    assert!(stats.skipped >= 2, "two redirects: {stats:?}");
 
     // The magnet link was harvested into the index without a fetch.
     let magnets = hits(&index, "ubuntu", &[Network::Magnet]);
@@ -348,4 +356,161 @@ async fn goes_deep_within_sites_and_on_across_them() {
     crawl(crawler_with(index.clone(), Arc::new(CrawlStore::in_memory().unwrap()), cfg(0)), &[&base]).await;
     assert_eq!(hits(&index, "\"third floor\"", &[]).len(), 1);
     assert!(hits(&index, "\"far away\"", &[]).is_empty());
+}
+
+const CID: &str = "bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354";
+const OTHER_CID: &str = "bafkqaaa";
+const PLANTED_CID: &str = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy";
+const FREESITE: &str =
+    "USK@AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,AQACAAE/site/1/";
+
+/// An IPFS gateway, a web page linking into IPFS and a freesite linking a CID
+/// of its own, all on one server: the gateway under `/ipfs/`, FProxy under
+/// `/USK@`. Returns the server and the gateway paths asked for.
+async fn serve_ipfs_and_its_neighbours() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = asked.clone();
+    let app = Router::new()
+        .route("/", get(|| async { Html(format!(r#"<title>Links</title><a href="ipfs://{CID}/">on IPFS</a>"#)) }))
+        .route(
+            &format!("/{FREESITE}"),
+            get(|| async { Html(format!(r#"<title>A freesite</title><a href="ipfs://{PLANTED_CID}/">a CID</a>"#)) }),
+        )
+        .fallback(move |uri: axum::http::Uri| {
+            log.lock().unwrap().push(uri.path().to_owned());
+            async move {
+                let page = match uri.path() {
+                    p if p == format!("/ipfs/{CID}/") => {
+                        format!(
+                            r#"<title>IPFS home</title><a href="page.html">p</a> <a href="/ipfs/{OTHER_CID}/">o</a>"#
+                        )
+                    }
+                    p if p == format!("/ipfs/{CID}/page.html") => {
+                        "<title>Walnuts</title><p>all about walnuts</p>".into()
+                    }
+                    p if p == format!("/ipfs/{OTHER_CID}/") => "<title>Second root</title><p>pecans</p>".into(),
+                    _ => return StatusCode::NOT_FOUND.into_response(),
+                };
+                // An older gateway's header.
+                ([(CONTENT_TYPE, "text/html"), (axum::http::HeaderName::from_static("x-ipfs-path"), uri.path())], page)
+                    .into_response()
+            }
+        });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (base, asked)
+}
+
+#[tokio::test]
+async fn crawls_ipfs_from_the_web_but_not_from_anonymous_pages() {
+    let (base, asked) = serve_ipfs_and_its_neighbours().await;
+    let node = vec![base.parse().unwrap()];
+    let gateway = Gateway::new(GatewayConfig {
+        tor_dir: None,
+        i2p_proxies: vec![],
+        fproxies: node.clone(),
+        ipfs_gateways: node,
+        allow_private_addresses: true,
+        ..GatewayConfig::default()
+    })
+    .unwrap();
+    let no_delay = Politeness { concurrency: 4, site_delay: Duration::ZERO };
+    let cfg = CrawlConfig {
+        politeness: HashMap::from([
+            (Network::Clearnet, no_delay),
+            (Network::Hyphanet, no_delay),
+            (Network::Ipfs, no_delay),
+        ]),
+        commit_interval: Duration::from_millis(100),
+        ..CrawlConfig::default()
+    };
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let crawler = Crawler::new(Arc::new(gateway), index.clone(), Arc::new(Safety::default()), store, cfg);
+    let stats = crawl(crawler, &[&base, &format!("freenet:{FREESITE}")]).await;
+
+    // The web page's link into IPFS, the page beside it and the other root
+    // it links as a gateway path.
+    assert_eq!(stats.indexed, 5, "{stats:?}");
+    let walnuts = hits(&index, "walnuts", &[Network::Ipfs]);
+    assert_eq!(walnuts.len(), 1);
+    assert_eq!(walnuts[0].routes[0].url, format!("ipfs://{CID}/page.html"));
+    assert_eq!(hits(&index, "pecans", &[Network::Ipfs]).len(), 1);
+    // The freesite's CID was not fetched: the node would have asked its peers
+    // for it from its own address, which the freesite's author could watch.
+    assert!(!asked.lock().unwrap().iter().any(|p| p.contains(PLANTED_CID)), "{:?}", asked.lock().unwrap());
+    assert_eq!(hits(&index, "freesite", &[Network::Hyphanet]).len(), 1);
+}
+
+/// A forum with what forums have besides threads: people, sign-in and search
+/// pages, a post's address with a parameter beside its own, a session ID in
+/// its links, a bot check, and a Flarum-style page whose links are all in
+/// `<noscript>`. Returns the base and the paths fetched.
+async fn serve_forum() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    const SID: &str = "0123456789abcdef0123456789abcdef";
+    let fetched = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = fetched.clone();
+    let app = Router::new().fallback(move |uri: axum::http::Uri| {
+        log.lock().unwrap().push(uri.to_string());
+        async move {
+            let page = match (uri.path(), uri.query()) {
+                ("/", _) => format!(
+                    r#"<title>Board index</title>
+                    <a href="/t/walnuts/1">thread</a> <a href="/u/alice">alice</a> <a href="/login">log in</a>
+                    <a href="/search?q=x">search</a> <a href="/post/1?scrollToComments=true">post</a>
+                    <a href="/viewtopic.php?t=3&sid={SID}">topic</a> <a href="/viewtopic.php?t=3">topic</a>
+                    <a href="/check">check</a> <a href="/flarum">flarum</a>"#
+                ),
+                ("/t/walnuts/1", _) => "<title>Walnut thread</title><p>all about walnuts</p>".into(),
+                ("/post/1", None) => {
+                    r#"<link rel="canonical" href="/post/1"><title>Pecan post</title><p>all about pecans</p>"#.into()
+                }
+                ("/post/1", Some(_)) => {
+                    r#"<link rel="canonical" href="/post/1"><title>Pecan post</title><p>all about pecans, again</p>"#.into()
+                }
+                ("/viewtopic.php", Some("t=3")) => "<title>Hazel topic</title><p>all about hazelnuts</p>".into(),
+                ("/check", _) => {
+                    r#"<title></title><form><p>Human Verification</p><div class="h-captcha" data-sitekey="k"></div></form>"#.into()
+                }
+                ("/flarum", _) => r#"<title>Flarum</title><noscript>You need JavaScript.</noscript>
+                    <noscript id="flarum-content"><ul><li><a href="/d/2-almonds">Almonds</a></li></ul></noscript>"#
+                    .into(),
+                ("/d/2-almonds", _) => "<title>Almond discussion</title><p>all about cashews</p>".into(),
+                _ => return StatusCode::NOT_FOUND.into_response(),
+            };
+            Html(page).into_response()
+        }
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (base, fetched)
+}
+
+#[tokio::test]
+async fn crawls_a_forums_threads_and_leaves_the_rest() {
+    let (base, fetched) = serve_forum().await;
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let stats = crawl(crawler(index.clone(), store, None), &[&base]).await;
+
+    let fetched = fetched.lock().unwrap().clone();
+    for path in ["/u/alice", "/login", "/search?q=x"] {
+        assert!(!fetched.iter().any(|p| p == path), "{path} was fetched: {fetched:?}");
+    }
+    let topic_fetches = fetched.iter().filter(|p| p.starts_with("/viewtopic.php")).count();
+    assert_eq!(topic_fetches, 1, "the session ID made no second address: {fetched:?}");
+
+    // The board, the thread, the post (once, at its own address), the topic,
+    // the Flarum page and the discussion only its <noscript> links to.
+    assert_eq!(stats.indexed, 6, "{stats:?}");
+    for word in ["walnuts", "hazelnuts", "cashews"] {
+        assert_eq!(hits(&index, word, &[]).len(), 1, "{word}");
+    }
+    let pecans = hits(&index, "pecans", &[]);
+    assert_eq!(pecans.len(), 1);
+    assert_eq!(pecans[0].routes[0].url, format!("{base}post/1"));
+    assert!(hits(&index, "verification", &[]).is_empty(), "the bot check is not a page");
+    assert_eq!(stats.failed, 1, "the bot check is asked again later: {stats:?}");
 }
