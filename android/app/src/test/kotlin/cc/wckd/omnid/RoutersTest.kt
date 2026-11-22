@@ -23,6 +23,16 @@ class RoutersTest {
     }
 
     @Test
+    fun readsAnIpfsGatewaysAddress() {
+        assertEquals("none: no IPFS node on a phone", "", IpfsGateway.parse(" "))
+        assertEquals("http://100.74.26.84:8080/", IpfsGateway.parse("100.74.26.84"))
+        assertEquals("https://gateway.example:443/", IpfsGateway.parse("https://gateway.example"))
+        for (typed in listOf("http://x/ipfs/bafy", "ftp://x", "http://x?a=b")) {
+            assertNull(typed, IpfsGateway.parse(typed))
+        }
+    }
+
+    @Test
     fun readsAnI2pRoutersAddress() {
         assertEquals("", I2pRouter.parse(""))
         assertEquals("http://100.74.26.84:4444/", I2pRouter.parse("100.74.26.84"))

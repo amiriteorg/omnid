@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Links whose file name says the crawler would not index them (archives, programs, disk images,
+  media, documents, fonts, checksums and signatures, by a URL's last segment or an IPFS gateway's
+  `?filename=`) are not followed: asking for one cost a fetch over Tor or I2P, and made an IPFS
+  node fetch the file's first blocks. The phone, crawling from IPFS's release downloads
+  (`dist.ipfs.tech`), had visited 2,507 release files in six minutes; that seed is gone.
+- The app reaches IPFS and Nostr: ⋮ → Settings → IPFS gateway takes an IPFS node's gateway on
+  your computer (none by default: no IPFS node runs on a phone), and Nostr's relays are read
+  through Tor while "Crawl the web through Tor" is on, with Settings → Nostr relays to turn them
+  off. Both have filters in Settings → Search and rows in the search page's status panel. A Nostr
+  result opens in a Nostr app after a dialog, as a magnet does in a torrent app; only `nostr:`
+  notes, profiles and articles are handed on, never a key.
 - Telegram's public channels are crawled through their web previews: a link to a channel or one of
   its posts (`t.me/<name>`, `t.me/<name>/<post>`, `telegram.me`) is the channel's preview,
   `https://t.me/s/<name>`, with its latest posts, and its `?before=` pages go back through older

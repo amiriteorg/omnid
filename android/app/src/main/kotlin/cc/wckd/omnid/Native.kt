@@ -10,7 +10,8 @@ internal object Native {
      * Starts the daemon if it is not running and returns its loopback port. Crawling starts
      * paused. [options] is a JSON object of the settings it takes at start (`omnid-android`'s
      * `Options`): `hyphanetNode` ([HyphanetNode]) and `i2pRouter` ([I2pRouter]), each empty for
-     * only the one on this phone; `crawlSpeed`, the ordinal of [Settings.CrawlSpeed]; and
+     * only the one on this phone; `ipfsGateway` ([IpfsGateway]), empty for none; `nostr`, whether
+     * to read Nostr relays; `crawlSpeed`, the ordinal of [Settings.CrawlSpeed]; and
      * `appProxy`, `{port, password}`, when the proxy for other apps is on. Throws
      * [RuntimeException] with the reason when it cannot start.
      */
