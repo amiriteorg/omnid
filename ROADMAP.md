@@ -5,10 +5,10 @@ Where OMNId goes next, in the order the work is planned. What has shipped is in
 [Status](README.md#status). Items marked **needs a go-ahead** wait on the owner's decision
 before any work starts.
 
-## Where it stands: 0.1.5
+## Where it stands: 0.1.6
 
 One daemon and an Android app search the clearnet, Tor, I2P, Hyphanet and BitTorrent magnets
-from one index, with a private browser in the app.
+from one index, with a private browser in the app. The daemon also reaches IPFS (unreleased).
 
 - Each browser site gets Tor circuits of its own, and an I2P identity of its own where the
   router offers SAM.
@@ -18,26 +18,31 @@ from one index, with a private browser in the app.
 
 ## Next
 
-1. **Run it on a physical phone.** Every release so far was tested on an emulator. A real
+1. **IPFS in the app.** The daemon crawls IPFS through a gateway; the phone has none.
+   - Settings → Networks → IPFS gateway, for a node elsewhere (over Tailscale, as for the
+     Hyphanet node), and the IPFS filter in Settings → Search.
+   - The browser stays out of IPFS until it can isolate it: a page could otherwise make the
+     node ask its peers for a CID of the page's choosing, from the node's own address.
+2. **Run it on a physical phone.** Every release so far was tested on an emulator. A real
    arm64 phone should cover:
    - per-site I2P identities through the i2pd app's own SAM bridge;
    - the Tailscale address rule, with Tailscale on and off;
    - crawling on a charger: heat, battery, and whether Android stops the service.
 
    This needs the owner's phone.
-2. **Typed `http://` eepsites without the wait.** The browser's HTTPS-only mode tries
+3. **Typed `http://` eepsites without the wait.** The browser's HTTPS-only mode tries
    `https://` first, which took about 25 s on the test eepsites before the page loaded over
    HTTP.
    - `.i2p` and the Hyphanet host should load as typed, as onions already do.
    - The clearnet stays HTTPS-only.
-3. **Builds anyone can check.** Releases are built on one Mac and signed by hand
+4. **Builds anyone can check.** Releases are built on one Mac and signed by hand
    ([docs/releasing.md](docs/releasing.md)).
    - Build the binaries in CI from the tag, and check them against the local build: the APK
      build is reproducible.
    - Publish build provenance.
    - Add Linux binaries (x86_64 and aarch64).
    - The signing key stays offline.
-4. **Tor bridges** (**needs a go-ahead**). They are for networks that block Tor; arti 0.48,
+5. **Tor bridges** (**needs a go-ahead**). They are for networks that block Tor; arti 0.48,
    which OMNId already uses, supports them. There are three phases, each depending on the one
    before.
    - **A: the daemon and desktop.**
@@ -58,7 +63,7 @@ from one index, with a private browser in the app.
      to try bridges.
      - It asks Tor's circumvention API for your country's settings, through the built-in meek
        bridge, and applies them, as Tor Browser does.
-5. **A built-in I2P router** (**needs a go-ahead**). The aim is to embed
+6. **A built-in I2P router** (**needs a go-ahead**). The aim is to embed
    [emissary](https://github.com/eepnet/emissary), a Rust I2P router (MIT), in the daemon, as
    arti is for Tor. Then the phone needs no i2pd app, and OMNId controls tunnel lengths and
    identities.

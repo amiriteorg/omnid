@@ -55,6 +55,11 @@ struct Common {
     /// nodes, best first
     #[arg(long, env = "OMNID_FPROXY", value_delimiter = ',', default_value = omnid_net::DEFAULT_FPROXY, global = true)]
     fproxy: Vec<Url>,
+    /// An IPFS gateway that serves /ipfs/ and /ipns/ paths, such as an IPFS
+    /// node's own (kubo's). Repeat it (or separate with commas) for more,
+    /// best first
+    #[arg(long, env = "OMNID_IPFS_GATEWAY", value_delimiter = ',', default_value = omnid_net::DEFAULT_IPFS_GATEWAY, global = true)]
+    ipfs_gateway: Vec<Url>,
     /// Let clearnet fetches reach loopback and private networks
     #[arg(long, global = true)]
     allow_private_addresses: bool,
@@ -74,7 +79,7 @@ enum Command {
     Crawl(CrawlArgs),
     /// Fetch one address through the gateway and describe the response
     Fetch {
-        /// A URL, bare host, freenet: key or magnet link
+        /// A URL, bare host, freenet: key, ipfs:// or ipns:// address, or magnet link
         address: String,
     },
     /// Download a file through the gateway: in byte ranges over several
@@ -84,7 +89,7 @@ enum Command {
     /// Search the local index
     Search {
         query: String,
-        /// Only these networks (repeatable): clearnet, onion, i2p, hyphanet, magnet
+        /// Only these networks (repeatable): clearnet, onion, i2p, hyphanet, ipfs, magnet
         #[arg(long = "network", short)]
         networks: Vec<Network>,
         #[arg(long, default_value_t = 10)]
@@ -339,6 +344,7 @@ async fn download(common: &Common, data_dir: &Path, args: DownloadArgs) -> Resul
     let url = match Source::parse(&args.address)? {
         Source::Hyphanet(key) => Url::parse(&format!("http://{}/{key}", omnid_net::HYPHANET_HOST))?,
         Source::Magnet(_) => anyhow::bail!("a magnet is not a file; `omnid fetch` shows its metadata"),
+        Source::Ipfs(_) => anyhow::bail!("downloading from IPFS is not built yet; `ipfs get` on your node fetches it"),
         source => source.url().cloned().context("no URL to download")?,
     };
     // A file named and already there is refused before anything is fetched.
@@ -499,6 +505,7 @@ fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
             (false, false) => common.i2p_sam.clone(),
         },
         fproxies: common.fproxy.clone(),
+        ipfs_gateways: common.ipfs_gateway.clone(),
         allow_private_addresses: common.allow_private_addresses,
         clearnet_via_tor: common.clearnet_via_tor,
         ..GatewayConfig::default()

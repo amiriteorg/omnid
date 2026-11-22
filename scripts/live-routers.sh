@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 # Runs omnid's live tests against real routers: Tor (arti, in-process), the
-# BitTorrent DHT, a client-only i2pd and a temporary Hyphanet node.
+# BitTorrent DHT, a client-only i2pd, a temporary Hyphanet node and a
+# temporary IPFS node (kubo).
 #
-#   scripts/live-routers.sh up      start i2pd and Hyphanet, wait until they serve
+#   scripts/live-routers.sh up      start i2pd, Hyphanet and kubo, wait until they serve
 #   scripts/live-routers.sh test    cargo test --workspace -- --ignored (all live tests)
-#   scripts/live-routers.sh down    stop both and delete their state
+#   scripts/live-routers.sh down    stop them and delete their state
 #   scripts/live-routers.sh all     up, test, down
 #
 # i2pd runs with --notransit, so it relays nobody else's traffic. The Hyphanet
 # node joins opennet with a 256 MiB store of other users' encrypted blocks; `down`
-# deletes it. Downloads are cached in target/live/cache and checked against
-# pinned hashes and the Hyphanet release key before anything runs.
+# deletes it. kubo is a DHT client only, providing nothing to others, with a
+# repo `down` deletes. Downloads are cached in target/live/cache and checked
+# against pinned hashes and the Hyphanet release key before anything runs.
 #
-# Needs: i2pd (brew install i2pd, or your package manager), Java 17+, curl,
-# gpg. Ports: 4444/4447/7070/7656 (i2pd) and 8888/9481 (Hyphanet), all on 127.0.0.1.
+# Needs: i2pd and kubo (brew install i2pd kubo, or your package manager), Java
+# 17+, curl, gpg. Ports: 4444/4447/7070/7656 (i2pd), 8888/9481 (Hyphanet) and
+# 8080/5001 (kubo), all on 127.0.0.1, and 4001 (kubo's peers).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -171,6 +174,32 @@ EOF
   say "Hyphanet ready"
 }
 
+start_kubo() {
+  command -v ipfs >/dev/null || die "kubo is not installed (brew install kubo)"
+  local repo=$LIVE/kubo
+  if [ -f "$repo/kubo.pid" ] && kill -0 "$(cat "$repo/kubo.pid")" 2>/dev/null; then
+    say "kubo already running"
+  elif nc -z 127.0.0.1 8080 2>/dev/null; then
+    # A node of the machine's own, or something else on the port, which the
+    # live test then says plainly; `down` leaves it alone.
+    say "using what is already on 127.0.0.1:8080"
+    return
+  else
+    say "starting kubo (DHT client only)"
+    rm -rf "$repo"
+    IPFS_PATH=$repo ipfs init --profile lowpower >/dev/null
+    IPFS_PATH=$repo ipfs config Addresses.Gateway /ip4/127.0.0.1/tcp/8080
+    IPFS_PATH=$repo ipfs config Addresses.API /ip4/127.0.0.1/tcp/5001
+    IPFS_PATH=$repo ipfs config Routing.Type autoclient
+    IPFS_PATH=$repo ipfs config --json Provide.Enabled false
+    (IPFS_PATH=$repo exec nohup ipfs daemon >"$repo/stdout.log" 2>&1) &
+    echo $! >"$repo/kubo.pid"
+  fi
+  # The identity CID needs no peers: this is the gateway itself answering.
+  wait_for 120 "kubo's gateway" curl -fs --max-time 5 -o /dev/null http://127.0.0.1:8080/ipfs/bafkqaaa
+  say "kubo ready"
+}
+
 stop() { # DIR PIDFILE NAME
   local pid
   if [ -f "$1/$2" ] && pid=$(cat "$1/$2") && kill "$pid" 2>/dev/null; then
@@ -185,10 +214,10 @@ stop() { # DIR PIDFILE NAME
 }
 
 case "${1:-}" in
-  up) start_i2pd; start_hyphanet ;;
+  up) start_i2pd; start_hyphanet; start_kubo ;;
   # --no-fail-fast: one failing network must not hide the others' results.
   test) cd "$ROOT" && cargo test --workspace --no-fail-fast -- --ignored --test-threads=4 ;;
-  down) stop "$LIVE/i2pd" i2pd.pid i2pd; stop "$LIVE/hyphanet" java.pid Hyphanet ;;
+  down) stop "$LIVE/i2pd" i2pd.pid i2pd; stop "$LIVE/hyphanet" java.pid Hyphanet; stop "$LIVE/kubo" kubo.pid kubo ;;
   all)
     trap '"$0" down' EXIT
     "$0" up

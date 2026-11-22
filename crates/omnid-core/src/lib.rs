@@ -7,6 +7,7 @@
 //! them.
 
 mod doc;
+mod ipfs;
 pub mod lang;
 mod source;
 
