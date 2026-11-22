@@ -51,6 +51,9 @@ class MainActivity : Activity() {
         private const val KEY_PAGE = "page"
         /** The page's link to the i2pd app (app.js): opens it, or its F-Droid page. */
         private const val I2PD_LINK = "omnid:i2pd"
+
+        /** The page's link to Settings → I2P router (app.js). */
+        private const val I2P_ROUTER_LINK = "omnid:i2p-router"
     }
 
     private lateinit var web: WebView
@@ -102,6 +105,8 @@ class MainActivity : Activity() {
                     if (uri.host == "127.0.0.1" || uri.host.equals("localhost", ignoreCase = true)) return true
                     if (uri.toString() == I2PD_LINK) {
                         launch(I2pd.intent(this@MainActivity))
+                    } else if (uri.toString() == I2P_ROUTER_LINK) {
+                        startActivity(Intent(this@MainActivity, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_I2P_ROUTER, true))
                     } else if (uri.scheme.equals("magnet", ignoreCase = true)) {
                         // A result: already in the index, so only the torrent app, after asking.
                         askTorrentApp(uri.toString(), offerIndex = false)
