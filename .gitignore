@@ -2,3 +2,6 @@
 /data
 .agents/evidence/
 .worktrees/
+
+# Written for release builds by scripts/third-party-notices.py.
+/android/app/src/main/assets/licenses/third-party.txt

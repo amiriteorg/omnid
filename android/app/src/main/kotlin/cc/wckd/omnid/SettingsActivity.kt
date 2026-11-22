@@ -22,10 +22,13 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
+import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
@@ -548,9 +551,40 @@ class SettingsActivity : Activity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setPadding(dp(20), dp(8), dp(20), dp(8))
         }
+        // Release builds carry the notices; a build made without scripts/third-party-notices.py does not.
+        val notices = runCatching { assets.open(Notices.ASSET).bufferedReader().use { it.readText() } }.getOrNull()
         AlertDialog.Builder(this)
             .setTitle(R.string.settings_licenses)
             .setView(ScrollView(this).apply { addView(text) })
+            .setPositiveButton(android.R.string.ok, null)
+            .apply { if (notices != null) setNeutralButton(R.string.settings_third_party) { _, _ -> showNotices(notices) } }
+            .show()
+    }
+
+    private fun showNotices(file: String) {
+        val paragraphs = Notices.paragraphs(file)
+        val rows = object : BaseAdapter() {
+            override fun getCount() = paragraphs.size
+            override fun getItem(position: Int) = paragraphs[position]
+            override fun getItemId(position: Int) = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val paragraph = paragraphs[position]
+                return (convertView as? TextView ?: TextView(this@SettingsActivity).apply {
+                    setTextColor(getColor(R.color.ink_2))
+                    setPadding(dp(20), dp(6), dp(20), dp(6))
+                }).apply {
+                    text = paragraph.text
+                    typeface = if (paragraph.heading) monoBold else Typeface.DEFAULT
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, if (paragraph.heading) 14f else 12f)
+                }
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.settings_third_party)
+            .setView(ListView(this).apply {
+                adapter = rows
+                divider = null
+            })
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
