@@ -180,7 +180,10 @@ impl Source {
         Ok(match network {
             Network::Onion => Source::Onion(url),
             Network::I2p => Source::I2p(url),
-            _ => through_gateway(&url).or_else(|| through_nostr_client(&url)).unwrap_or(Source::Clearnet(url)),
+            _ => through_gateway(&url)
+                .or_else(|| through_nostr_client(&url))
+                .or_else(|| telegram_preview(&url))
+                .unwrap_or(Source::Clearnet(url)),
         })
     }
 
@@ -202,6 +205,17 @@ impl Source {
             Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => Some(url),
             Source::Hyphanet(_) | Source::Ipfs(_) | Source::Nostr(_) | Source::Magnet(_) => None,
         }
+    }
+
+    /// The public Telegram channel this is the web preview of
+    /// (`https://t.me/s/<name>`), its name lower case.
+    pub fn telegram_channel(&self) -> Option<&str> {
+        let url = match self {
+            Source::Clearnet(url) if url.host_str() == Some("t.me") => url,
+            _ => return None,
+        };
+        let mut segments = url.path_segments()?;
+        (segments.next() == Some("s")).then(|| segments.next()).flatten().filter(|name| !name.is_empty())
     }
 
     /// Where a gateway serves an IPFS address: `ipfs/<CID>/<path>` or
@@ -416,6 +430,72 @@ fn through_nostr_client(url: &Url) -> Option<Source> {
     url.path_segments()?.take(2).find_map(Nostr::parse).map(Source::Nostr)
 }
 
+/// The hosts of links to Telegram.
+const TELEGRAM_HOSTS: [&str; 3] = ["t.me", "telegram.me", "telegram.dog"];
+/// First path segments that are Telegram's own pages, not a channel's name.
+const TELEGRAM_PAGES: [&str; 22] = [
+    "s",
+    "c",
+    "joinchat",
+    "addstickers",
+    "addemoji",
+    "addtheme",
+    "addlist",
+    "setlanguage",
+    "share",
+    "proxy",
+    "socks",
+    "iv",
+    "login",
+    "bg",
+    "boost",
+    "contact",
+    "invoice",
+    "giftcode",
+    "confirmphone",
+    "nft",
+    "m",
+    "k",
+];
+
+/// A link to a public Telegram channel or one of its posts, as the web
+/// preview of the channel's latest posts (`https://t.me/s/<name>`); the
+/// preview's `?before=<post>`, which pages back through older posts, is
+/// kept. `t.me/<name>` and a post's own page show no posts to a reader
+/// without the app. Bots (names ending in `bot`) have no preview.
+fn telegram_preview(url: &Url) -> Option<Source> {
+    let host = url.host_str()?.trim_start_matches("www.");
+    if !TELEGRAM_HOSTS.contains(&host) {
+        return None;
+    }
+    let mut segments = url.path_segments()?.filter(|s| !s.is_empty());
+    let first = segments.next()?;
+    let (name, preview) = if first == "s" { (segments.next()?, true) } else { (first, false) };
+    let rest: Vec<&str> = segments.collect();
+    let a_post = rest.len() == 1 && rest[0].bytes().all(|b| b.is_ascii_digit());
+    if !(rest.is_empty() || a_post) {
+        return None;
+    }
+    let name = name.to_ascii_lowercase();
+    let valid = (5..=32).contains(&name.len())
+        && name.starts_with(|c: char| c.is_ascii_alphabetic())
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && !name.ends_with("bot")
+        && !TELEGRAM_PAGES.contains(&name.as_str());
+    if !valid {
+        return None;
+    }
+    let before = (preview && rest.is_empty())
+        .then(|| url.query_pairs().find(|(key, _)| key == "before").map(|(_, value)| value.into_owned()))
+        .flatten()
+        .filter(|post| !post.is_empty() && post.len() <= 12 && post.bytes().all(|b| b.is_ascii_digit()));
+    let preview = match before {
+        Some(post) => format!("https://t.me/s/{name}?before={post}"),
+        None => format!("https://t.me/s/{name}"),
+    };
+    Url::parse(&preview).ok().map(Source::Clearnet)
+}
+
 /// Drops what carries a visitor's session rather than a page: phpBB's `sid`,
 /// vBulletin's `s`, PHP's and Java's session IDs. Forum software adds them to
 /// every link for visitors without cookies, as a crawler is, so one thread
@@ -549,6 +629,40 @@ mod tests {
     fn canonical_form_drops_fragment() {
         let s = Source::parse("https://example.com/a?b=1#frag").unwrap();
         assert_eq!(s.to_string(), "https://example.com/a?b=1");
+    }
+
+    #[test]
+    fn telegram_links_are_their_channels_preview() {
+        let canonical = |s: &str| Source::parse(s).unwrap().to_string();
+        for link in [
+            "https://t.me/TorProject",
+            "https://t.me/torproject/63",
+            "https://telegram.me/torproject",
+            "http://www.t.me/s/torproject/41",
+            "t.me/s/torproject?q=bridges",
+            "https://t.me/s/torproject#latest",
+        ] {
+            assert_eq!(canonical(link), "https://t.me/s/torproject", "{link}");
+        }
+        assert_eq!(canonical("https://t.me/s/torproject?before=41"), "https://t.me/s/torproject?before=41");
+        let channel = Source::parse("https://t.me/durov").unwrap();
+        assert_eq!(channel.telegram_channel(), Some("durov"));
+        assert_eq!(channel.site_key(), "t.me", "one site, for politeness");
+        // Not channels: invites, Telegram's own pages, bots, a channel's deeper pages, other sites.
+        for kept in [
+            "https://t.me/+AbCdEf123",
+            "https://t.me/joinchat/AbCdEf",
+            "https://t.me/addstickers/pack",
+            "https://t.me/GetBridgesBot",
+            "https://t.me/abc",
+            "https://t.me/torproject/63/extra",
+            "https://telegram.org/blog",
+        ] {
+            let source = Source::parse(kept).unwrap();
+            assert_eq!(source.telegram_channel(), None, "{kept}");
+            assert!(!source.to_string().starts_with("https://t.me/s/"), "{kept}");
+        }
+        assert_eq!(canonical("https://t.me/s/torproject?before=12x"), "https://t.me/s/torproject", "a bad page number");
     }
 
     #[test]
