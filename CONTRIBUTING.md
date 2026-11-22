@@ -22,6 +22,9 @@ Run the checks that CI runs:
 which it skipped. The CLI works without the kit too: `cargo fmt --all --check`,
 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`.
 
+CI also runs:
+- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked`.
+
 **A bug fix comes with a test that fails without it.** Live tests against real networks are
 `#[ignore]`d. They run with `scripts/live-routers.sh all` and are never needed for CI.
 
