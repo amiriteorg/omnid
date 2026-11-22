@@ -112,6 +112,8 @@ class BrowserActivity : Activity() {
         var secure: Boolean? = null
         /** Pages ask for their desktop layout, as a computer's browser would. */
         var desktop = false
+        /** What was last typed or tapped here, until a page arrives (BrowserConfig.refusedUnasked). */
+        var asked: String? = null
     }
 
     private class Carried(val tabs: TabList<Tab>, val listing: Boolean)
@@ -419,6 +421,9 @@ class BrowserActivity : Activity() {
             val tab = tabOf(session) ?: return
             tab.url = url
             tab.secure = null
+            // A page arrived: what it loads next is judged from it.
+            val arrived = url?.let(Uri::parse)
+            if (arrived != null && BrowserConfig.isWebPage(arrived.scheme, arrived.host)) tab.asked = null
             if (tab !== shown) return
             if (!address.hasFocus()) showAddress()
             showKind(url, secure = null)
@@ -445,7 +450,10 @@ class BrowserActivity : Activity() {
             val asked = request.isDirectNavigation || (request.hasUserGesture && !request.isRedirect)
             return when (BrowserConfig.target(uri.scheme, uri.host)) {
                 BrowserConfig.Target.LOAD -> {
-                    if (!asked && BrowserConfig.entersOverlay(tabOf(session)?.url, request.uri)) {
+                    val tab = tabOf(session)
+                    if (asked) {
+                        tab?.asked = request.uri
+                    } else if (BrowserConfig.refusedUnasked(tab?.url, tab?.asked, request.uri, request.isRedirect)) {
                         refuse(request.uri)
                         return GeckoResult.deny()
                     }

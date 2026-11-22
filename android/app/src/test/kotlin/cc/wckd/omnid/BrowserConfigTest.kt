@@ -120,4 +120,21 @@ class BrowserConfigTest {
         assertFalse("to the clearnet", BrowserConfig.entersOverlay(onion, "https://example.com/"))
         assertFalse("a new tab, typed", BrowserConfig.entersOverlay(null, "http://stats.i2p/"))
     }
+
+    @Test
+    fun whatWasTypedStillLoadsThroughHttpsOnlyAndRedirects() {
+        val page = "https://example.com/"
+        val typed = "http://reg.i2p/"
+        assertFalse("HTTPS-only's upgrade", BrowserConfig.refusedUnasked(page, typed, "https://reg.i2p/", redirect = true))
+        assertFalse("and its reload over HTTP", BrowserConfig.refusedUnasked(page, "https://reg.i2p/", typed, redirect = false))
+        assertFalse("a redirect within I2P", BrowserConfig.refusedUnasked(page, typed, "http://stats.i2p/", redirect = true))
+        assertTrue("a script on the page", BrowserConfig.refusedUnasked(page, typed, "http://stats.i2p/", redirect = false))
+        assertTrue("nothing was asked", BrowserConfig.refusedUnasked(page, null, "https://reg.i2p/", redirect = true))
+        assertTrue("a redirect into Hyphanet", BrowserConfig.refusedUnasked(page, typed, "http://hyphanet/USK@x/site/1/", redirect = true))
+        assertTrue("a page typed on the clearnet redirecting", BrowserConfig.refusedUnasked(null, page, "http://reg.i2p/", redirect = true))
+        assertTrue(BrowserConfig.sameAddress("http://reg.i2p/a?b", "https://reg.i2p/a?b"))
+        assertFalse(BrowserConfig.sameAddress("http://reg.i2p/a", "http://reg.i2p/b"))
+        assertFalse(BrowserConfig.sameAddress("ftp://reg.i2p/", "http://reg.i2p/"))
+        assertFalse(BrowserConfig.sameAddress(null, "http://reg.i2p/"))
+    }
 }

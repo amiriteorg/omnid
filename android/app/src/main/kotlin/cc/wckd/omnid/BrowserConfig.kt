@@ -185,6 +185,29 @@ internal object BrowserConfig {
         return on != into
     }
 
+    /**
+     * Whether a load no one typed or tapped is refused for entering I2P or Hyphanet from [page],
+     * the tab's page ([entersOverlay]). [asked] is what was last typed or tapped in the tab, until a
+     * page arrives: that address on the other of http and https (HTTPS-only mode's upgrade of it,
+     * and the reload over HTTP when the upgrade fails) is still what was asked, and a redirect it
+     * leads to starts from it rather than from the page before.
+     */
+    fun refusedUnasked(page: String?, asked: String?, to: String, redirect: Boolean): Boolean {
+        if (sameAddress(asked, to)) return false
+        return entersOverlay(if (redirect && asked != null) asked else page, to)
+    }
+
+    /** Whether [a] and [b] are one address but for http or https. */
+    fun sameAddress(a: String?, b: String): Boolean {
+        fun rest(url: String?): String? {
+            if (url == null) return null
+            val scheme = url.substringBefore("://", "").lowercase()
+            return if (scheme == "http" || scheme == "https") url.substringAfter("://") else null
+        }
+        val first = rest(a) ?: return false
+        return first == rest(b)
+    }
+
     /** Whether the address is a Hyphanet page, through the node. */
     fun isHyphanet(url: String?): Boolean = runCatching { URI(url).host }.getOrNull()?.lowercase() == HYPHANET_HOST
 
