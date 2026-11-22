@@ -486,13 +486,17 @@ impl Context {
             .collect()
     }
 
-    /// The link policy, for links and redirects alike.
+    /// The link policy, for links and redirects alike. A page reached
+    /// anonymously never leads the crawler to a network it reaches from its
+    /// own address ([`Gateway::leaves_anonymity`]).
     fn may_follow(&self, from: &Source, link: &Source) -> bool {
         let clearnet_ok = || {
             from.network() == Network::Clearnet
                 && (!self.cfg.clearnet_same_site_only || same_site(&from.site_key(), &link.site_key()))
         };
-        (link.network() != Network::Clearnet || clearnet_ok()) && self.safety.check_source(link) == Verdict::Allow
+        (link.network() != Network::Clearnet || clearnet_ok())
+            && !self.gateway.leaves_anonymity(from.network(), link.network())
+            && self.safety.check_source(link) == Verdict::Allow
     }
 
     /// Updates the store, the index and the counters for a finished job.

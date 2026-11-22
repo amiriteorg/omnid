@@ -35,6 +35,9 @@ impl Politeness {
             // FProxy fetches through the local node; more parallelism only
             // queues up inside it.
             Network::Hyphanet => (2, 2),
+            // A gateway finds content through the IPFS DHT, which can take
+            // a while; it is the node that does the work, not a site.
+            Network::Ipfs => (8, 1),
             // Magnets are indexed from the link itself, without a fetch.
             Network::Magnet => (16, 0),
         };

@@ -193,7 +193,11 @@ pub(crate) fn askable(network: Network, router: &Url) -> Result<(), FetchError> 
 /// A TCP connection to a router, given up after [`CONNECT_TIMEOUT`].
 pub(crate) async fn connect(network: Network, router: &Url) -> Result<tokio::net::TcpStream, FetchError> {
     askable(network, router)?;
-    let kind = if network == Network::Hyphanet { "node" } else { "router" };
+    let kind = match network {
+        Network::Hyphanet => "node",
+        Network::Ipfs => "gateway",
+        _ => "router",
+    };
     let unavailable =
         |what: &str| FetchError::Unavailable { network, reason: format!("{what} {router}; is the {kind} running?") };
     let (Some(host), Some(port)) = (router.host_str(), router.port_or_known_default()) else {

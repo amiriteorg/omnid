@@ -349,3 +349,88 @@ async fn goes_deep_within_sites_and_on_across_them() {
     assert_eq!(hits(&index, "\"third floor\"", &[]).len(), 1);
     assert!(hits(&index, "\"far away\"", &[]).is_empty());
 }
+
+const CID: &str = "bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354";
+const OTHER_CID: &str = "bafkqaaa";
+const PLANTED_CID: &str = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy";
+const FREESITE: &str =
+    "USK@AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,AQACAAE/site/1/";
+
+/// An IPFS gateway, a web page linking into IPFS and a freesite linking a CID
+/// of its own, all on one server: the gateway under `/ipfs/`, FProxy under
+/// `/USK@`. Returns the server and the gateway paths asked for.
+async fn serve_ipfs_and_its_neighbours() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = asked.clone();
+    let app = Router::new()
+        .route("/", get(|| async { Html(format!(r#"<title>Links</title><a href="ipfs://{CID}/">on IPFS</a>"#)) }))
+        .route(
+            &format!("/{FREESITE}"),
+            get(|| async { Html(format!(r#"<title>A freesite</title><a href="ipfs://{PLANTED_CID}/">a CID</a>"#)) }),
+        )
+        .fallback(move |uri: axum::http::Uri| {
+            log.lock().unwrap().push(uri.path().to_owned());
+            async move {
+                let page = match uri.path() {
+                    p if p == format!("/ipfs/{CID}/") => {
+                        format!(
+                            r#"<title>IPFS home</title><a href="page.html">p</a> <a href="/ipfs/{OTHER_CID}/">o</a>"#
+                        )
+                    }
+                    p if p == format!("/ipfs/{CID}/page.html") => {
+                        "<title>Walnuts</title><p>all about walnuts</p>".into()
+                    }
+                    p if p == format!("/ipfs/{OTHER_CID}/") => "<title>Second root</title><p>pecans</p>".into(),
+                    _ => return StatusCode::NOT_FOUND.into_response(),
+                };
+                // An older gateway's header.
+                ([(CONTENT_TYPE, "text/html"), (axum::http::HeaderName::from_static("x-ipfs-path"), uri.path())], page)
+                    .into_response()
+            }
+        });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (base, asked)
+}
+
+#[tokio::test]
+async fn crawls_ipfs_from_the_web_but_not_from_anonymous_pages() {
+    let (base, asked) = serve_ipfs_and_its_neighbours().await;
+    let node = vec![base.parse().unwrap()];
+    let gateway = Gateway::new(GatewayConfig {
+        tor_dir: None,
+        i2p_proxies: vec![],
+        fproxies: node.clone(),
+        ipfs_gateways: node,
+        allow_private_addresses: true,
+        ..GatewayConfig::default()
+    })
+    .unwrap();
+    let no_delay = Politeness { concurrency: 4, site_delay: Duration::ZERO };
+    let cfg = CrawlConfig {
+        politeness: HashMap::from([
+            (Network::Clearnet, no_delay),
+            (Network::Hyphanet, no_delay),
+            (Network::Ipfs, no_delay),
+        ]),
+        commit_interval: Duration::from_millis(100),
+        ..CrawlConfig::default()
+    };
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let crawler = Crawler::new(Arc::new(gateway), index.clone(), Arc::new(Safety::default()), store, cfg);
+    let stats = crawl(crawler, &[&base, &format!("freenet:{FREESITE}")]).await;
+
+    // The web page's link into IPFS, the page beside it and the other root
+    // it links as a gateway path.
+    assert_eq!(stats.indexed, 5, "{stats:?}");
+    let walnuts = hits(&index, "walnuts", &[Network::Ipfs]);
+    assert_eq!(walnuts.len(), 1);
+    assert_eq!(walnuts[0].routes[0].url, format!("ipfs://{CID}/page.html"));
+    assert_eq!(hits(&index, "pecans", &[Network::Ipfs]).len(), 1);
+    // The freesite's CID was not fetched: the node would have asked its peers
+    // for it from its own address, which the freesite's author could watch.
+    assert!(!asked.lock().unwrap().iter().any(|p| p.contains(PLANTED_CID)), "{:?}", asked.lock().unwrap());
+    assert_eq!(hits(&index, "freesite", &[Network::Hyphanet]).len(), 1);
+}

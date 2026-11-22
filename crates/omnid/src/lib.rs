@@ -481,18 +481,19 @@ impl Daemon {
     }
 }
 
-/// How often the daemon looks whether the I2P router and Hyphanet node are up.
+/// How often the daemon looks whether the I2P router, Hyphanet node and IPFS
+/// gateway are up.
 const ROUTER_CHECK: Duration = Duration::from_secs(30);
 
-/// When the I2P router or the Hyphanet node comes up (the i2pd app started,
-/// a node set), what was put off for want of it is crawled now instead of
-/// after its deferral.
+/// When the I2P router, the Hyphanet node or the IPFS gateway comes up (the
+/// i2pd app started, a node set), what was put off for want of it is crawled
+/// now instead of after its deferral.
 async fn watch_routers(gateway: Arc<Gateway>, store: Arc<CrawlStore>, shutdown: CancellationToken) {
     let mut was_ready = HashSet::new();
     loop {
         let ready: HashSet<Network> =
             gateway.status().await.into_iter().filter(|r| r.state == RouterState::Ready).map(|r| r.network).collect();
-        for network in [Network::I2p, Network::Hyphanet] {
+        for network in [Network::I2p, Network::Hyphanet, Network::Ipfs] {
             if ready.contains(&network) && !was_ready.contains(&network) {
                 let store = store.clone();
                 match tokio::task::spawn_blocking(move || store.retry_deferred(network, now_secs())).await {

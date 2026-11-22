@@ -730,6 +730,7 @@ fn depth(url: &str) -> u64 {
             let base = if key.starts_with("USK@") { 3 } else { 2 };
             segments(&key).saturating_sub(base)
         }
+        Ok(omnid_core::Source::Ipfs(url)) => segments(url.path()) + u64::from(url.query().is_some()),
         Ok(source) => source.url().map_or(0, |u| segments(u.path()) + u64::from(u.query().is_some())),
         Err(_) => 0,
     }
