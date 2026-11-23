@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.7 (2026-11-23)
 
 - Fixed: an eepsite opened as `http://` that has no HTTPS could leave the app's browser on a blank
   page for a minute or more. The browser tries HTTPS first, and after 3 s Gecko asks the site over
