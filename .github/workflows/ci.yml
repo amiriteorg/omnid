@@ -1,8 +1,12 @@
-# The fast gate (.agents/engineering.json) on GitHub's runners, for every pull
-# request and every push to main, plus rustdoc, the Android app's JVM unit
-# tests, the release's license check, the security scanners and a minute of
-# each fuzz target. Live tests stay off: they need real routers. Actions are
-# pinned to commits.
+# The fast gate (.agents/engineering.json) for every pull request and every
+# push to main, plus rustdoc, the Android app's JVM unit tests, the release's
+# license check, the security scanners and a minute of each fuzz target. Live
+# tests stay off: they need real routers. Actions are pinned to commits.
+#
+# Both forges run this file. sovware.io, the primary repository, runs it on
+# its pull requests and on main, on its own runners (Forgejo Actions reads
+# .github/workflows when there is no .forgejo/workflows). GitHub runs it on
+# main, which sovware.io's push mirror keeps up to date.
 name: CI
 
 on:
@@ -50,6 +54,26 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # GitHub's runners come with the Android SDK; sovware.io's do not. There
+      # Google's command-line tools are fetched and checked, the licenses
+      # accepted, and Gradle downloads the platform and build tools the app
+      # names. Google publishes only SHA-1 sums (repository2-3.xml); this
+      # SHA-256 is of the file that matched its SHA-1, e025545c…5f60.
+      - name: Android SDK, where the runner has none
+        run: |
+          set -euo pipefail
+          if [ -n "${ANDROID_HOME:-}" ]; then exit 0; fi
+          zip=commandlinetools-linux-16111833_latest.zip
+          sdk="$RUNNER_TEMP/android-sdk"
+          curl -fsSLo "$RUNNER_TEMP/$zip" "https://dl.google.com/android/repository/$zip"
+          echo "0877a1d048fe4a24efe2eff536ca4223f7adeb58648bb81909d33c446918cfa8  $RUNNER_TEMP/$zip" | sha256sum -c -
+          mkdir -p "$sdk/cmdline-tools"
+          unzip -q "$RUNNER_TEMP/$zip" -d "$sdk/cmdline-tools"
+          mv "$sdk/cmdline-tools/cmdline-tools" "$sdk/cmdline-tools/latest"
+          # yes ends on SIGPIPE when sdkmanager is done, which pipefail
+          # would take for a failure.
+          { yes || true; } | "$sdk/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
       # Also checks the Gradle wrapper against Gradle's published checksums.
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - run: ./gradlew --no-daemon testDebugUnitTest
