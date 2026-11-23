@@ -90,9 +90,49 @@ function crossesIntoOverlay(details) {
   return target !== null && overlay(site(details)) !== target;
 }
 
+// The eepsites tabs are loading at the top, by request.
+const loading = new Map();
+
+// Gecko's own question, 3 s into loading an address typed as http:// and
+// upgraded to HTTPS: does the site answer over HTTP, at http://<host>/? If it
+// does, Gecko stops waiting for HTTPS, and the app's error page reloads the
+// address over HTTP. The question comes from no page and no tab, so it would
+// go to the dead-end port, and an eepsite without HTTPS kept the page waiting
+// for its HTTPS attempt to fail, about 25 s. It goes through as the site, on
+// that site's own I2P identity, and only while a tab is loading that eepsite:
+// the router reaches no site the address did not already take it to.
+// Hyphanet needs none of this: omnid refuses HTTPS to the node at once.
+function httpsOnlyQuestion(details) {
+  if (details.type === "main_frame" || details.tabId !== -1 || details.frameAncestors?.length) return null;
+  if (hostOf(details.documentUrl) || hostOf(details.originUrl)) return null;
+  let url;
+  try {
+    url = new URL(details.url);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" || url.port || url.username || url.pathname !== "/" || url.search) return null;
+  const host = hostOf(details.url);
+  if (!host.endsWith(".i2p")) return null;
+  for (const loaded of loading.values()) if (loaded === host) return host;
+  return null;
+}
+
+const topLevel = { urls: ["<all_urls>"], types: ["main_frame"] };
+browser.webRequest.onBeforeRequest.addListener((details) => {
+  const host = hostOf(details.url);
+  if (host.endsWith(".i2p")) loading.set(details.requestId, host);
+  else loading.delete(details.requestId);
+}, topLevel);
+const loaded = (details) => loading.delete(details.requestId);
+browser.webRequest.onCompleted.addListener(loaded, topLevel);
+browser.webRequest.onErrorOccurred.addListener(loaded, topLevel);
+
 browser.proxy.onRequest.addListener(
   async (details) => {
     const { port, password } = await config();
+    const asked = httpsOnlyQuestion(details);
+    if (asked) return { type: "socks", host: "127.0.0.1", port, username: asked, password, proxyDNS: true };
     // To Gecko's dead-end port, where it fails like any request this does not route.
     if (crossesIntoOverlay(details)) return { type: "socks", host: "127.0.0.1", port: 9, proxyDNS: true };
     return { type: "socks", host: "127.0.0.1", port, username: site(details), password, proxyDNS: true };
@@ -109,15 +149,26 @@ browser.proxy.onError.addListener(() => {
 // phone's own languages.
 const ACCEPT_LANGUAGE = "en-US,en;q=0.5";
 
+// What I2P's HTTP proxies, i2pd's and Java I2P's, send as every client's
+// User-Agent. Eepsites expect it, and some refuse any other as an inproxy's:
+// stats.i2p answers "403 Inproxy access denied". The browser's streams to
+// eepsites (SAM, or a CONNECT through i2pd) pass on its own.
+const I2P_USER_AGENT = "MYOB/6.66 (AN/ON)";
+
 browser.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
     if (details.type === "main_frame") tabSites.set(details.tabId, hostOf(details.url));
+    const to = network(hostOf(details.url));
     const from = network(site(details));
-    const crossing = network(hostOf(details.url)) !== from;
+    const crossing = to !== from;
     const headers = [];
     for (const header of details.requestHeaders) {
       const name = header.name.toLowerCase();
       if (name === "accept-language") continue;
+      if (to === "i2p" && name === "user-agent") {
+        headers.push({ name: header.name, value: I2P_USER_AGENT });
+        continue;
+      }
       // Leaving the network the page is on, its address stays behind: even an
       // origin says "an onion site" or "an eepsite" sent you.
       if (crossing && name === "referer") continue;

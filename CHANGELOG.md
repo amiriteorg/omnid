@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Fixed: an eepsite opened as `http://` that has no HTTPS could leave the app's browser on a blank
+  page for a minute or more. The browser tries HTTPS first, and after 3 s Gecko asks the site over
+  HTTP so it can stop waiting, but the browser's extension sent that question nowhere. It now lets
+  it through, as that site, while a tab is loading the eepsite: on the test emulator reg.i2p
+  opened in 6 to 31 s in every run, where it had taken 35 to 63 s, or not opened within 90 s in 5
+  runs of 8.
+- Fixed: some eepsites, stats.i2p among them, refused the app's browser with "403 Inproxy access
+  denied": it sent Gecko's User-Agent, where I2P's proxies send `MYOB/6.66 (AN/ON)` for every
+  client. It sends I2P's to `.i2p` sites now.
 - Fixed: a Nostr article whose `d` tag was 256 bytes or longer got a wrong address. NIP-19
   writes the tag's length in one byte, so the address named a different article, or nothing. A
   crafted tag could even make it name another author's article. Such an article is now linked
