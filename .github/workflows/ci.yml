@@ -57,16 +57,18 @@ jobs:
       # GitHub's runners come with the Android SDK; sovware.io's do not. There
       # Google's command-line tools are fetched and checked, the licenses
       # accepted, and Gradle downloads the platform and build tools the app
-      # names. Google publishes only SHA-1 sums (repository2-3.xml); this
-      # SHA-256 is of the file that matched its SHA-1, e025545c…5f60.
+      # names. Version 19.0, because from 23.0 `sdkmanager --licenses` writes
+      # no licenses ("no longer needed") and Gradle then refuses to download.
+      # Google publishes only SHA-1 sums (repository2-3.xml); this SHA-256 is
+      # of the file that matched its SHA-1, 5fdcc763…6aa6088b041e70.
       - name: Android SDK, where the runner has none
         run: |
           set -euo pipefail
           if [ -n "${ANDROID_HOME:-}" ]; then exit 0; fi
-          zip=commandlinetools-linux-16111833_latest.zip
+          zip=commandlinetools-linux-13114758_latest.zip
           sdk="$RUNNER_TEMP/android-sdk"
           curl -fsSLo "$RUNNER_TEMP/$zip" "https://dl.google.com/android/repository/$zip"
-          echo "0877a1d048fe4a24efe2eff536ca4223f7adeb58648bb81909d33c446918cfa8  $RUNNER_TEMP/$zip" | sha256sum -c -
+          echo "7ec965280a073311c339e571cd5de778b9975026cfcbe79f2b1cdcb1e15317ee  $RUNNER_TEMP/$zip" | sha256sum -c -
           mkdir -p "$sdk/cmdline-tools"
           unzip -q "$RUNNER_TEMP/$zip" -d "$sdk/cmdline-tools"
           mv "$sdk/cmdline-tools/cmdline-tools" "$sdk/cmdline-tools/latest"
