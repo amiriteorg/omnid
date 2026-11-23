@@ -5,11 +5,11 @@ Where OMNId goes next, in the order the work is planned. What has shipped is in
 [Status](README.md#status). Items marked **needs a go-ahead** wait on the owner's decision
 before any work starts.
 
-## Where it stands: 0.1.6
+## Where it stands: 0.1.7
 
-One daemon and an Android app search the clearnet, Tor, I2P, Hyphanet and BitTorrent magnets
-from one index, with a private browser in the app. Unreleased: IPFS (in the app through a
-gateway on the owner's computer), Nostr and Telegram's public channels.
+One daemon and an Android app search the clearnet, Tor, I2P, Hyphanet, IPFS, Nostr, Telegram's
+public channels and BitTorrent magnets from one index, with a private browser in the app. On the
+phone, IPFS goes through a gateway on the owner's computer.
 
 - Each browser site gets Tor circuits of its own, and an I2P identity of its own where the
   router offers SAM.

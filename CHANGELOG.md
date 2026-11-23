@@ -48,7 +48,7 @@
   or alter one. Relays are reached as the clearnet is, and `--nostr-relay` and `--no-nostr` set
   them. A denied `nostr:npub1…` keeps out all its author signed. New dependency: `k256`
   (RustCrypto, for the signatures). `/api/status` lists a `nostr` row, between `ipfs` and
-  `magnet`. Not in the app yet.
+  `magnet`.
 - Forums crawl better. Their sign-in, sign-up, member, profile, search, reply and print pages are
   no longer fetched (on Discourse Meta they had been 45 of the first 80 addresses). Session IDs
   (`sid`, vBulletin's `s`, `PHPSESSID`, `jsessionid`) are dropped from addresses, which changes the
@@ -67,7 +67,6 @@
   never reaches it. New default seeds: IPFS's documentation and the Distributed Wikipedia Mirror.
   The search page has an IPFS filter and opens IPFS results through `/ipfs/…` and `/ipns/…`, which
   redirect to the gateway. `/api/status` lists an `ipfs` router, between `hyphanet` and `magnet`.
-  Not in the app yet.
 
 ## 0.1.6 (2026-11-22)
 
