@@ -212,6 +212,34 @@ fn text_links(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use super::*;
+
+    /// An event as the crawler indexes it, with a channel's `messages`.
+    /// What the index gets stays within the caps, and each address the
+    /// crawler writes reads back as itself and names what it meant.
+    pub fn fields(event: &NostrEvent, messages: &[NostrEvent]) {
+        let fields = if event.kind == PROFILE { profile(event, messages) } else { super::event(event, messages) };
+        assert!(fields.title.len() <= MAX_TITLE && fields.description.len() <= MAX_DESCRIPTION);
+        assert!(fields.body.len() <= crate::extract::MAX_TEXT_BYTES && fields.keywords.len() <= MAX_KEYWORDS);
+        assert!(event.kind == PROFILE || fields.links.len() <= MAX_LINKS);
+        for link in tag_links(event).into_iter().chain([address_of(event)]) {
+            let parsed = Nostr::parse(&link).unwrap_or_else(|| panic!("{link} does not parse"));
+            assert_eq!(parsed.to_string(), link);
+        }
+        match Nostr::parse(&address_of(event)).map(|n| n.target) {
+            Some(NostrTarget::Event(id)) => assert_eq!(id, event.id),
+            Some(NostrTarget::Address { kind, author, identifier }) => {
+                assert_eq!((kind, author), (event.kind, event.pubkey));
+                assert_eq!(event.tag_values("d").next(), Some(identifier.as_str()));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

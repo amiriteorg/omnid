@@ -173,6 +173,76 @@ impl<S: AsyncRead + AsyncWrite + Unpin> WebSocket<S> {
     }
 }
 
+/// For the fuzz targets in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
+
+    use super::*;
+
+    /// A server end that answers the handshake, then sends `frames` as given
+    /// and closes; what the client sent after its handshake comes back.
+    pub(crate) async fn stand_in(mut server: DuplexStream, frames: &[u8]) -> Vec<u8> {
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            match server.read_u8().await {
+                Ok(byte) => head.push(byte),
+                Err(_) => return Vec::new(),
+            }
+        }
+        let head = String::from_utf8_lossy(&head).into_owned();
+        let key = head.lines().find_map(|l| l.strip_prefix("Sec-WebSocket-Key: ")).expect("a key");
+        let reply = format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+             Sec-WebSocket-Accept: {}\r\n\r\n",
+            accept_key(key)
+        );
+        // The client may have gone already, having refused a frame.
+        if server.write_all(reply.as_bytes()).await.is_ok() && server.write_all(frames).await.is_ok() {
+            let _ = server.shutdown().await;
+        }
+        let mut sent = Vec::new();
+        let _ = server.read_to_end(&mut sent).await;
+        sent
+    }
+
+    /// Room in each direction for everything either end sends, so neither
+    /// waits on the other: a 2-byte ping is answered with a 6-byte pong.
+    pub(crate) fn pipe(input: &[u8]) -> (DuplexStream, DuplexStream) {
+        tokio::io::duplex(4 * input.len() + (64 << 10))
+    }
+
+    /// What a server sends after the handshake, read message by message.
+    /// `input`'s first byte picks the message cap; the rest is the frames.
+    /// A message comes out whole, UTF-8 and within the cap, and the client
+    /// answers with masked pongs and closes only.
+    pub fn frames(input: &[u8]) {
+        let Some((&pick, frames)) = input.split_first() else { return };
+        let max_message = [0, 125, 1 << 10, 64 << 10][usize::from(pick & 3)];
+        let runtime = tokio::runtime::Builder::new_current_thread().build().expect("a runtime");
+        let (client, server) = pipe(input);
+        let read = async {
+            let mut ws = connect(client, "relay.example", "/", max_message).await.expect("a handshake");
+            // Each message takes at least one 2-byte frame.
+            for _ in 0..=frames.len() / 2 {
+                match ws.recv_text().await {
+                    Ok(Some(message)) => assert!(message.len() <= max_message, "{} bytes", message.len()),
+                    Ok(None) | Err(_) => break,
+                }
+            }
+        };
+        let (sent, ()) = runtime.block_on(async { tokio::join!(stand_in(server, frames), read) });
+        let mut rest = &sent[..];
+        while let [first, second, tail @ ..] = rest {
+            assert!(first & 0x80 != 0 && matches!(first & 0x0f, PONG | CLOSE), "sent opcode {first:#x}");
+            assert!(second & 0x80 != 0, "an unmasked frame from the client");
+            let len = usize::from(second & 0x7f);
+            assert!(len as u64 <= MAX_CONTROL);
+            rest = tail.get(4 + len..).expect("a whole frame");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream, duplex};
