@@ -90,9 +90,49 @@ function crossesIntoOverlay(details) {
   return target !== null && overlay(site(details)) !== target;
 }
 
+// The eepsites tabs are loading at the top, by request.
+const loading = new Map();
+
+// Gecko's own question, 3 s into loading an address typed as http:// and
+// upgraded to HTTPS: does the site answer over HTTP, at http://<host>/? If it
+// does, Gecko stops waiting for HTTPS, and the app's error page reloads the
+// address over HTTP. The question comes from no page and no tab, so it would
+// go to the dead-end port, and an eepsite without HTTPS kept the page waiting
+// for its HTTPS attempt to fail, about 25 s. It goes through as the site, on
+// that site's own I2P identity, and only while a tab is loading that eepsite:
+// the router reaches no site the address did not already take it to.
+// Hyphanet needs none of this: omnid refuses HTTPS to the node at once.
+function httpsOnlyQuestion(details) {
+  if (details.type === "main_frame" || details.tabId !== -1 || details.frameAncestors?.length) return null;
+  if (hostOf(details.documentUrl) || hostOf(details.originUrl)) return null;
+  let url;
+  try {
+    url = new URL(details.url);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" || url.port || url.username || url.pathname !== "/" || url.search) return null;
+  const host = hostOf(details.url);
+  if (!host.endsWith(".i2p")) return null;
+  for (const loaded of loading.values()) if (loaded === host) return host;
+  return null;
+}
+
+const topLevel = { urls: ["<all_urls>"], types: ["main_frame"] };
+browser.webRequest.onBeforeRequest.addListener((details) => {
+  const host = hostOf(details.url);
+  if (host.endsWith(".i2p")) loading.set(details.requestId, host);
+  else loading.delete(details.requestId);
+}, topLevel);
+const loaded = (details) => loading.delete(details.requestId);
+browser.webRequest.onCompleted.addListener(loaded, topLevel);
+browser.webRequest.onErrorOccurred.addListener(loaded, topLevel);
+
 browser.proxy.onRequest.addListener(
   async (details) => {
     const { port, password } = await config();
+    const asked = httpsOnlyQuestion(details);
+    if (asked) return { type: "socks", host: "127.0.0.1", port, username: asked, password, proxyDNS: true };
     // To Gecko's dead-end port, where it fails like any request this does not route.
     if (crossesIntoOverlay(details)) return { type: "socks", host: "127.0.0.1", port: 9, proxyDNS: true };
     return { type: "socks", host: "127.0.0.1", port, username: site(details), password, proxyDNS: true };

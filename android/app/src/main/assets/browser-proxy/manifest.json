@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "omnid browser proxy",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Sends every request through omnid, each site on Tor circuits of its own.",
   "browser_specific_settings": {
     "gecko": { "id": "browser-proxy@omnid.wckd.cc" }

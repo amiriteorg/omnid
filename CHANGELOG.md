@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fixed: an eepsite opened as `http://` that has no HTTPS could leave the app's browser on a blank
+  page for a minute or more. The browser tries HTTPS first, and after 3 s Gecko asks the site over
+  HTTP so it can stop waiting, but the browser's extension sent that question nowhere. It now lets
+  it through, as that site, while a tab is loading the eepsite: on the test emulator reg.i2p
+  opened in 6 to 31 s in every run, where it had taken 35 to 63 s, or not opened within 90 s in 5
+  runs of 8.
 - When the app's browser or the proxy for other apps cannot reach a site, the daemon logs why
   (`adb logcat -s omnid`): the network and Tor's or the router's reason, never the site, whose
   name is replaced. It had logged nothing a phone shows, so a failure on a real phone could not
