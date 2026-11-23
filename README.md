@@ -651,7 +651,8 @@ The Android app's browser:
 - Through the SOCKS proxy, `.i2p` requests reach the site with your client's
   own headers: i2pd rewrites them only on its plain HTTP proxy. Some eepsites
   (stats.i2p) refuse anything but I2P's standard `User-Agent: MYOB/6.66 (AN/ON)`.
-  The crawler uses the plain proxy and is not affected.
+  The crawler uses the plain proxy and is not affected, and the app's browser
+  sends that User-Agent to `.i2p` sites.
 - Dependency advisories (`eng security`, osv-scanner): the bundled SQLite in
   `libsqlite3-sys` 0.38 has a local-only CVE fixed in 0.39, which waits on arti
   (0.48 pins rusqlite 0.40; one SQLite per build) and needs crafted files in

@@ -8,6 +8,9 @@
   it through, as that site, while a tab is loading the eepsite: on the test emulator reg.i2p
   opened in 6 to 31 s in every run, where it had taken 35 to 63 s, or not opened within 90 s in 5
   runs of 8.
+- Fixed: some eepsites, stats.i2p among them, refused the app's browser with "403 Inproxy access
+  denied": it sent Gecko's User-Agent, where I2P's proxies send `MYOB/6.66 (AN/ON)` for every
+  client. It sends I2P's to `.i2p` sites now.
 - When the app's browser or the proxy for other apps cannot reach a site, the daemon logs why
   (`adb logcat -s omnid`): the network and Tor's or the router's reason, never the site, whose
   name is replaced. It had logged nothing a phone shows, so a failure on a real phone could not

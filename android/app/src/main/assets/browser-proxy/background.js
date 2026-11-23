@@ -149,15 +149,26 @@ browser.proxy.onError.addListener(() => {
 // phone's own languages.
 const ACCEPT_LANGUAGE = "en-US,en;q=0.5";
 
+// What I2P's HTTP proxies, i2pd's and Java I2P's, send as every client's
+// User-Agent. Eepsites expect it, and some refuse any other as an inproxy's:
+// stats.i2p answers "403 Inproxy access denied". The browser's streams to
+// eepsites (SAM, or a CONNECT through i2pd) pass on its own.
+const I2P_USER_AGENT = "MYOB/6.66 (AN/ON)";
+
 browser.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
     if (details.type === "main_frame") tabSites.set(details.tabId, hostOf(details.url));
+    const to = network(hostOf(details.url));
     const from = network(site(details));
-    const crossing = network(hostOf(details.url)) !== from;
+    const crossing = to !== from;
     const headers = [];
     for (const header of details.requestHeaders) {
       const name = header.name.toLowerCase();
       if (name === "accept-language") continue;
+      if (to === "i2p" && name === "user-agent") {
+        headers.push({ name: header.name, value: I2P_USER_AGENT });
+        continue;
+      }
       // Leaving the network the page is on, its address stays behind: even an
       // origin says "an onion site" or "an eepsite" sent you.
       if (crossing && name === "referer") continue;
