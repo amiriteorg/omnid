@@ -8,6 +8,12 @@ Thanks for helping. Read these first:
 **Security problems** go privately through [SECURITY.md](SECURITY.md), never into a public
 issue or pull request.
 
+## Where pull requests go
+
+Open them on GitHub as usual. The repository's primary home is sovware.io, a forge without
+public sign-up, and GitHub is its mirror. So a maintainer merges your pull request there, and
+GitHub shows it as merged once the mirror has caught up.
+
 ## Before a pull request
 
 Run the checks that CI runs:

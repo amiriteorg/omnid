@@ -78,12 +78,12 @@ pub(crate) fn newest(events: Vec<NostrEvent>) -> Option<NostrEvent> {
 /// The address an event of a profile's is linked by: an article by its
 /// kind, author and `d` tag, so its newest version is the one crawled.
 pub(crate) fn address_of(event: &NostrEvent) -> String {
-    let target = match (event.kind, event.tag_values("d").next()) {
-        (30000..40000, Some(d)) => {
-            NostrTarget::Address { kind: event.kind, author: event.pubkey, identifier: d.to_owned() }
-        }
-        _ => NostrTarget::Event(event.id),
+    let address = match (event.kind, event.tag_values("d").next()) {
+        (30000..40000, Some(d)) => NostrTarget::address(event.kind, event.pubkey, d),
+        _ => None,
     };
+    // An identifier NIP-19 cannot write: by the event's ID instead.
+    let target = address.unwrap_or(NostrTarget::Event(event.id));
     Nostr { target, relays: vec![] }.to_string()
 }
 
@@ -187,9 +187,7 @@ fn tag_links(event: &NostrEvent) -> Vec<String> {
             "a" => {
                 let mut parts = value.splitn(3, ':');
                 match (parts.next().and_then(|k| k.parse().ok()), parts.next().and_then(key), parts.next()) {
-                    (Some(kind), Some(author), Some(identifier)) if identifier.len() <= 256 => {
-                        Some(NostrTarget::Address { kind, author, identifier: identifier.to_owned() })
-                    }
+                    (Some(kind), Some(author), Some(identifier)) => NostrTarget::address(kind, author, identifier),
                     _ => None,
                 }
             }
@@ -212,6 +210,34 @@ fn text_links(text: &str) -> Vec<String> {
         })
         .map(str::to_owned)
         .collect()
+}
+
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use super::*;
+
+    /// An event as the crawler indexes it, with a channel's `messages`.
+    /// What the index gets stays within the caps, and each address the
+    /// crawler writes reads back as itself and names what it meant.
+    pub fn fields(event: &NostrEvent, messages: &[NostrEvent]) {
+        let fields = if event.kind == PROFILE { profile(event, messages) } else { super::event(event, messages) };
+        assert!(fields.title.len() <= MAX_TITLE && fields.description.len() <= MAX_DESCRIPTION);
+        assert!(fields.body.len() <= crate::extract::MAX_TEXT_BYTES && fields.keywords.len() <= MAX_KEYWORDS);
+        assert!(event.kind == PROFILE || fields.links.len() <= MAX_LINKS);
+        for link in tag_links(event).into_iter().chain([address_of(event)]) {
+            let parsed = Nostr::parse(&link).unwrap_or_else(|| panic!("{link} does not parse"));
+            assert_eq!(parsed.to_string(), link);
+        }
+        match Nostr::parse(&address_of(event)).map(|n| n.target) {
+            Some(NostrTarget::Event(id)) => assert_eq!(id, event.id),
+            Some(NostrTarget::Address { kind, author, identifier }) => {
+                assert_eq!((kind, author), (event.kind, event.pubkey));
+                assert_eq!(event.tag_values("d").next(), Some(identifier.as_str()));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -263,6 +289,45 @@ mod tests {
         versioned.tags.push(vec!["d".into(), "on-relays".into()]);
         assert!(address_of(&versioned).starts_with("nostr:naddr1"), "an article is linked by its address");
         assert!(address_of(&event(NOTE, vec![], "x")).starts_with("nostr:note1"));
+    }
+
+    #[test]
+    fn an_identifier_nip19_cannot_write_is_linked_by_the_events_id() {
+        let linked = |e: &NostrEvent| Nostr::parse(&address_of(e)).map(|n| n.target);
+        // A TLV value has one length byte: 255 bytes is the longest identifier.
+        let longest = "d".repeat(255);
+        let article = event(ARTICLE, vec![vec!["d", &longest]], "x");
+        let address = NostrTarget::Address { kind: ARTICLE, author: article.pubkey, identifier: longest };
+        assert_eq!(linked(&article), Some(address));
+        assert_eq!(linked(&event(ARTICLE, vec![vec!["d", &"d".repeat(256)]], "x")), Some(NostrTarget::Event([1; 32])));
+        // 300 bytes would be written with length 44 (300 as u8), and the rest
+        // read as records: an author ([9; 32]) and a kind, read before the
+        // real ones, then two records of an unknown type to skip.
+        let mut forged = "x".repeat(44);
+        forged.push_str("\u{2} ");
+        forged.push_str(&"\t".repeat(32));
+        forged.push_str("\u{3}\u{4}\0\0uG");
+        for _ in 0..2 {
+            forged.push_str("\u{5}j");
+            forged.push_str(&"x".repeat(106));
+        }
+        assert_eq!(forged.len(), 300);
+        let article = event(ARTICLE, vec![vec!["d", &forged]], "x");
+        assert_eq!(linked(&article), Some(NostrTarget::Event([1; 32])), "linked by its ID, not another's address");
+    }
+
+    #[test]
+    fn an_a_tag_nip19_cannot_write_is_skipped() {
+        let a = |identifier: &str| format!("30023:{}:{identifier}", "05".repeat(32));
+        let tags = vec![vec!["a".to_owned(), a(&"i".repeat(255))], vec!["a".to_owned(), a(&"i".repeat(256))]];
+        let mut note = event(NOTE, vec![], "x");
+        note.tags = tags;
+        let links = tag_links(&note);
+        assert_eq!(links.len(), 1, "{links:?}");
+        let Some(NostrTarget::Address { identifier, .. }) = Nostr::parse(&links[0]).map(|n| n.target) else {
+            panic!("{links:?}")
+        };
+        assert_eq!(identifier.len(), 255);
     }
 
     #[test]

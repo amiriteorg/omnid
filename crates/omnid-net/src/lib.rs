@@ -35,7 +35,9 @@ mod ws;
 pub mod fuzzing {
     pub use crate::download::fuzz::headers as download_headers;
     pub use crate::http::fuzz::{decode as http_decode, response as http_response};
+    pub use crate::nostr::fuzz::relay as nostr_relay;
     pub use crate::sam::fuzz::replies as sam_replies;
+    pub use crate::ws::fuzz::frames as ws_frames;
 }
 
 use std::net::{IpAddr, SocketAddr};

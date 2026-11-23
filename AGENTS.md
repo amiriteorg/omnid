@@ -88,6 +88,18 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
   `/api/status`) and its JSON fields, CLI flags and the JNI symbols `Java_cc_wckd_omnid_Native_*`
   are contracts; change them explicitly and update `README.md`.
 
+## Where the repository lives
+
+- **Primary:** `https://sovware.io/amiriteorg/omnid` (Forgejo, sign-in required), the `origin`
+  remote. Branches, pull requests and tags go there.
+- **GitHub:** `github.com/amiriteorg/omnid` is its push mirror, the public copy, and where
+  releases are published. Every push to sovware.io is passed on to GitHub, and each sync makes
+  GitHub's branches and tags equal to sovware.io's. So anything pushed only to GitHub is
+  deleted at the next sync.
+  - Never push to GitHub.
+  - Tag a release on sovware.io first (`docs/releasing.md`).
+  - A GitHub pull request is merged on sovware.io, from its branch.
+
 ## Tracking
 
 Plane workspace `wckd`; this repository is not in `WCKDai/.github/PLANE.md` yet, so it goes in the

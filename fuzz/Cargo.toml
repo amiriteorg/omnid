@@ -80,6 +80,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "nostr_fields"
+path = "fuzz_targets/nostr_fields.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "http_decode"
 path = "fuzz_targets/http_decode.rs"
 test = false
@@ -103,6 +110,20 @@ bench = false
 [[bin]]
 name = "download_headers"
 path = "fuzz_targets/download_headers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ws_frames"
+path = "fuzz_targets/ws_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nostr_relay"
+path = "fuzz_targets/nostr_relay.rs"
 test = false
 doc = false
 bench = false

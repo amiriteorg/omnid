@@ -92,8 +92,9 @@ gateway on the owner's computer), Nostr and Telegram's public channels.
 
 ## Dates and recurring work
 
-- **Every Firefox release:** bump GeckoView, which carries the security fixes. Dependabot
-  watches it, and `maven-metadata.xml` on maven.mozilla.org is checked before each release.
+- **Every Firefox release:** bump GeckoView, which carries the security fixes. Renovate
+  on sovware.io watches it (`renovate.json`), and `maven-metadata.xml` on maven.mozilla.org is
+  checked before each release.
 - **By 2027-02-21:** the reviewed advisory exceptions in `osv-scanner.toml` expire. Re-check
   each one.
   - The SQLite CVE clears once arti's rusqlite brings `libsqlite3-sys` 0.39 or later.
