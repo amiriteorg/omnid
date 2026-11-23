@@ -29,9 +29,11 @@ gateway on the owner's computer), Nostr and Telegram's public channels.
 
    This needs the owner's phone.
 2. **Typed `http://` eepsites without the wait.** The browser's HTTPS-only mode tries
-   `https://` first, which took about 25 s on the test eepsites before the page loaded over
-   HTTP.
-   - `.i2p` and the Hyphanet host should load as typed, as onions already do.
+   `https://` first. Gecko asks the site over HTTP after 3 s and stops waiting once it answers;
+   the browser now lets that question through, so reg.i2p, whose HTTPS hangs, opens in 6 to
+   31 s instead of a minute or more. The 3 s and a round trip are still spent; omnid refuses
+   HTTPS to the Hyphanet host at once.
+   - `.i2p` should load as typed, as onions already do.
    - The clearnet stays HTTPS-only.
 3. **Builds anyone can check.** Releases are built on one Mac and signed by hand
    ([docs/releasing.md](docs/releasing.md)).
