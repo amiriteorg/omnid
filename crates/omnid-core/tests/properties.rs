@@ -124,7 +124,9 @@ fn nostr() -> impl Strategy<Value = String> {
     let target = prop_oneof![
         any::<[u8; 32]>().prop_map(NostrTarget::Event),
         any::<[u8; 32]>().prop_map(NostrTarget::Profile),
-        (any::<u32>(), any::<[u8; 32]>(), "[a-z0-9-]{0,20}")
+        // Up to the longest identifier, MAX_IDENTIFIER bytes: 60 characters
+        // of at most four bytes each fit.
+        (any::<u32>(), any::<[u8; 32]>(), prop_oneof!["[a-z0-9-]{0,255}", "\\PC{0,60}"])
             .prop_map(|(kind, author, identifier)| NostrTarget::Address { kind, author, identifier }),
     ];
     (target, any::<bool>()).prop_map(|(target, bare)| {

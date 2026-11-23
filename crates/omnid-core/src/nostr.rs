@@ -16,8 +16,9 @@ const MAX_ENTITY: usize = 1_024;
 /// Relay hints kept from one entity, and their length.
 const MAX_RELAYS: usize = 4;
 const MAX_RELAY_LEN: usize = 256;
-/// An addressable event's identifier (its `d` tag), in bytes.
-const MAX_IDENTIFIER: usize = 256;
+/// An addressable event's identifier (its `d` tag), in bytes: the longest
+/// a NIP-19 TLV value can be, its length being one byte.
+pub const MAX_IDENTIFIER: usize = 255;
 const CHARSET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 
 /// Web clients and gateways whose pages are a Nostr entity named in the
@@ -32,8 +33,20 @@ pub enum NostrTarget {
     /// A person, by public key: their profile and recent notes.
     Profile([u8; 32]),
     /// A replaceable event by kind, author and `d` tag, such as a long-form
-    /// article (kind 30023): the newest version is the one meant.
+    /// article (kind 30023): the newest version is the one meant. The
+    /// identifier is at most [`MAX_IDENTIFIER`] bytes; see
+    /// [`NostrTarget::address`].
     Address { kind: u32, author: [u8; 32], identifier: String },
+}
+
+impl NostrTarget {
+    /// An addressable event's target, if NIP-19 can write `identifier`: a
+    /// longer one would be written with its length cut to a byte, and the
+    /// rest read back as other fields.
+    pub fn address(kind: u32, author: [u8; 32], identifier: &str) -> Option<Self> {
+        let identifier = (identifier.len() <= MAX_IDENTIFIER).then(|| identifier.to_owned())?;
+        Some(NostrTarget::Address { kind, author, identifier })
+    }
 }
 
 /// A Nostr entity and the relays its link suggested asking. Two with the
@@ -79,14 +92,7 @@ impl Nostr {
                     "nprofile" => NostrTarget::Profile(key(tlv.special?)?),
                     _ => {
                         let identifier = std::str::from_utf8(tlv.special.unwrap_or_default()).ok()?;
-                        if identifier.len() > MAX_IDENTIFIER {
-                            return None;
-                        }
-                        NostrTarget::Address {
-                            kind: tlv.kind?,
-                            author: key(tlv.author?)?,
-                            identifier: identifier.to_owned(),
-                        }
+                        NostrTarget::address(tlv.kind?, key(tlv.author?)?, identifier)?
                     }
                 };
                 (target, tlv.relays)
@@ -103,6 +109,7 @@ impl Nostr {
             NostrTarget::Event(id) => bech32_encode("note", id),
             NostrTarget::Profile(pubkey) => bech32_encode("npub", pubkey),
             NostrTarget::Address { kind, author, identifier } => {
+                debug_assert!(identifier.len() <= MAX_IDENTIFIER, "an identifier NIP-19 cannot write");
                 let mut tlv = vec![0, identifier.len() as u8];
                 tlv.extend(identifier.as_bytes());
                 tlv.extend([2, 32]);
@@ -291,6 +298,17 @@ mod tests {
         assert_eq!(Nostr::parse(&entity).unwrap().target, article.target);
         assert_eq!(article.author(), Some([9; 32]));
         assert_eq!(note.author(), None);
+    }
+
+    #[test]
+    fn an_identifier_is_at_most_what_a_tlv_value_holds() {
+        let longest = "é".repeat(127) + "x";
+        assert_eq!(longest.len(), MAX_IDENTIFIER);
+        let target = NostrTarget::address(30023, [9; 32], &longest).unwrap();
+        let entity = Nostr { target: target.clone(), relays: vec![] }.entity();
+        assert!(entity.len() <= MAX_ENTITY);
+        assert_eq!(Nostr::parse(&entity).unwrap().target, target);
+        assert_eq!(NostrTarget::address(30023, [9; 32], &(longest + "x")), None);
     }
 
     #[test]
