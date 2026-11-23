@@ -11,7 +11,8 @@ It needs an Apple-silicon Mac with:
 - the Android SDK with an NDK and the `aarch64-linux-android` target;
 - JDK 17;
 - an arm64 emulator image (see `scripts/android-smoke.sh`);
-- `gh`, logged in to the repository;
+- push access to the primary repository on sovware.io (`origin`, see AGENTS.md);
+- `gh`, logged in to the GitHub repository;
 - cargo-about 0.9.3 (`cargo install --locked --features cli cargo-about@0.9.3`), for the
   third-party notices.
 
@@ -153,8 +154,9 @@ Write two files outside the repository, as earlier releases did:
 
 **`ROLLBACK.md`:**
 - the owner;
-- how to withdraw the release: `gh release delete v<version> -R amiriteorg/omnid
-  --cleanup-tag --yes`;
+- how to withdraw the release: `gh release delete v<version> -R amiriteorg/omnid --yes`,
+  then `git push origin :refs/tags/v<version>`. The mirror removes the tag from GitHub; a
+  tag deleted only on GitHub comes back at its next sync;
 - what a device already on it can do: Android refuses a lower version code, so such a
   device waits for the next release;
 - whether the previous release reads the new data, with step 5's numbers;
@@ -180,13 +182,24 @@ It checks:
 
 ## 8. Publish
 
+Tag the release commit on sovware.io, the primary repository, and wait until the push mirror
+has passed the tag on to GitHub:
+
 ```sh
-gh release create v<version> -R amiriteorg/omnid --prerelease --target <full commit SHA> \
+git tag v<version> <full commit SHA>
+git push origin v<version>
+git ls-remote --tags github v<version>   # repeat until it prints the release commit
+```
+
+Don't let `gh` create the tag. A tag made only on GitHub is deleted at the mirror's next
+sync, because the mirror makes GitHub's tags equal to sovware.io's. `--verify-tag` stops
+`gh` when GitHub does not have the tag yet:
+
+```sh
+gh release create v<version> -R amiriteorg/omnid --prerelease --verify-tag \
   --title "OMNId <version>" --notes-file NOTES.md \
   omnid-<version>-arm64.apk omnid-<version>-aarch64-apple-darwin.tar.gz SHA256SUMS
 ```
-
-`--target` takes the release commit's full SHA. `gh` creates the tag there.
 
 ## 9. After publishing
 
@@ -196,6 +209,7 @@ Download the release into an empty directory, then:
 2. Run `apksigner verify --print-certs` on the APK and compare the certificate.
 3. Extract the tarball. The binary must report the version and pass the first-run `serve`
    check from step 5.
-4. `git ls-remote --tags origin v<version>` must print the release commit.
+4. `git ls-remote --tags origin v<version>` and `git ls-remote --tags github v<version>`
+   must both print the release commit.
 
 Then merge the release PR.
