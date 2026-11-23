@@ -1,0 +1,2 @@
+["EVENT","omnid",{"content":"Long text","created_at":1790000000,"id":"f9be7a13050fddc76ecac5378df24d14f08ef8fd48337263d87dcc3be3047a97","kind":30023,"pubkey":"4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766","sig":"a67ded0005ae546f4b3cda47f1b0d748c4887a3f3a9317a41f819ca5fc598c26cdda5905a17e428a326d58db9a4130b9659e5d0371079f26760a3bac00df86ba","tags":[["d","x"],["title","On relays"]]}]
+["CLOSED","omnid","error: rate-limited"]

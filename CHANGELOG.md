@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: a Nostr article whose `d` tag was 256 bytes or longer got a wrong address. NIP-19
+  writes the tag's length in one byte, so the address named a different article, or nothing. A
+  crafted tag could even make it name another author's article. Such an article is now linked
+  by its ID, and an `a` tag naming one is skipped.
 - When the app's browser or the proxy for other apps cannot reach a site, the daemon logs why
   (`adb logcat -s omnid`): the network and Tor's or the router's reason, never the site, whose
   name is replaced. It had logged nothing a phone shows, so a failure on a real phone could not

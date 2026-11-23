@@ -14,6 +14,7 @@ mod store;
 #[cfg(fuzzing)]
 #[doc(hidden)]
 pub mod fuzzing {
+    pub use crate::nostr::fuzz::fields as nostr_fields;
     pub use crate::robots::fuzz::allows as robots;
 }
 

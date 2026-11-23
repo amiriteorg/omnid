@@ -317,6 +317,57 @@ pub(crate) fn unhex(s: &str) -> Option<Vec<u8>> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
 }
 
+/// For the fuzz target in `fuzz/`.
+#[cfg(fuzzing)]
+pub(crate) mod fuzz {
+    use super::*;
+
+    /// What a relay sends for a subscription. `input`'s first byte picks the
+    /// filter; the rest is the relay's messages, one a line, each sent as a
+    /// text frame. What comes out are events whose ID and signature check
+    /// out and that the filter asked for, at most [`MAX_EVENTS`].
+    pub fn relay(input: &[u8]) {
+        let Some((&pick, messages)) = input.split_first() else { return };
+        let filter = match pick % 4 {
+            0 => Filter::default(),
+            1 => Filter { kinds: vec![0, 1, 40, 42, 30023], ..Filter::default() },
+            2 => Filter { d: vec!["x".into()], ..Filter::default() },
+            _ => Filter { e: vec![[0x11; 32]], ..Filter::default() },
+        };
+        let mut frames = Vec::new();
+        for message in messages.split(|&b| b == b'\n') {
+            frames.push(0x81);
+            match message.len() {
+                len @ 0..126 => frames.push(len as u8),
+                len @ 126..=0xffff => {
+                    frames.push(126);
+                    frames.extend((len as u16).to_be_bytes());
+                }
+                len => {
+                    frames.push(127);
+                    frames.extend((len as u64).to_be_bytes());
+                }
+            }
+            frames.extend(message);
+        }
+        let runtime = tokio::runtime::Builder::new_current_thread().build().expect("a runtime");
+        let (client, server) = ws::fuzz::pipe(&frames);
+        let request = json!(["REQ", "omnid", filter.to_json()]).to_string();
+        let read = async {
+            let ws = ws::connect(client, "relay.example", "/", MAX_MESSAGE).await.expect("a handshake");
+            read_events(ws, &request, &filter).await
+        };
+        let (_, read) = runtime.block_on(async { tokio::join!(ws::fuzz::stand_in(server, &frames), read) });
+        let Ok(events) = read else { return };
+        assert!(events.len() <= MAX_EVENTS);
+        for event in &events {
+            assert_eq!(event_id(event), event.id);
+            assert!(filter.matches(event));
+            assert!(event.tags.len() <= MAX_TAGS && event.tags.iter().all(|t| t.len() <= MAX_TAG_LEN));
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use k256::schnorr::SigningKey;
