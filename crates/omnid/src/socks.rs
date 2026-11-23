@@ -170,6 +170,20 @@ async fn proxy<S: AsyncRead + AsyncWrite + Unpin>(
             }
         }
         Err(e) => {
+            // Why the browser or an app could not reach a site, in the log a
+            // phone's owner can read with adb: the network and the cause,
+            // never the site.
+            if let Some(who) = match access {
+                Access::Open => None,
+                Access::Browser { .. } => Some("browser"),
+                Access::Apps { .. } => Some("proxy for apps"),
+            } {
+                tracing::info!(
+                    "{who}: a connection to {} failed: {}",
+                    network_of(&host),
+                    redacted(&e.to_string(), &host)
+                );
+            }
             match reply {
                 Reply::Socks => reply_socks(&mut client, reply_code(&e)).await?,
                 Reply::HttpTunnel | Reply::HttpForward(_) => {
@@ -452,6 +466,42 @@ async fn reply_http<S: AsyncWrite + Unpin>(s: &mut S, status: u16, reason: &str,
     s.write_all(response.as_bytes()).await
 }
 
+/// Which network a stream's host is on, in words for the log.
+fn network_of(host: &str) -> &'static str {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if host.ends_with(".onion") {
+        "an onion site"
+    } else if host.ends_with(".i2p") {
+        "an I2P site"
+    } else if host == omnid_net::HYPHANET_HOST {
+        "the Hyphanet node"
+    } else {
+        "a web site"
+    }
+}
+
+/// `text` with every name of `host`, an onion or an I2P site in it replaced,
+/// the punctuation around it kept. A suffix on its own (".b32.i2p") is no
+/// site's name.
+fn redacted(text: &str, host: &str) -> String {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    text.split(' ')
+        .map(|word| {
+            let start = word.find(|c: char| c.is_ascii_alphanumeric()).unwrap_or(word.len());
+            let end = word.rfind(|c: char| c.is_ascii_alphanumeric()).map_or(start, |i| i + 1).max(start);
+            let name = word[start..end].to_ascii_lowercase();
+            let a_site = (!host.is_empty() && name.contains(&host))
+                || [".onion", ".i2p"].iter().any(|tld| name.ends_with(tld) || name.contains(&format!("{tld}:")));
+            if a_site && !word[..start].ends_with('.') {
+                format!("{}<site>{}", &word[..start], &word[end..])
+            } else {
+                word.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn reply_code(error: &FetchError) -> u8 {
     match error {
         FetchError::PrivateAddress(_) => NOT_ALLOWED,
@@ -524,6 +574,31 @@ mod tests {
     use omnid_net::GatewayConfig;
 
     use super::*;
+
+    #[test]
+    fn logs_name_the_network_never_the_site() {
+        assert_eq!(network_of("www.Example.onion."), "an onion site");
+        assert_eq!(network_of("stats.i2p"), "an I2P site");
+        assert_eq!(network_of("hyphanet"), "the Hyphanet node");
+        assert_eq!(network_of("example.com"), "a web site");
+        // SAM's and arti's own words, with the site in them.
+        assert_eq!(redacted("stats.i2p did not answer over I2P", "stats.i2p"), "<site> did not answer over I2P");
+        assert_eq!(
+            redacted("onion: Onion Service not found: abc.onion (a dead site)", "www.abc.onion"),
+            "onion: Onion Service not found: <site> (a dead site)"
+        );
+        assert_eq!(redacted("connect to Example.COM:443 failed", "example.com"), "connect to <site> failed");
+        assert_eq!(
+            redacted("\"x.b32.i2p\" is not an I2P host name", "x.b32.i2p"),
+            "\"<site>\" is not an I2P host name"
+        );
+        assert_eq!(
+            redacted("the router's address book has no stats.i2p; try its .b32.i2p address", "stats.i2p"),
+            "the router's address book has no <site>; try its .b32.i2p address"
+        );
+        assert_eq!(redacted("reaching abc.onion:80 failed", "other.example"), "reaching <site> failed");
+        assert_eq!(redacted("timed out after 90s", "example.com"), "timed out after 90s");
+    }
 
     async fn negotiate_with(access: &Access, request: &[u8]) -> (io::Result<(String, u16, Option<String>)>, Vec<u8>) {
         let (mut client, mut server) = tokio::io::duplex(1024);

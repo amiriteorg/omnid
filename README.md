@@ -237,6 +237,13 @@ through Tor" is on, as the crawler reads the web; Settings → Nostr relays turn
 A Nostr result opens in a Nostr app, after a dialog saying that the app reaches its
 relays its own way.
 
+When a page does not load in the app's browser, the daemon logs why, under the
+tag `omnid`: `adb logcat -s omnid` shows lines such as "browser: a connection to
+an I2P site failed: …", with the network and the router's or Tor's own words,
+and every site's name replaced by `<site>`. An I2P router that started a
+moment ago, or that Android paused in the background, fails every eepsite
+until its tunnels are built; give the i2pd app unrestricted battery use.
+
 ⋮ → Settings (also in the browser's ⋮) holds the rest, saved as they change:
 
 - **Appearance**: the theme (as the phone, light or dark) for OMNId's screens

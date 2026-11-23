@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- When the app's browser or the proxy for other apps cannot reach a site, the daemon logs why
+  (`adb logcat -s omnid`): the network and Tor's or the router's reason, never the site, whose
+  name is replaced. It had logged nothing a phone shows, so a failure on a real phone could not
+  be told apart from another.
 - Fixed: a Hyphanet address with whitespace before its `#fragment`
   (`freenet:USK@…/site/3/ #top`) kept the whitespace in its key, so the address the crawler
   stored named another key, or none.
