@@ -16,6 +16,14 @@
   as the app's browser does, through Tor and never directly.
 - A text file's first line, when short, is its title (a phlog post's, an RFC's), instead of its
   address.
+- IRC is a network: a directory of channels from each network's channel list, with their topics
+  and how many people they have, never what is said in them. omnid registers as a labelled bot,
+  lists the channels with 10 or more people and quits; one list, kept 12 hours, serves a
+  network's channels. `irc://`, `ircs://` and web chats' links (Libera.Chat's, OFTC's, Kiwi
+  IRC's) are addresses; links in topics are followed. New default seeds: Libera.Chat, OFTC and
+  its onion, hackint, EFnet, IRCnet, Undernet and Irc2P. The search page and the app have an
+  IRC filter; the app hands a channel to an IRC app after a dialog. `/api/status` lists an
+  `irc` row, between `gopher` and `magnet`.
 
 ## 0.1.7 (2026-11-23)
 

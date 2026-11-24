@@ -43,6 +43,7 @@
   --nostr: #e08ce0;
   --gemini: #ff9f8a;
   --gopher: #d8c37c;
+  --irc: #7fd8a6;
   --mono: "Space Mono", ui-monospace, "Roboto Mono", Menlo, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   /* One type ramp, 1.2 steps from the 15px body, and an 11px step for state
@@ -84,6 +85,7 @@
     --nostr: #9a2f9a;
     --gemini: #b8432c;
     --gopher: #74620f;
+    --irc: #127247;
   }
 }
 
@@ -356,6 +358,7 @@ details.files li { overflow-wrap: anywhere; }
 .net-nostr { --net: var(--nostr); }
 .net-gemini { --net: var(--gemini); }
 .net-gopher { --net: var(--gopher); }
+.net-irc { --net: var(--irc); }
 
 @media (min-width: 720px) {
   .top { padding-top: 2rem; }

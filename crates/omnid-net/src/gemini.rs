@@ -100,8 +100,10 @@ pub(crate) fn parse_header(line: &[u8]) -> Result<(u8, String), BoxError> {
 /// TLS 1.2 or 1.3 that takes any certificate: Geminispace runs on
 /// self-signed ones, and clients trust a host's on first use, which a
 /// crawler that keeps no state across hosts cannot. The handshake's
-/// signature is still checked, so the server holds the key it shows.
-fn tls_config() -> Result<Arc<rustls::ClientConfig>, BoxError> {
+/// signature is still checked, so the server holds the key it shows. Also
+/// for IRC servers on onions and I2P, whose address is what authenticates
+/// them.
+pub(crate) fn tls_config() -> Result<Arc<rustls::ClientConfig>, BoxError> {
     static CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
     if let Some(config) = CONFIG.get() {
         return Ok(config.clone());

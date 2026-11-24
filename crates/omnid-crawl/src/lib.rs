@@ -4,6 +4,7 @@
 pub mod extract;
 mod forums;
 mod frontier;
+mod irc;
 pub mod nostr;
 mod robots;
 pub mod safety;
@@ -221,6 +222,7 @@ struct Context {
     safety: Arc<Safety>,
     store: Arc<CrawlStore>,
     robots: robots::RobotsCache,
+    irc: irc::IrcLists,
     control: Arc<CrawlControl>,
     dht: Option<Dht>,
     cfg: CrawlConfig,
@@ -236,7 +238,8 @@ impl Crawler {
     ) -> Self {
         let robots = robots::RobotsCache::new(&cfg.robots_agent);
         let control = Arc::default();
-        Self { ctx: Arc::new(Context { gateway, index, safety, store, robots, control, dht: None, cfg }) }
+        let irc = irc::IrcLists::default();
+        Self { ctx: Arc::new(Context { gateway, index, safety, store, robots, irc, control, dht: None, cfg }) }
     }
 
     /// Resolves magnets' metadata through the DHT instead of indexing them
@@ -386,6 +389,9 @@ impl Context {
         }
         if let Source::Nostr(entity) = source {
             return self.nostr(entity, job).await;
+        }
+        if let Source::Irc(address) = source {
+            return self.irc(address, job).await;
         }
         match self.robots.allowed(&self.gateway, source).await {
             Ok(true) => {}
@@ -560,6 +566,28 @@ impl Context {
             url,
         };
         Outcome::Indexed { doc: Box::new(doc), links }
+    }
+
+    /// An IRC network, or one of its channels, from the network's channel
+    /// list: a channel the list no longer has is gone.
+    async fn irc(&self, address: &omnid_core::irc::Irc, job: &Job) -> Outcome {
+        let listing = match self.irc.get(&self.gateway, address).await {
+            Ok(listing) => listing,
+            Err(irc::ListError::Fetch(e)) => return failed(&e, ""),
+            Err(irc::ListError::Remembered(e)) => {
+                return Outcome::Failed { visit: Visit::Failed, error: format!("no list a while ago: {e}") };
+            }
+        };
+        CrawlStats::bump(&self.control.stats.fetched);
+        let Some(found) = irc::found(&listing, address) else {
+            return Outcome::Failed { visit: Visit::Gone, error: "not in the network's list".into() };
+        };
+        let url = job.source.to_string();
+        if self.safety.check_content(&[&url, &found.title, &found.description]) != Verdict::Allow {
+            return Outcome::Blocked(Verdict::BlockedTerm);
+        }
+        let links = self.follow(&job.source, &found.links);
+        Outcome::Indexed { doc: Box::new(irc::doc(&job.source, found, job.trust)), links }
     }
 
     fn follow(&self, from: &Source, hrefs: &[String]) -> Vec<Source> {
@@ -753,7 +781,7 @@ fn names_a_file(link: &Source) -> bool {
             return link.gopher_item().is_none_or(|(item_type, _)| omnid_net::gopher_content_type(item_type).is_none());
         }
         Source::Hyphanet(key) => (key.clone(), None),
-        Source::Nostr(_) | Source::Magnet(_) => return false,
+        Source::Nostr(_) | Source::Irc(_) | Source::Magnet(_) => return false,
     };
     let name = filename.unwrap_or_else(|| path.rsplit('/').next().unwrap_or_default().to_owned());
     let ending = name.rsplit_once('.').map(|(_, ending)| ending.to_ascii_lowercase());

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use url::{Host, Position, Url};
 
 use crate::ipfs::{self, Namespace};
+use crate::irc::{self, Irc};
 use crate::nostr::{self, Nostr};
 
 /// Origin used to resolve relative links inside a freesite. FProxy serves keys
@@ -34,11 +35,14 @@ pub enum Network {
     Gemini,
     /// Gopher holes (`gopher://`), on the clearnet, onions or I2P.
     Gopher,
+    /// IRC servers and their channels (`irc://`, `ircs://`), on the
+    /// clearnet, onions or I2P.
+    Irc,
     Magnet,
 }
 
 impl Network {
-    pub const ALL: [Network; 9] = [
+    pub const ALL: [Network; 10] = [
         Network::Clearnet,
         Network::Onion,
         Network::I2p,
@@ -47,6 +51,7 @@ impl Network {
         Network::Nostr,
         Network::Gemini,
         Network::Gopher,
+        Network::Irc,
         Network::Magnet,
     ];
 
@@ -60,6 +65,7 @@ impl Network {
             Network::Nostr => "nostr",
             Network::Gemini => "gemini",
             Network::Gopher => "gopher",
+            Network::Irc => "irc",
             Network::Magnet => "magnet",
         }
     }
@@ -84,6 +90,7 @@ impl FromStr for Network {
             "nostr" => Ok(Network::Nostr),
             "gemini" => Ok(Network::Gemini),
             "gopher" => Ok(Network::Gopher),
+            "irc" => Ok(Network::Irc),
             "magnet" | "dht" | "torrent" => Ok(Network::Magnet),
             _ => Err(SourceError::UnknownNetwork(s.to_owned())),
         }
@@ -106,6 +113,8 @@ pub enum SourceError {
     BadNostr(String),
     #[error("not a Gemini or Gopher address: `{0}`")]
     BadSmallWeb(String),
+    #[error("not an IRC server or channel: `{0}`")]
+    BadIrc(String),
     #[error("magnet link has no BitTorrent v1 info hash (xt=urn:btih:...)")]
     NoInfoHash,
     #[error("unknown network `{0}`")]
@@ -134,6 +143,8 @@ pub enum Source {
     /// first character, `/` alone the server's root menu. The default port
     /// (70) is left out; a search (`%09…`) is not part of the address.
     Gopher(Url),
+    /// An IRC server or a channel on it (`irc://irc.libera.chat/#rust`).
+    Irc(Irc),
     Magnet(Magnet),
 }
 
@@ -179,6 +190,10 @@ impl Source {
             "nostr" => return Nostr::parse(url.as_str()).map(Source::Nostr).ok_or(SourceError::BadNostr(url.into())),
             "gemini" => return gemini_source(&url),
             "gopher" => return gopher_source(&url),
+            "irc" | "ircs" | "irc6" => {
+                let host = small_web_host(&url).map_err(|_| SourceError::BadIrc(url.to_string()))?;
+                return Irc::from_url(&url, host).map(Source::Irc).ok_or_else(|| SourceError::BadIrc(url.into()));
+            }
             scheme => match Namespace::from_name(scheme) {
                 Some(namespace) => {
                     let id = url.host_str().ok_or_else(|| SourceError::BadIpfs(url.to_string()))?;
@@ -186,6 +201,9 @@ impl Source {
                 }
                 None => return Err(SourceError::UnsupportedScheme(scheme.to_owned())),
             },
+        }
+        if let Some(chat) = web_chat(&url) {
+            return Ok(chat);
         }
         url.set_fragment(None);
         drop_session(&mut url);
@@ -218,6 +236,7 @@ impl Source {
             Source::Nostr(_) => Network::Nostr,
             Source::Gemini(_) => Network::Gemini,
             Source::Gopher(_) => Network::Gopher,
+            Source::Irc(_) => Network::Irc,
             Source::Magnet(_) => Network::Magnet,
         }
     }
@@ -228,13 +247,17 @@ impl Source {
     /// [`Source::network`]. What decides how it is reached, and whether a
     /// step to it leaves an anonymity network.
     pub fn transport(&self) -> Network {
-        match self {
-            Source::Gemini(url) | Source::Gopher(url) => match url.host_str() {
-                Some(host) if host.ends_with(".onion") => Network::Onion,
-                Some(host) if host.ends_with(".i2p") => Network::I2p,
-                _ => Network::Clearnet,
-            },
-            source => source.network(),
+        let host = match self {
+            Source::Gemini(url) | Source::Gopher(url) => url.host_str().unwrap_or_default(),
+            Source::Irc(irc) => &irc.host,
+            source => return source.network(),
+        };
+        if host.ends_with(".onion") {
+            Network::Onion
+        } else if host.ends_with(".i2p") {
+            Network::I2p
+        } else {
+            Network::Clearnet
         }
     }
 
@@ -247,6 +270,7 @@ impl Source {
             | Source::Nostr(_)
             | Source::Gemini(_)
             | Source::Gopher(_)
+            | Source::Irc(_)
             | Source::Magnet(_) => None,
         }
     }
@@ -295,6 +319,7 @@ impl Source {
             | Source::I2p(url)
             | Source::Gemini(url)
             | Source::Gopher(url) => url.host_str().unwrap_or_default().to_owned(),
+            Source::Irc(irc) => irc.host.clone(),
             Source::Hyphanet(key) => key.split('/').next().unwrap_or(key).to_owned(),
             Source::Ipfs(url) => format!("{}:{}", url.scheme(), url.host_str().unwrap_or_default()),
             Source::Nostr(entity) => match entity.author() {
@@ -337,8 +362,8 @@ impl Source {
                 }
                 url.clone()
             }
-            // Nostr content links only by full address.
-            Source::Nostr(_) => return Source::from_url(Url::parse(href).ok()?).ok(),
+            // Nostr content and IRC topics link only by full address.
+            Source::Nostr(_) | Source::Irc(_) => return Source::from_url(Url::parse(href).ok()?).ok(),
             // Gopher menus name each item in full; a Gemini page's links may
             // be relative.
             Source::Gemini(url) | Source::Gopher(url) => url.clone(),
@@ -376,6 +401,7 @@ impl fmt::Display for Source {
             | Source::Gopher(url) => f.write_str(url.as_str()),
             Source::Hyphanet(key) => write!(f, "freenet:{key}"),
             Source::Nostr(entity) => write!(f, "{entity}"),
+            Source::Irc(irc) => write!(f, "{irc}"),
             Source::Magnet(magnet) => write!(f, "magnet:?xt=urn:btih:{}", magnet.info_hash_hex()),
         }
     }
@@ -503,6 +529,31 @@ fn through_nostr_client(url: &Url) -> Option<Source> {
         return None;
     }
     url.path_segments()?.take(2).find_map(Nostr::parse).map(Source::Nostr)
+}
+
+/// The channel a known web chat's page opens (`web.libera.chat/#rust`), as
+/// an IRC address; the network, when what it names is no channel. What the
+/// page is cannot hang on its fragment alone, which a web address's
+/// canonical form drops: when the fragment names nothing, the page is what it
+/// is without it (found by fuzz/fuzz_targets/source_parse.rs and
+/// source_join.rs).
+fn web_chat(url: &Url) -> Option<Source> {
+    web_chat_as_written(url).or_else(|| {
+        let mut bare = url.clone();
+        bare.set_fragment(None);
+        url.fragment().and_then(|_| web_chat_as_written(&bare))
+    })
+}
+
+fn web_chat_as_written(url: &Url) -> Option<Source> {
+    let (server, channel) = irc::web_chat(url)?;
+    let host = small_web_host(&server).ok()?;
+    let mut irc = Irc::from_url(&server, host)?;
+    irc.channel = channel
+        .and_then(|channel| Url::parse(&format!("{server}#{}", channel.trim_start_matches('#'))).ok())
+        .and_then(|link| Irc::from_url(&link, irc.host.clone()))
+        .and_then(|channel| channel.channel);
+    Some(Source::Irc(irc))
 }
 
 /// The hosts of links to Telegram.
@@ -1068,6 +1119,72 @@ mod tests {
         );
         assert!(Source::parse("gopher://a.example/hURL:gopher://b.example/").is_err(), "no loops");
         assert_eq!(canonical("gopher://a.example/h/page.html"), "gopher://a.example/h/page.html");
+    }
+
+    #[test]
+    fn parses_irc_servers_and_channels() {
+        let canonical = |s: &str| Source::parse(s).unwrap().to_string();
+        for input in [
+            "irc://irc.libera.chat/#rust",
+            "irc://IRC.Libera.Chat:6667/%23Rust",
+            "irc://irc.libera.chat/rust",
+            "irc://irc.libera.chat/#rust?key",
+            "irc6://irc.libera.chat/rust,needkey",
+            "https://web.libera.chat/#rust",
+            "https://web.libera.chat/gamja/#rust",
+            "https://kiwiirc.com/nextclient/irc.libera.chat/#rust",
+        ] {
+            assert_eq!(canonical(input), "irc://irc.libera.chat/#rust", "{input}");
+        }
+        assert_eq!(canonical("ircs://irc.libera.chat:6697/"), "ircs://irc.libera.chat/");
+        assert_eq!(canonical("ircs://irc.libera.chat:7000/#a"), "ircs://irc.libera.chat:7000/#a");
+        assert_eq!(
+            canonical("https://kiwiirc.com/nextclient/#irc://irc.libera.chat:+6697/#rust"),
+            "ircs://irc.libera.chat/#rust"
+        );
+        assert_eq!(canonical("https://webchat.oftc.net/?channels=tor,debian"), "irc://irc.oftc.net/#tor");
+        assert_eq!(canonical("irc://irc.example/&local"), "irc://irc.example/&local");
+        assert_eq!(canonical("irc://irc.example/%23caf%C3%A9"), "irc://irc.example/#caf%C3%A9");
+        assert_eq!(canonical("irc://irc.example/#a%23b"), "irc://irc.example/#a%23b");
+
+        let channel = Source::parse("irc://irc.libera.chat/#rust").unwrap();
+        assert_eq!(channel.network(), Network::Irc);
+        assert_eq!((channel.transport(), channel.site_key().as_str()), (Network::Clearnet, "irc.libera.chat"));
+        assert!(channel.url().is_none() && channel.robots_txt().is_none());
+        let Source::Irc(irc) = &channel else { unreachable!() };
+        assert_eq!((irc.server().to_string(), irc.port()), ("irc://irc.libera.chat/".to_owned(), 6667));
+        assert_eq!(Source::parse("irc://irc.postman.i2p/#i2p").unwrap().transport(), Network::I2p);
+        assert_eq!(Source::parse(&format!("ircs://{ONION}/")).unwrap().transport(), Network::Onion);
+        for bad in [
+            "irc://irc.example/someone,isnick",
+            "irc://user:secret@irc.example/#a",
+            "irc://irc.example/#a%20b",
+            "irc:///#a",
+        ] {
+            assert!(Source::parse(bad).is_err(), "{bad}");
+        }
+        // Web chats' other pages, and other sites, stay on the web.
+        assert_eq!(Source::parse("https://web.libera.chat/").unwrap().network(), Network::Irc);
+        assert_eq!(Source::parse("https://libera.chat/guides/").unwrap().network(), Network::Clearnet);
+        assert_eq!(Source::parse("https://kiwiirc.com/").unwrap().network(), Network::Clearnet);
+        // A web chat's link to no channel is the network, as the page without it is.
+        assert_eq!(canonical("https://web.libera.chat/#lib<\0a"), "irc://irc.libera.chat/");
+        assert_eq!(canonical("\\\\web.libera.chat\\\\#a b"), "irc://irc.libera.chat/");
+        assert_eq!(
+            canonical("https://kiwiirc.com/nextclient/irc.example/#irc://bad:+66\0/#x"),
+            "irc://irc.example/",
+            "a fragment that names nothing leaves the page what its path says"
+        );
+    }
+
+    #[test]
+    fn joins_links_in_irc_topics() {
+        let channel = Source::parse("irc://irc.libera.chat/#rust").unwrap();
+        assert_eq!(channel.join("https://www.rust-lang.org/").unwrap().to_string(), "https://www.rust-lang.org/");
+        assert_eq!(channel.join("ircs://irc.oftc.net/#tor").unwrap().network(), Network::Irc);
+        assert_eq!(channel.join("/relative"), None);
+        let web = Source::parse("https://example.com/chat").unwrap();
+        assert_eq!(web.join("irc://irc.libera.chat/#rust").unwrap(), channel);
     }
 
     const NPUB: &str = "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg";

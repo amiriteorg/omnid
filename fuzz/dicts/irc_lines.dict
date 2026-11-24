@@ -1,0 +1,10 @@
+# Pieces of IRC lines.
+":s 322 "
+"PING :"
+"ERROR :"
+"NETWORK="
+"ELIST="
+"[+nt] "
+"\x03"
+"\x04"
+"\x0d\x0a"

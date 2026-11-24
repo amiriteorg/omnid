@@ -19,11 +19,14 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
   Gemini (`gemini.rs`) and Gopher (`gopher.rs`) over `Gateway::connect`'s streams, so each server
   is reached on the network its host is on (`Source::transport`); `Gateway::small_web` answers
   in Gemini's own terms (`SmallWeb`), and `Gateway::fetch` maps that to HTTP's for the crawler.
+  IRC (`irc.rs`): `Gateway::irc_list` registers, lists a network's channels and quits; it never
+  joins a channel.
 - `crates/omnid-dht` — read-only BitTorrent DHT client and its own bencode codec.
 - `crates/omnid-index` — Tantivy schema, analyzer, ranking, snippets, mirror folding.
 - `crates/omnid-crawl` — crawl store (SQLite), frontier, robots.txt, extraction, safety gate,
   crawl loop; `small_web.rs` reads Gemini pages and Gopher menus line by line, for the
-  extractor and the reader. End-to-end tests in `crates/omnid-crawl/tests/e2e.rs`.
+  extractor and the reader; `irc.rs` keeps each IRC network's channel list, one connection for
+  all its channels. End-to-end tests in `crates/omnid-crawl/tests/e2e.rs`.
 - `crates/omnid` — the daemon as a library (`omnid::start`), the CLI, the HTTP API, the search page
   (`src/ui`, compiled in), the reader for Gemini and Gopher (`reader.rs`, `/read`), the proxy
   (`socks.rs`: SOCKS5 and HTTP on one port).

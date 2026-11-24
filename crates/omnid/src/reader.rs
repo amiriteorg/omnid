@@ -266,6 +266,9 @@ impl Page {
             Source::Hyphanet(key) => Some(format!("/hyphanet/{key}")),
             Source::Ipfs(_) => (!embedded).then(|| format!("/{}", target.gateway_path().unwrap_or_default())),
             Source::Nostr(_) | Source::Magnet(_) => Some(target.to_string()),
+            // An IRC app opens it, which reaches an onion or `.i2p` server
+            // only if it was set up for one: inside OMNId's app, it asks.
+            Source::Irc(_) => (embedded || target.transport() == Network::Clearnet).then(|| target.to_string()),
         }
     }
 

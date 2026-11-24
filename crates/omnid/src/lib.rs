@@ -81,10 +81,11 @@ pub struct DaemonConfig {
 /// those reported for abuse), I2P's hubs and directories, the Hyphanet
 /// project's default bookmarks, its indexes of freesites among them,
 /// IPFS's documentation and Wikipedia's snapshots on IPFS, Nostr's
-/// makers, and Geminispace's and Gopherspace's lists of known servers. Each
-/// answered on 2026-11-21 (the IPFS ones through kubo 0.43.1, the Nostr ones
-/// from nos.lol, Primal and nostr.mom, on 2026-11-22, the Gemini and Gopher
-/// ones on 2026-11-24). A network's seeds wait while its router is down.
+/// makers, Geminispace's and Gopherspace's lists of known servers, and IRC
+/// networks. Each answered on 2026-11-21 (the IPFS ones through kubo 0.43.1,
+/// the Nostr ones from nos.lol, Primal and nostr.mom, on 2026-11-22, the
+/// Gemini, Gopher and IRC ones on 2026-11-24). A network's seeds wait while
+/// its router is down.
 /// An onion site on Ahmia's blocklist is not added, though the seeds are
 /// exempt from it: five older ones are on it wrongly. An eepsite is named
 /// only if a new i2pd's address book has the name; otherwise it is given by
@@ -239,6 +240,17 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "gopher://gopher.floodgap.com/1/world",
     "gopher://gopher.viste.fr/1/ogup/list",
     "gopher://sdf.org/",
+    // IRC networks, whose channel lists are indexed (never what is said in a
+    // channel): Libera.Chat, OFTC (and its onion), hackint, EFnet, IRCnet and
+    // Undernet, and Irc2P on I2P. Over TLS where the network offers it.
+    "ircs://irc.libera.chat/",
+    "ircs://irc.oftc.net/",
+    "ircs://oftcnet6xg6roj6d7id4y4cu6dchysacqj2ldgea73qzdagufflqxrid.onion/",
+    "ircs://irc.hackint.org/",
+    "irc://irc.efnet.org/",
+    "irc://irc.ircnet.com/",
+    "irc://irc.undernet.org/",
+    "irc://irc.postman.i2p/",
     // IPFS, by DNSLink name: its documentation, specifications and blog, and
     // the Distributed Wikipedia Mirror's snapshots,
     // put on IPFS against censorship (English, Turkish, Russian).

@@ -1364,6 +1364,27 @@ internal fun Activity.askNostrApp(link: String) {
         .show()
 }
 
+/** Hands an IRC result to an IRC app, after saying that the app connects to the network its own way. */
+internal fun Activity.askIrcApp(link: String) {
+    val safe = IrcLinks.safe(link)
+    if (safe == null) {
+        Toast.makeText(this, R.string.irc_invalid, Toast.LENGTH_LONG).show()
+        return
+    }
+    AlertDialog.Builder(this)
+        .setTitle(R.string.irc_ask)
+        .setMessage(R.string.irc_ask_detail)
+        .setPositiveButton(R.string.irc_open) { _, _ ->
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(safe)))
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(this, R.string.irc_no_app, Toast.LENGTH_LONG).show()
+            }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+}
+
 internal fun Activity.askTorrentApp(link: String, offerIndex: Boolean) {
     val safe = Magnets.safe(link)
     if (safe == null) {
