@@ -47,6 +47,8 @@ impl Politeness {
             // rest are read from it, so the pause is the index's, not the
             // server's.
             Network::Irc => (4, 1),
+            // A small network of machines at home, like the onions.
+            Network::Yggdrasil => (8, 3),
             // Magnets are indexed from the link itself, without a fetch.
             Network::Magnet => (16, 0),
         };

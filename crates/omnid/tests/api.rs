@@ -212,7 +212,7 @@ async fn reports_status_for_every_network() {
     let networks: Vec<_> = body["routers"].as_array().unwrap().iter().map(|r| r["network"].as_str().unwrap()).collect();
     assert_eq!(
         networks,
-        ["clearnet", "onion", "i2p", "hyphanet", "ipfs", "nostr", "gemini", "gopher", "irc", "magnet"]
+        ["clearnet", "onion", "i2p", "hyphanet", "ipfs", "nostr", "gemini", "gopher", "irc", "yggdrasil", "magnet"]
     );
     assert_eq!(body["routers"][6]["state"], "ready", "Gemini needs no router");
     assert!(body["routers"][7]["detail"].as_str().unwrap().starts_with("direct"));
@@ -220,7 +220,7 @@ async fn reports_status_for_every_network() {
     assert_eq!(body["routers"][4]["state"], "disabled", "no IPFS gateway is configured");
     assert_eq!(body["routers"][5]["state"], "ready", "the default relays, named without being asked");
     assert!(body["routers"][5]["detail"].as_str().unwrap().starts_with("relays: nos.lol, relay.primal.net"));
-    assert_eq!(body["routers"][9]["state"], "disabled", "so is the DHT: torrents say off, not missing");
+    assert_eq!(body["routers"][10]["state"], "disabled", "so is the DHT: torrents say off, not missing");
     assert_eq!(body["routers"][0]["detail"], "direct", "the crawler's way to the clearnet");
     assert_eq!(body["index"]["documents"], 2);
     assert_eq!(body["pause_reason"], "waiting for a charger");

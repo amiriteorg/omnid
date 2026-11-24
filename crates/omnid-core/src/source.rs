@@ -38,11 +38,14 @@ pub enum Network {
     /// IRC servers and their channels (`irc://`, `ircs://`), on the
     /// clearnet, onions or I2P.
     Irc,
+    /// Yggdrasil's sites: http(s) at an address in 200::/7, a network of
+    /// its own that a node on this machine or yggstack reaches.
+    Yggdrasil,
     Magnet,
 }
 
 impl Network {
-    pub const ALL: [Network; 10] = [
+    pub const ALL: [Network; 11] = [
         Network::Clearnet,
         Network::Onion,
         Network::I2p,
@@ -52,6 +55,7 @@ impl Network {
         Network::Gemini,
         Network::Gopher,
         Network::Irc,
+        Network::Yggdrasil,
         Network::Magnet,
     ];
 
@@ -66,6 +70,7 @@ impl Network {
             Network::Gemini => "gemini",
             Network::Gopher => "gopher",
             Network::Irc => "irc",
+            Network::Yggdrasil => "yggdrasil",
             Network::Magnet => "magnet",
         }
     }
@@ -91,6 +96,7 @@ impl FromStr for Network {
             "gemini" => Ok(Network::Gemini),
             "gopher" => Ok(Network::Gopher),
             "irc" => Ok(Network::Irc),
+            "yggdrasil" | "ygg" => Ok(Network::Yggdrasil),
             "magnet" | "dht" | "torrent" => Ok(Network::Magnet),
             _ => Err(SourceError::UnknownNetwork(s.to_owned())),
         }
@@ -129,6 +135,8 @@ pub enum Source {
     Clearnet(Url),
     Onion(Url),
     I2p(Url),
+    /// A site at an address in Yggdrasil's 200::/7 (`http://[200:…]/`).
+    Yggdrasil(Url),
     /// A Hyphanet key with its path, e.g. `USK@…/site/4/index.html`.
     Hyphanet(String),
     /// `ipfs://<CID>/<path>` or `ipns://<name>/<path>`, the CID or name in its
@@ -213,12 +221,14 @@ impl Source {
                 Network::Onion
             }
             Some(Host::Domain(domain)) if domain.ends_with(".i2p") => Network::I2p,
+            Some(Host::Ipv6(ip)) if is_yggdrasil(ip) => Network::Yggdrasil,
             Some(_) => Network::Clearnet,
             None => return Err(SourceError::Invalid(url.to_string())),
         };
         Ok(match network {
             Network::Onion => Source::Onion(url),
             Network::I2p => Source::I2p(url),
+            Network::Yggdrasil => Source::Yggdrasil(url),
             _ => through_gateway(&url)
                 .or_else(|| through_nostr_client(&url))
                 .or_else(|| telegram_preview(&url))
@@ -231,6 +241,7 @@ impl Source {
             Source::Clearnet(_) => Network::Clearnet,
             Source::Onion(_) => Network::Onion,
             Source::I2p(_) => Network::I2p,
+            Source::Yggdrasil(_) => Network::Yggdrasil,
             Source::Hyphanet(_) => Network::Hyphanet,
             Source::Ipfs(_) => Network::Ipfs,
             Source::Nostr(_) => Network::Nostr,
@@ -247,24 +258,17 @@ impl Source {
     /// [`Source::network`]. What decides how it is reached, and whether a
     /// step to it leaves an anonymity network.
     pub fn transport(&self) -> Network {
-        let host = match self {
-            Source::Gemini(url) | Source::Gopher(url) => url.host_str().unwrap_or_default(),
-            Source::Irc(irc) => &irc.host,
-            source => return source.network(),
-        };
-        if host.ends_with(".onion") {
-            Network::Onion
-        } else if host.ends_with(".i2p") {
-            Network::I2p
-        } else {
-            Network::Clearnet
+        match self {
+            Source::Gemini(url) | Source::Gopher(url) => host_network(url.host_str().unwrap_or_default()),
+            Source::Irc(irc) => host_network(&irc.host),
+            source => source.network(),
         }
     }
 
     /// The http(s) URL, for the networks addressed by one.
     pub fn url(&self) -> Option<&Url> {
         match self {
-            Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => Some(url),
+            Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) | Source::Yggdrasil(url) => Some(url),
             Source::Hyphanet(_)
             | Source::Ipfs(_)
             | Source::Nostr(_)
@@ -317,6 +321,7 @@ impl Source {
             Source::Clearnet(url)
             | Source::Onion(url)
             | Source::I2p(url)
+            | Source::Yggdrasil(url)
             | Source::Gemini(url)
             | Source::Gopher(url) => url.host_str().unwrap_or_default().to_owned(),
             Source::Irc(irc) => irc.host.clone(),
@@ -348,7 +353,7 @@ impl Source {
             return Nostr::parse(href).map(Source::Nostr);
         }
         let base = match self {
-            Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) => url.clone(),
+            Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) | Source::Yggdrasil(url) => url.clone(),
             Source::Hyphanet(key) => Url::parse(HYPHANET_BASE).ok()?.join(key).ok()?,
             Source::Ipfs(url) => {
                 // Pages on IPFS link other content as gateway paths, and a
@@ -396,6 +401,7 @@ impl fmt::Display for Source {
             Source::Clearnet(url)
             | Source::Onion(url)
             | Source::I2p(url)
+            | Source::Yggdrasil(url)
             | Source::Ipfs(url)
             | Source::Gemini(url)
             | Source::Gopher(url) => f.write_str(url.as_str()),
@@ -709,6 +715,27 @@ fn through_gateway(url: &Url) -> Option<Source> {
         return ipfs_path(rest).and_then(Result::ok);
     }
     None
+}
+
+/// Whether an IPv6 address is Yggdrasil's: a node's in 200::/8, a node's
+/// routed subnet in 300::/8.
+pub fn is_yggdrasil(ip: std::net::Ipv6Addr) -> bool {
+    ip.segments()[0] & 0xfe00 == 0x0200
+}
+
+/// The network a host is on, by its name: an onion, `.i2p`, a Yggdrasil
+/// address (`[200:…]`, as written in a URL), else the clearnet.
+pub fn host_network(host: &str) -> Network {
+    let literal = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(host);
+    if host.ends_with(".onion") {
+        Network::Onion
+    } else if host.ends_with(".i2p") {
+        Network::I2p
+    } else if literal.parse().is_ok_and(is_yggdrasil) {
+        Network::Yggdrasil
+    } else {
+        Network::Clearnet
+    }
 }
 
 /// Gemini's and Gopher's default ports.
@@ -1185,6 +1212,33 @@ mod tests {
         assert_eq!(channel.join("/relative"), None);
         let web = Source::parse("https://example.com/chat").unwrap();
         assert_eq!(web.join("irc://irc.libera.chat/#rust").unwrap(), channel);
+    }
+
+    #[test]
+    fn yggdrasil_addresses_are_their_own_network() {
+        let search = Source::parse("http://[200:b48d:469e:c7c7:3e13:c41d:ba4d:d2b8]/search?q=x#top").unwrap();
+        assert_eq!((search.network(), search.transport()), (Network::Yggdrasil, Network::Yggdrasil));
+        assert_eq!(search.to_string(), "http://[200:b48d:469e:c7c7:3e13:c41d:ba4d:d2b8]/search?q=x");
+        assert_eq!(search.site_key(), "[200:b48d:469e:c7c7:3e13:c41d:ba4d:d2b8]");
+        assert_eq!(
+            search.robots_txt().unwrap().to_string(),
+            "http://[200:b48d:469e:c7c7:3e13:c41d:ba4d:d2b8]/robots.txt"
+        );
+        assert_eq!(
+            Source::parse("https://[300:8101:e046:d91e::5]/").unwrap().network(),
+            Network::Yggdrasil,
+            "a subnet"
+        );
+        for elsewhere in ["http://[2606:4700:4700::1111]/", "http://[1ff::1]/", "http://[400::1]/", "http://[::1]/"] {
+            assert_eq!(Source::parse(elsewhere).unwrap().network(), Network::Clearnet, "{elsewhere}");
+        }
+        let page = Source::parse("https://yggdrasil-network.github.io/services.html").unwrap();
+        assert_eq!(page.join("http://[21e:a51c:885b:7db0:166e:927:98cd:d186]/").unwrap().network(), Network::Yggdrasil);
+        assert_eq!(search.join("/about").unwrap().network(), Network::Yggdrasil);
+        // Other protocols' servers there go over Yggdrasil too.
+        assert_eq!(Source::parse("irc://[200:1234::1]/#ygg").unwrap().transport(), Network::Yggdrasil);
+        assert_eq!(Source::parse("gemini://[300:1234::1]/").unwrap().transport(), Network::Yggdrasil);
+        assert_eq!("ygg".parse::<Network>().unwrap(), Network::Yggdrasil);
     }
 
     const NPUB: &str = "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg";

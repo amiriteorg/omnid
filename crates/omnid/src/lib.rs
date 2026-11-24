@@ -251,6 +251,14 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "irc://irc.ircnet.com/",
     "irc://irc.undernet.org/",
     "irc://irc.postman.i2p/",
+    // Yggdrasil, from its own list of services (yggdrasil-network.github.io,
+    // 2026-11-24; not fetched by omnid yet: no node ran where it was
+    // written): its search engine, a web directory, the HowTo wiki and a
+    // forum.
+    "http://[200:b48d:469e:c7c7:3e13:c41d:ba4d:d2b8]/",
+    "http://[21e:a51c:885b:7db0:166e:927:98cd:d186]/",
+    "http://[222:a8e4:50cd:55c:788e:b0a5:4e2f:a92c]/",
+    "http://[21a:34aa:c782:3ad2:1bf8:73f8:141:66e8]/",
     // IPFS, by DNSLink name: its documentation, specifications and blog, and
     // the Distributed Wikipedia Mirror's snapshots,
     // put on IPFS against censorship (English, Turkish, Russian).
@@ -539,15 +547,15 @@ impl Daemon {
 /// gateway are up.
 const ROUTER_CHECK: Duration = Duration::from_secs(30);
 
-/// When the I2P router, the Hyphanet node or the IPFS gateway comes up (the
-/// i2pd app started, a node set), what was put off for want of it is crawled
-/// now instead of after its deferral.
+/// When the I2P router, the Hyphanet node, the IPFS gateway or a way into
+/// Yggdrasil comes up (the i2pd app started, a node set), what was put off for
+/// want of it is crawled now instead of after its deferral.
 async fn watch_routers(gateway: Arc<Gateway>, store: Arc<CrawlStore>, shutdown: CancellationToken) {
     let mut was_ready = HashSet::new();
     loop {
         let ready: HashSet<Network> =
             gateway.status().await.into_iter().filter(|r| r.state == RouterState::Ready).map(|r| r.network).collect();
-        for network in [Network::I2p, Network::Hyphanet, Network::Ipfs] {
+        for network in [Network::I2p, Network::Hyphanet, Network::Ipfs, Network::Yggdrasil] {
             if ready.contains(&network) && !was_ready.contains(&network) {
                 let store = store.clone();
                 match tokio::task::spawn_blocking(move || store.retry_deferred(network, now_secs())).await {

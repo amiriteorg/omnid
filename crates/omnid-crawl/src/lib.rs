@@ -771,7 +771,7 @@ const FILE_ENDINGS: [&str; 64] = [
 /// dist.ipfs.tech had visited 2,507 release files from one seed.
 fn names_a_file(link: &Source) -> bool {
     let (path, filename) = match link {
-        Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) | Source::Ipfs(url) => {
+        Source::Clearnet(url) | Source::Onion(url) | Source::I2p(url) | Source::Yggdrasil(url) | Source::Ipfs(url) => {
             let filename = url.query_pairs().find(|(key, _)| key == "filename").map(|(_, name)| name.into_owned());
             (url.path().to_owned(), filename)
         }

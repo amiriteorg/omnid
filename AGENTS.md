@@ -20,7 +20,8 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
   is reached on the network its host is on (`Source::transport`); `Gateway::small_web` answers
   in Gemini's own terms (`SmallWeb`), and `Gateway::fetch` maps that to HTTP's for the crawler.
   IRC (`irc.rs`): `Gateway::irc_list` registers, lists a network's channels and quits; it never
-  joins a channel.
+  joins a channel. Yggdrasil (`yggdrasil.rs`): addresses in 200::/7 only, through a node on the
+  machine or yggstack's SOCKS5 proxy; never the browser's way.
 - `crates/omnid-dht` — read-only BitTorrent DHT client and its own bencode codec.
 - `crates/omnid-index` — Tantivy schema, analyzer, ranking, snippets, mirror folding.
 - `crates/omnid-crawl` — crawl store (SQLite), frontier, robots.txt, extraction, safety gate,
