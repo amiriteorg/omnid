@@ -7,6 +7,7 @@ mod frontier;
 pub mod nostr;
 mod robots;
 pub mod safety;
+pub mod small_web;
 mod store;
 
 /// The robots.txt parser's entry point for the fuzz targets in `fuzz/`, built
@@ -576,7 +577,7 @@ impl Context {
     /// own address ([`Gateway::leaves_anonymity`]).
     fn may_follow(&self, from: &Source, link: &Source) -> bool {
         clearnet_link_ok(from, link, self.cfg.clearnet_same_site_only)
-            && !self.gateway.leaves_anonymity(from.network(), link.network())
+            && !self.gateway.leaves_anonymity(from.transport(), link.transport())
             && !link.url().is_some_and(forums::is_chaff)
             && !names_a_file(link)
             && self.safety.check_source(link) == Verdict::Allow
@@ -746,6 +747,11 @@ fn names_a_file(link: &Source) -> bool {
             let filename = url.query_pairs().find(|(key, _)| key == "filename").map(|(_, name)| name.into_owned());
             (url.path().to_owned(), filename)
         }
+        Source::Gemini(url) => (url.path().to_owned(), None),
+        // A Gopher item's type says what it is: only text is ever fetched.
+        Source::Gopher(_) => {
+            return link.gopher_item().is_none_or(|(item_type, _)| omnid_net::gopher_content_type(item_type).is_none());
+        }
         Source::Hyphanet(key) => (key.clone(), None),
         Source::Nostr(_) | Source::Magnet(_) => return false,
     };
@@ -840,6 +846,10 @@ mod tests {
             "ipfs://bafkreia35gizrkdomv4v4oc6uin6kzjpn5hqlnk7wan3qcuvwrzjx7rubu/?filename=ctl_v1.1.6_linux-amd64.tar.gz.cid",
             "ipns://dist.ipfs.tech/kubo/v0.43.1/kubo_v0.43.1_darwin-arm64.tar.gz.sha512",
             "freenet:CHK@abc,def,AAMC--8/song.ogg",
+            "gemini://a.example/pics/moss.jpg",
+            "gopher://a.example/9/files/hole.tar.gz",
+            "gopher://a.example/I/moss",
+            "gopher://a.example/7/search",
         ] {
             assert!(file(link), "{link}");
         }
@@ -852,6 +862,9 @@ mod tests {
             "ipns://docs.ipfs.tech/concepts/",
             "freenet:USK@abc,def,AQACAAE/site/3/",
             "magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a&dn=x.iso",
+            "gemini://a.example/log/",
+            "gopher://a.example/",
+            "gopher://a.example/0/notes.txt",
         ] {
             assert!(!file(page), "{page}");
         }

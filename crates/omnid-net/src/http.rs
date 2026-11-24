@@ -181,7 +181,7 @@ fn is_zlib(body: &[u8]) -> bool {
 }
 
 /// Appends as much of `chunk` as fits under `max`; true once the cap is hit.
-fn push_capped(buf: &mut BytesMut, chunk: &[u8], max: usize) -> bool {
+pub(crate) fn push_capped(buf: &mut BytesMut, chunk: &[u8], max: usize) -> bool {
     let room = max.saturating_sub(buf.len());
     if chunk.len() > room {
         buf.extend_from_slice(&chunk[..room]);

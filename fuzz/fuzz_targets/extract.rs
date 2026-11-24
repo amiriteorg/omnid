@@ -6,7 +6,7 @@
 use libfuzzer_sys::fuzz_target;
 use omnid_crawl::extract::extract;
 
-const TYPES: [Option<&str>; 8] = [
+const TYPES: [Option<&str>; 11] = [
     None,
     Some("text/html"),
     Some("text/html; charset=windows-1252"),
@@ -15,6 +15,9 @@ const TYPES: [Option<&str>; 8] = [
     Some("text/plain"),
     Some("text/plain; charset=utf-16le"),
     Some("text/plain; charset=bogus"),
+    Some("text/gemini"),
+    Some("text/gemini; charset=iso-8859-1; lang=fr"),
+    Some("text/x-gopher-menu"),
 ];
 
 fuzz_target!(|data: &[u8]| {

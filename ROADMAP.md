@@ -14,35 +14,45 @@ phone, IPFS goes through a gateway on the owner's computer.
 - Each browser site gets Tor circuits of its own, and an I2P identity of its own where the
   router offers SAM.
 - On the phone the crawler goes through Tor, and torrent lookups are off by default.
-- Every release is a pre-release. Each has run on an Android 16 emulator and on macOS, not
-  yet on a physical phone.
+- Every release is a pre-release, run on an Android 16 emulator and on macOS. The owner runs
+  0.1.7 on a Pixel with GrapheneOS and a OnePlus 15, where it works.
 
 ## Next
 
-1. **Run it on a physical phone.** Releases were tested on an emulator. The owner now runs
-   0.1.6 on a Pixel with GrapheneOS and a OnePlus 15. On the Pixel, onion and `.i2p` pages
-   failed in the browser for a while, then loaded; the daemon now logs why a browser
-   connection fails, without the site, for the next time. Still to cover:
+1. **More networks: the OMNIdaemon.** Unreleased: Gemini and Gopher, with a reader. Next,
+   each its own pull request:
+   - **IRC**: a directory of channels from each network's channel list (names, topics, user
+     counts), on Libera.Chat, OFTC, hackint and others, onion servers through Tor and Irc2P
+     through I2P. It never joins a channel or keeps what is said in one.
+   - **The fediverse** (ActivityPub: Mastodon, Lemmy, Misskey and the rest): public posts and
+     profiles of accounts that opted into search (Mastodon's `indexable`), and nothing from one
+     that did not.
+   - **Social results**: posts and profiles from Nostr and the fediverse shown as posts (author,
+     handle, time; no images from elsewhere), an author's page of their posts, IRC channels as
+     channels, `irc://` handed to an IRC app; `gemini://` links in the app's browser opened in
+     the reader.
+   - Later: Matrix's public rooms, Bluesky (AT Protocol), Usenet, Spartan, Nex and Finger,
+     Yggdrasil and Lokinet.
+2. **On the owner's phones.** 0.1.7 runs on a Pixel with GrapheneOS and a OnePlus 15. Not yet
+   checked one by one:
    - per-site I2P identities through the i2pd app's own SAM bridge;
    - the Tailscale address rule, with Tailscale on and off;
    - crawling on a charger: heat, battery, and whether Android stops the service.
-
-   This needs the owner's phone.
-2. **Typed `http://` eepsites without the wait.** The browser's HTTPS-only mode tries
+3. **Typed `http://` eepsites without the wait.** The browser's HTTPS-only mode tries
    `https://` first. Gecko asks the site over HTTP after 3 s and stops waiting once it answers;
    the browser now lets that question through, so reg.i2p, whose HTTPS hangs, opens in 6 to
    31 s instead of a minute or more. The 3 s and a round trip are still spent; omnid refuses
    HTTPS to the Hyphanet host at once.
    - `.i2p` should load as typed, as onions already do.
    - The clearnet stays HTTPS-only.
-3. **Builds anyone can check.** Releases are built on one Mac and signed by hand
+4. **Builds anyone can check.** Releases are built on one Mac and signed by hand
    ([docs/releasing.md](docs/releasing.md)).
    - Build the binaries in CI from the tag, and check them against the local build: the APK
      build is reproducible.
    - Publish build provenance.
    - Add Linux binaries (x86_64 and aarch64).
    - The signing key stays offline.
-4. **Tor bridges** (**needs a go-ahead**). They are for networks that block Tor; arti 0.48,
+5. **Tor bridges** (**needs a go-ahead**). They are for networks that block Tor; arti 0.48,
    which OMNId already uses, supports them. There are three phases, each depending on the one
    before.
    - **A: the daemon and desktop.**
@@ -63,7 +73,7 @@ phone, IPFS goes through a gateway on the owner's computer.
      to try bridges.
      - It asks Tor's circumvention API for your country's settings, through the built-in meek
        bridge, and applies them, as Tor Browser does.
-5. **A built-in I2P router** (**needs a go-ahead**). The aim is to embed
+6. **A built-in I2P router** (**needs a go-ahead**). The aim is to embed
    [emissary](https://github.com/eepnet/emissary), a Rust I2P router (MIT), in the daemon, as
    arti is for Tor. Then the phone needs no i2pd app, and OMNId controls tunnel lengths and
    identities.

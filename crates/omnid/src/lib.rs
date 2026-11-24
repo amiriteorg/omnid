@@ -2,6 +2,7 @@
 //! Android app embeds.
 
 pub mod api;
+mod reader;
 mod socks;
 
 /// The proxy's entry point for the fuzz targets in `fuzz/`, built only by
@@ -79,9 +80,11 @@ pub struct DaemonConfig {
 /// own onion sites and Ahmia's list of onion services (which leaves out
 /// those reported for abuse), I2P's hubs and directories, the Hyphanet
 /// project's default bookmarks, its indexes of freesites among them,
-/// IPFS's documentation and Wikipedia's snapshots on IPFS, and Nostr's
-/// makers. Each answered on 2026-11-21 (the IPFS ones through kubo 0.43.1,
-/// and the Nostr ones from nos.lol, Primal and nostr.mom, on 2026-11-22). A network's seeds wait while its router is down.
+/// IPFS's documentation and Wikipedia's snapshots on IPFS, Nostr's
+/// makers, and Geminispace's and Gopherspace's lists of known servers. Each
+/// answered on 2026-11-21 (the IPFS ones through kubo 0.43.1, the Nostr ones
+/// from nos.lol, Primal and nostr.mom, on 2026-11-22, the Gemini and Gopher
+/// ones on 2026-11-24). A network's seeds wait while its router is down.
 /// An onion site on Ahmia's blocklist is not added, though the seeds are
 /// exempt from it: five older ones are on it wrongly. An eepsite is named
 /// only if a new i2pd's address book has the name; otherwise it is given by
@@ -223,6 +226,19 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "freenet:USK@dCnkUL22fAmKbKg-Cftx9j2m4IwyWB0QbGoiq1RSLP8,4d1TDqwRr4tYlsubLrQK~c4h0~FtmE-OXCDmFiI8BB4,AQACAAE/Sharesite/41/",
     "freenet:USK@pGQPA-9PcFiE3A2tCuCjacK165UaX07AQYw98iDQrNA,8gwQ67ytBNR03hNj7JU~ceeew22HVq6G50dcEeMcgks,AQACAAE/flip/17/",
     "freenet:USK@nrDOd1piehaN7z7s~~IYwH-2eK7gcQ9wAtPMxD8xPEs,y61pkcoRy-ccB7BHvLCzt3RUjeMILf8ox26NKvPZ-jk,AQACAAE/dgof/292/",
+    // Gemini: the project's own capsule, and the known capsules of two search
+    // engines (Kennedy's, and Lupa's of those seen in the last 31 days), and
+    // a capsule on an onion.
+    "gemini://geminiprotocol.net/",
+    "gemini://kennedy.gemi.dev/observatory/known-hosts",
+    "gemini://gemini.bortzmeyer.org/software/lupa/lupa-capsules.gmi",
+    "gemini://slowsvr7rgnkzuoma5byw34n2mkkg6v7g5q6qxqaihh7zikp5wn26fid.onion/",
+    // Gopher: Floodgap's server and its list of every known one, the
+    // Observable Gopherspace Universe Project's list, and SDF's.
+    "gopher://gopher.floodgap.com/",
+    "gopher://gopher.floodgap.com/1/world",
+    "gopher://gopher.viste.fr/1/ogup/list",
+    "gopher://sdf.org/",
     // IPFS, by DNSLink name: its documentation, specifications and blog, and
     // the Distributed Wikipedia Mirror's snapshots,
     // put on IPFS against censorship (English, Turkish, Russian).
@@ -630,7 +646,7 @@ mod tests {
     fn starts_somewhere_on_every_overlay_network() {
         let seeds = default_seeds();
         assert_eq!(seeds.len(), DEFAULT_SEEDS.len(), "every seed parses");
-        for network in [Network::Onion, Network::I2p, Network::Hyphanet, Network::Ipfs, Network::Nostr] {
+        for network in Network::ALL.into_iter().filter(|n| !matches!(n, Network::Clearnet | Network::Magnet)) {
             assert!(seeds.iter().any(|j| j.source.network() == network), "{network} has seeds");
         }
         assert!(!seeds.iter().any(|j| j.source.network() == Network::Clearnet), "overlay sites only");

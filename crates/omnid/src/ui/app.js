@@ -15,7 +15,7 @@ if (EMBEDDED) document.documentElement.classList.add("embedded");
 const LANG = new URLSearchParams(location.search).get("lang");
 const ALL_NETWORKS = 7;
 const PAGE = 20;
-const NETWORK_NAMES = { onion: "Onion", clearnet: "Web", magnet: "Torrent", i2p: "I2P", hyphanet: "Hyphanet", ipfs: "IPFS", nostr: "Nostr" };
+const NETWORK_NAMES = { onion: "Onion", clearnet: "Web", magnet: "Torrent", i2p: "I2P", hyphanet: "Hyphanet", ipfs: "IPFS", nostr: "Nostr", gemini: "Gemini", gopher: "Gopher" };
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -102,11 +102,13 @@ function day(secs) {
 // own browser opens them over Tor or I2P. Hyphanet pages open through the
 // node either way. IPFS content opens through the IPFS gateway, outside the
 // app only: its node fetches from its own address, which omnid's browser
-// never lets a page do.
+// never lets a page do. Gemini and Gopher open in omnid's reader, which
+// reaches them as omnid's browser does, through Tor.
 function linkable(route) {
   const web = /^https?:\/\//.test(route.url);
   return (web && (route.network === "clearnet" || (EMBEDDED && ["onion", "i2p"].includes(route.network)))) ||
     route.network === "hyphanet" ||
+    (["gemini", "gopher"].includes(route.network) && /^(?:gemini|gopher):\/\//.test(route.url)) ||
     (route.network === "ipfs" && !EMBEDDED && /^ip[fn]s:\/\//.test(route.url)) ||
     // nostr: opens a Nostr app, as a magnet opens a torrent app.
     (route.network === "nostr" && /^nostr:n(?:ote|pub|addr)1[a-z0-9]+$/.test(route.url)) ||
@@ -116,12 +118,18 @@ function linkable(route) {
 // Where a link goes. A Hyphanet key opens in omnid's browser as
 // http://hyphanet/KEY, which the daemon sends to the node; in any other
 // browser, omnid sends it on to the node's own page. ipfs://CID/path goes to
-// /ipfs/CID/path, which omnid sends on to the IPFS gateway.
+// /ipfs/CID/path, which omnid sends on to the IPFS gateway. A Gemini or
+// Gopher address opens in the reader, /read.
 function href(route) {
   if (route.network === "ipfs") return route.url.replace(/^(ip[fn]s):\/\//, "/$1/");
+  if (["gemini", "gopher"].includes(route.network)) return readerHref(route.url);
   if (route.network !== "hyphanet") return route.url;
   const key = route.url.replace(/^(?:freenet|hyphanet):/i, "");
   return EMBEDDED ? `http://hyphanet/${key}` : `/hyphanet/${key}`;
+}
+
+function readerHref(url) {
+  return `/read?url=${encodeURIComponent(url)}${EMBEDDED ? "&embedded" : ""}`;
 }
 
 // The route a title opens: the one that stays inside an overlay network when
@@ -154,7 +162,7 @@ function shortAddress(url) {
 // A title that is only an address says nothing a title should.
 function looksLikeAddress(text) {
   const t = text.trim();
-  return /^(?:https?|ip[fn]s):\/\/\S+$/i.test(t) || /^(?:freenet:|hyphanet:)?(?:USK|SSK|CHK|KSK)@\S+$/.test(t) ||
+  return /^(?:https?|ip[fn]s|gemini|gopher):\/\/\S+$/i.test(t) || /^(?:freenet:|hyphanet:)?(?:USK|SSK|CHK|KSK)@\S+$/.test(t) ||
     /^(?:nostr:)?n(?:ote|pub|addr)1[a-z0-9]+…?/.test(t);
 }
 
@@ -181,7 +189,8 @@ function siteKey(url) {
 
 // What was typed, read as an address: an onion or .i2p host, a web URL, a
 // magnet, a Hyphanet key, an IPFS address (ipfs://, ipns://, /ipfs/…, a
-// bare CID) or a Nostr entity (nostr:npub1…, note1…) can be opened or added
+// bare CID), a Nostr entity (nostr:npub1…, note1…) or a Gemini or Gopher
+// address (gemini://, gopher://) can be opened or added
 // from the search field as well as searched for. A bare clearnet name
 // ("node.js") stays a search.
 function typedAddress(text) {
@@ -195,6 +204,8 @@ function typedAddress(text) {
   if (nostr) return { network: "nostr", url: `nostr:${nostr[1].toLowerCase()}` };
   const key = t.match(/^(?:freenet:|hyphanet:)?((?:USK|SSK|CHK|KSK)@\S+)$/);
   if (key) return { network: "hyphanet", url: `freenet:${key[1]}` };
+  const small = t.match(/^(gemini|gopher):\/\/[^\s/]+\S*$/i);
+  if (small) return { network: small[1].toLowerCase(), url: t };
   const url = /^https?:\/\//i.test(t) ? t : /^[a-z0-9.-]+\.(onion|i2p)(\/\S*)?$/i.test(t) ? `http://${t}` : null;
   let host;
   try {
@@ -206,8 +217,10 @@ function typedAddress(text) {
   return { network: host.endsWith(".onion") ? "onion" : host.endsWith(".i2p") ? "i2p" : "clearnet", url };
 }
 
+// Gemini is always over TLS; Gopher only as safe as the network its host is on.
 function sealed(route) {
-  return ["onion", "i2p", "hyphanet"].includes(route.network) || route.url.startsWith("https:");
+  return ["onion", "i2p", "hyphanet", "gemini"].includes(route.network) || route.url.startsWith("https:") ||
+    (route.network === "gopher" && /^gopher:\/\/[^/:]+\.(?:onion|i2p)(?:[:/]|$)/i.test(route.url));
 }
 
 // A public Telegram channel's preview is on the web, and named as Telegram.
@@ -524,6 +537,8 @@ const ROUTERS = [
   // In the app's panel, not its strip: a phone's width holds five.
   { network: "ipfs", name: "IPFS", panelOnly: EMBEDDED },
   { network: "nostr", name: "Nostr", panelOnly: EMBEDDED },
+  { network: "gemini", name: "Gemini", panelOnly: true },
+  { network: "gopher", name: "Gopher", panelOnly: true },
   { network: "clearnet", name: "Web", panelOnly: true },
 ];
 
