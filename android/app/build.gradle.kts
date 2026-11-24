@@ -79,7 +79,7 @@ android {
 dependencies {
     // The browser's engine (MPL-2.0). Update with every Firefox release: it carries the security
     // fixes. Google Play services is left out; WebAuthn, which needs it, is turned off.
-    implementation("org.mozilla.geckoview:geckoview-arm64-v8a:160.0.20261116130455") {
+    implementation("org.mozilla.geckoview:geckoview-arm64-v8a:161.0.20261118180411") {
         exclude(group = "com.google.android.gms")
     }
     testImplementation("junit:junit:4.13.2")
