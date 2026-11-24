@@ -8,7 +8,7 @@
 //! tunnel interface, not on Wi-Fi or a cellular link that CGNAT numbers the
 //! same way.
 
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use url::Url;
 
@@ -41,7 +41,7 @@ fn tailnet_interface(name: &str, ip: Ipv4Addr) -> bool {
 /// Whether this machine is on a tailnet now.
 #[cfg(unix)]
 pub(crate) fn on_tailnet() -> bool {
-    interfaces().into_iter().any(|(name, ip)| tailnet_interface(&name, ip))
+    interfaces().into_iter().any(|(name, ip)| matches!(ip, IpAddr::V4(ip) if tailnet_interface(&name, ip)))
 }
 
 /// Elsewhere there is no way to tell here; the router is asked as before.
@@ -50,9 +50,10 @@ pub(crate) fn on_tailnet() -> bool {
     true
 }
 
-/// Every interface's IPv4 addresses, by interface name.
+/// Every interface's addresses, by interface name. Also what tells whether a
+/// Yggdrasil node runs on this machine (`yggdrasil::local_node`).
 #[cfg(unix)]
-fn interfaces() -> Vec<(String, Ipv4Addr)> {
+pub(crate) fn interfaces() -> Vec<(String, IpAddr)> {
     let mut found = Vec::new();
     let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
     // SAFETY: getifaddrs fills `list` with a linked list it allocated, which
@@ -63,9 +64,19 @@ fn interfaces() -> Vec<(String, Ipv4Addr)> {
         }
         let mut entry = list;
         while let Some(ifa) = entry.as_ref() {
-            if !ifa.ifa_addr.is_null() && i32::from((*ifa.ifa_addr).sa_family) == libc::AF_INET {
-                let addr = &*(ifa.ifa_addr as *const libc::sockaddr_in);
-                let ip = Ipv4Addr::from(u32::from_be(addr.sin_addr.s_addr));
+            let family = if ifa.ifa_addr.is_null() { None } else { Some(i32::from((*ifa.ifa_addr).sa_family)) };
+            let ip = match family {
+                Some(libc::AF_INET) => {
+                    let addr = &*(ifa.ifa_addr as *const libc::sockaddr_in);
+                    Some(IpAddr::V4(Ipv4Addr::from(u32::from_be(addr.sin_addr.s_addr))))
+                }
+                Some(libc::AF_INET6) => {
+                    let addr = &*(ifa.ifa_addr as *const libc::sockaddr_in6);
+                    Some(IpAddr::V6(std::net::Ipv6Addr::from(addr.sin6_addr.s6_addr)))
+                }
+                _ => None,
+            };
+            if let Some(ip) = ip {
                 let name = std::ffi::CStr::from_ptr(ifa.ifa_name).to_string_lossy().into_owned();
                 found.push((name, ip));
             }

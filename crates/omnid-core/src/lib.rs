@@ -14,4 +14,4 @@ pub mod nostr;
 mod source;
 
 pub use doc::{FileMeta, IndexedDoc, now_secs};
-pub use source::{Magnet, Network, Source, SourceError};
+pub use source::{Magnet, Network, Source, SourceError, host_network, is_yggdrasil};

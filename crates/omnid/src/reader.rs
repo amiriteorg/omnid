@@ -262,6 +262,8 @@ impl Page {
             Source::Gemini(_) | Source::Gopher(_) => Some(reader_href(&target.to_string(), embedded)),
             Source::Clearnet(url) => Some(url.to_string()),
             Source::Onion(url) | Source::I2p(url) => embedded.then(|| url.to_string()),
+            // A browser on a machine with Yggdrasil reaches it; the app's does not.
+            Source::Yggdrasil(url) => (!embedded).then(|| url.to_string()),
             Source::Hyphanet(key) if embedded => Some(format!("http://{}/{key}", omnid_net::HYPHANET_HOST)),
             Source::Hyphanet(key) => Some(format!("/hyphanet/{key}")),
             Source::Ipfs(_) => (!embedded).then(|| format!("/{}", target.gateway_path().unwrap_or_default())),

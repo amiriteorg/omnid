@@ -15,7 +15,7 @@ if (EMBEDDED) document.documentElement.classList.add("embedded");
 const LANG = new URLSearchParams(location.search).get("lang");
 const ALL_NETWORKS = 7;
 const PAGE = 20;
-const NETWORK_NAMES = { onion: "Onion", clearnet: "Web", magnet: "Torrent", i2p: "I2P", hyphanet: "Hyphanet", ipfs: "IPFS", nostr: "Nostr", gemini: "Gemini", gopher: "Gopher", irc: "IRC" };
+const NETWORK_NAMES = { onion: "Onion", clearnet: "Web", magnet: "Torrent", i2p: "I2P", hyphanet: "Hyphanet", ipfs: "IPFS", nostr: "Nostr", gemini: "Gemini", gopher: "Gopher", irc: "IRC", yggdrasil: "Yggdrasil" };
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -110,13 +110,16 @@ function onOverlay(url) {
 // never lets a page do. Gemini and Gopher open in omnid's reader, which
 // reaches them as omnid's browser does, through Tor. An IRC channel opens in
 // an IRC app: in OMNId's app after a dialog; elsewhere only on the clearnet,
-// as an IRC app reaches an onion or .i2p server only if set up for one.
+// as an IRC app reaches an onion or .i2p server only if set up for one. A
+// Yggdrasil site opens outside the app, in a browser on a machine that runs
+// Yggdrasil; OMNId's browser does not reach it.
 function linkable(route) {
   const web = /^https?:\/\//.test(route.url);
   return (web && (route.network === "clearnet" || (EMBEDDED && ["onion", "i2p"].includes(route.network)))) ||
     route.network === "hyphanet" ||
     (["gemini", "gopher"].includes(route.network) && /^(?:gemini|gopher):\/\//.test(route.url)) ||
     (route.network === "irc" && /^ircs?:\/\//.test(route.url) && (EMBEDDED || !onOverlay(route.url))) ||
+    (route.network === "yggdrasil" && web && !EMBEDDED) ||
     (route.network === "ipfs" && !EMBEDDED && /^ip[fn]s:\/\//.test(route.url)) ||
     // nostr: opens a Nostr app, as a magnet opens a torrent app.
     (route.network === "nostr" && /^nostr:n(?:ote|pub|addr)1[a-z0-9]+$/.test(route.url)) ||
@@ -550,6 +553,7 @@ const ROUTERS = [
   { network: "gemini", name: "Gemini", panelOnly: true },
   { network: "gopher", name: "Gopher", panelOnly: true },
   { network: "irc", name: "IRC", panelOnly: true },
+  { network: "yggdrasil", name: "Yggdrasil", panelOnly: true },
   { network: "clearnet", name: "Web", panelOnly: true },
 ];
 

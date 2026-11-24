@@ -77,6 +77,14 @@ struct Common {
     /// Do not read Nostr relays
     #[arg(long, global = true, conflicts_with = "nostr_relay")]
     no_nostr: bool,
+    /// yggstack's SOCKS5 proxy (socks5://127.0.0.1:1080), for Yggdrasil when
+    /// no Yggdrasil node runs on this machine. Repeat it (or separate with
+    /// commas) for more, best first
+    #[arg(long, env = "OMNID_YGGDRASIL_SOCKS", value_delimiter = ',', global = true)]
+    yggdrasil_socks: Vec<Url>,
+    /// Do not reach Yggdrasil
+    #[arg(long, global = true, conflicts_with = "yggdrasil_socks")]
+    no_yggdrasil: bool,
 }
 
 #[derive(Subcommand)]
@@ -386,6 +394,9 @@ async fn download(common: &Common, data_dir: &Path, args: DownloadArgs) -> Resul
         Source::Gemini(_) | Source::Gopher(_) => {
             anyhow::bail!("downloading from Gemini or Gopher is not built yet; `omnid fetch` shows a page")
         }
+        Source::Yggdrasil(_) => {
+            anyhow::bail!("downloading from Yggdrasil is not built yet; `omnid fetch` shows a page")
+        }
         source => source.url().cloned().context("no URL to download")?,
     };
     // A file named and already there is refused before anything is fetched.
@@ -548,6 +559,8 @@ fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
         fproxies: common.fproxy.clone(),
         ipfs_gateways: common.ipfs_gateway.clone(),
         nostr_relays: if common.no_nostr { Vec::new() } else { common.nostr_relay.clone() },
+        yggdrasil: !common.no_yggdrasil,
+        yggdrasil_socks: common.yggdrasil_socks.clone(),
         allow_private_addresses: common.allow_private_addresses,
         clearnet_via_tor: common.clearnet_via_tor,
         ..GatewayConfig::default()

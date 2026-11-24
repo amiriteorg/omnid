@@ -19,12 +19,9 @@ phone, IPFS goes through a gateway on the owner's computer.
 
 ## Next
 
-1. **More networks: the OMNIdaemon.** Unreleased: Gemini and Gopher, with a reader, and
-   IRC's channel directories. Next, each its own pull request:
-   - **Yggdrasil**: its sites, `http://[200:…]/` and the rest of 200::/7, through a
-     Yggdrasil node on the owner's machine or yggstack's SOCKS proxy.
-   - **Veilid**: what it makes public and readable, once that is clear: Veilid has no web of
-     its own, so this starts with a look at what a search engine could index there.
+1. **More networks: the OMNIdaemon.** Unreleased: Gemini and Gopher, with a reader, IRC's
+   channel directories, and Yggdrasil's sites (to be live tested against a node; names,
+   Alfis's `.ygg` and meshname, are not resolved yet). Next, each its own pull request:
    - **The fediverse** (ActivityPub: Mastodon, Lemmy, Misskey and the rest): public posts and
      profiles of accounts that opted into search (Mastodon's `indexable`), and nothing from one
      that did not.

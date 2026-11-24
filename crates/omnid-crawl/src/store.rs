@@ -350,7 +350,12 @@ fn name(job: &Job) -> Option<&str> {
 fn revisit_after(network: Network) -> i64 {
     match network {
         Network::Onion | Network::I2p | Network::Magnet | Network::Nostr | Network::Irc => 3 * DAY,
-        Network::Clearnet | Network::Hyphanet | Network::Ipfs | Network::Gemini | Network::Gopher => 7 * DAY,
+        Network::Clearnet
+        | Network::Hyphanet
+        | Network::Ipfs
+        | Network::Gemini
+        | Network::Gopher
+        | Network::Yggdrasil => 7 * DAY,
     }
 }
 
