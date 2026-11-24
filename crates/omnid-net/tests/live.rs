@@ -1,5 +1,5 @@
-//! Live tests against the real Tor network, i2pd, a Hyphanet node and an IPFS
-//! node.
+//! Live tests against the real Tor network, i2pd, a Hyphanet node, an IPFS
+//! node, Nostr relays, and Gemini and Gopher servers.
 //! Ignored by default; `scripts/live-routers.sh all` starts the routers and
 //! runs them. A test whose router is not running fails and says how to start
 //! it, rather than passing.
@@ -285,4 +285,45 @@ async fn live_nostr_reads_a_profile_from_relays() {
     // Every event came back checked; the newest names him.
     let newest = events.iter().max_by_key(|e| e.created_at).unwrap();
     assert!(newest.content.contains("fiatjaf"), "{}", newest.content);
+}
+
+#[tokio::test]
+#[ignore = "live: Geminispace and Gopherspace"]
+async fn live_small_web_reads_a_capsule_and_a_hole() {
+    let gateway = Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap();
+    // Project Gemini's capsule, on a self-signed certificate.
+    let capsule = fetch_with_retries(&gateway, "gemini://geminiprotocol.net/").await;
+    assert!(capsule.content_type.as_deref().unwrap_or_default().starts_with("text/gemini"));
+    assert!(text(&capsule).contains("Gemini"), "{}", text(&capsule).chars().take(200).collect::<String>());
+    let hole = fetch_with_retries(&gateway, "gopher://gopher.floodgap.com/").await;
+    assert_eq!(hole.content_type.as_deref(), Some(omnid_net::GOPHER_MENU_TYPE));
+    assert!(text(&hole).contains("Floodgap"));
+}
+
+#[tokio::test]
+#[ignore = "live: Tor network and an onion capsule"]
+async fn live_tor_reads_an_onion_capsule() {
+    let gateway = gateway("capsule", GatewayConfig::default());
+    let capsule =
+        fetch_with_retries(&gateway, "gemini://slowsvr7rgnkzuoma5byw34n2mkkg6v7g5q6qxqaihh7zikp5wn26fid.onion/").await;
+    assert!(text(&capsule).contains("Slow"), "{}", text(&capsule).chars().take(200).collect::<String>());
+}
+
+#[tokio::test]
+#[ignore = "live: IRC networks"]
+async fn live_irc_lists_a_networks_channels() {
+    let gateway = Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap();
+    let listing = gateway.irc_list(&Source::parse("ircs://irc.oftc.net/").unwrap()).await.unwrap();
+    assert_eq!(listing.network.as_deref(), Some("OFTC"));
+    assert!(listing.channels.len() > 50, "{}", listing.channels.len());
+    assert!(listing.channels.iter().all(|c| c.users >= omnid_net::IRC_MIN_USERS));
+}
+
+#[tokio::test]
+#[ignore = "live: Tor network and OFTC's onion"]
+async fn live_tor_lists_an_onion_irc_network() {
+    let gateway = gateway("irc", GatewayConfig::default());
+    let onion = "ircs://oftcnet6xg6roj6d7id4y4cu6dchysacqj2ldgea73qzdagufflqxrid.onion/";
+    let listing = gateway.irc_list(&Source::parse(onion).unwrap()).await.unwrap();
+    assert_eq!(listing.network.as_deref(), Some("OFTC"));
 }

@@ -41,6 +41,9 @@
   --hyphanet: #6fa2ff;
   --ipfs: #b5d96a;
   --nostr: #e08ce0;
+  --gemini: #ff9f8a;
+  --gopher: #d8c37c;
+  --irc: #7fd8a6;
   --mono: "Space Mono", ui-monospace, "Roboto Mono", Menlo, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   /* One type ramp, 1.2 steps from the 15px body, and an 11px step for state
@@ -80,6 +83,9 @@
     --hyphanet: #2a63d6;
     --ipfs: #557a0c;
     --nostr: #9a2f9a;
+    --gemini: #b8432c;
+    --gopher: #74620f;
+    --irc: #127247;
   }
 }
 
@@ -309,6 +315,38 @@ details.files li { overflow-wrap: anywhere; }
 .submit-result.ok { color: var(--ok); }
 .submit-result.error { color: var(--bad); }
 
+/* The reader: a Gemini page or a Gopher menu, its lines as the server sent
+   them, in the search page's type. */
+.reader { padding-top: 0.5rem; }
+.reader .address-row { margin: 0.5rem 0 1.25rem; }
+.capsule { overflow-wrap: anywhere; }
+.capsule h1, .capsule h2, .capsule h3 { margin: 1.4rem 0 0.5rem; font-family: var(--mono); line-height: 1.25; }
+.capsule h1 { font-size: var(--t-head); }
+.capsule h2 { font-size: var(--t-title); }
+.capsule h3 { font-size: var(--t-body); }
+.capsule p { margin: 0 0 0.35rem; }
+.capsule p.gap { height: 0.6rem; margin: 0; }
+/* The arrow is decoration: screen readers announce the link alone. */
+.capsule p.link::before { content: "→ " / ""; color: var(--muted); }
+.capsule a { color: var(--accent); }
+.capsule ul { margin: 0.25rem 0 0.75rem; padding-left: 1.25rem; }
+.capsule blockquote { margin: 0.5rem 0; padding-left: 0.85rem; border-left: 2px solid var(--line); color: var(--ink-2); }
+.capsule pre, .capsule .menu {
+  margin: 0.75rem 0; padding: 0.75rem; overflow-x: auto; background: var(--surface);
+  font: 400 var(--t-small)/1.45 var(--mono); color: var(--ink);
+}
+.capsule .menu { white-space: pre; }
+.capsule .menu .kind { display: inline-block; width: 3.5em; color: var(--muted); }
+.capsule .unopened { color: var(--ink-2); }
+.reader-note { color: var(--muted); font: 400 var(--t-small)/1.5 var(--mono); }
+.reader-input { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; margin: 1rem 0; }
+.reader-input label { flex: 1 0 100%; }
+.reader-input input:not([type="hidden"]) {
+  flex: 1; min-width: 0; height: 44px; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0;
+  background: transparent; color: var(--ink); font: 400 var(--t-body) var(--mono); outline: none;
+}
+.reader-input input:focus { border-color: var(--glow); }
+
 /* Network hues, after every component's own default so they win: chips,
    badges and Explore's squares take their network's colour. */
 .net-onion { --net: var(--onion); }
@@ -318,6 +356,9 @@ details.files li { overflow-wrap: anywhere; }
 .net-hyphanet { --net: var(--hyphanet); }
 .net-ipfs { --net: var(--ipfs); }
 .net-nostr { --net: var(--nostr); }
+.net-gemini { --net: var(--gemini); }
+.net-gopher { --net: var(--gopher); }
+.net-irc { --net: var(--irc); }
 
 @media (min-width: 720px) {
   .top { padding-top: 2rem; }

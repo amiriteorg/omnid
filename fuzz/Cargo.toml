@@ -135,6 +135,20 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "gemini_header"
+path = "fuzz_targets/gemini_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "irc_lines"
+path = "fuzz_targets/irc_lines.rs"
+test = false
+doc = false
+bench = false
+
 # Line numbers in a crash's backtrace.
 [profile.release]
 debug = 1

@@ -6,6 +6,28 @@
   machine running Yggdrasil, an address in its 200::/7 was fetched directly, as were the discard
   prefix (100::/64), IPv6's newer documentation range (3fff::/20) and 6to4 addresses carrying a
   private IPv4 address. Only global unicast (2000::/3) counts as public now.
+- Gemini and Gopher are networks: capsules (`gemini://`) and holes (`gopher://`) on the clearnet,
+  onions and I2P, each reached on the network its host is on. Gemini pages, Gopher menus and text
+  items are indexed and their links followed; a Gopher item's type is read before it is asked
+  for, so binaries never are. Each obeys its own robots.txt, as Gemini's `indexer` and Gopher's
+  `veronica` too. New default seeds: Project Gemini's capsule, Kennedy's and Lupa's lists of
+  known capsules, an onion capsule, Floodgap's server and list of holes, OGUP's list and SDF. The
+  search page and the app have Gemini and Gopher filters, and `/api/status` lists `gemini` and
+  `gopher` rows, between `nostr` and `magnet`.
+- The reader, `/read?url=…`: a Gemini page or a Gopher menu in the search page and the app, its
+  lines shown as text (headings, lists, quotes, preformatted blocks, links), its links followed
+  within Gemini and Gopher, and a Gemini page's question answered with a form. It reaches servers
+  as the app's browser does, through Tor and never directly.
+- A text file's first line, when short, is its title (a phlog post's, an RFC's), instead of its
+  address.
+- IRC is a network: a directory of channels from each network's channel list, with their topics
+  and how many people they have, never what is said in them. omnid registers as a labelled bot,
+  lists the channels with 10 or more people and quits; one list, kept 12 hours, serves a
+  network's channels. `irc://`, `ircs://` and web chats' links (Libera.Chat's, OFTC's, Kiwi
+  IRC's) are addresses; links in topics are followed. New default seeds: Libera.Chat, OFTC and
+  its onion, hackint, EFnet, IRCnet, Undernet and Irc2P. The search page and the app have an
+  IRC filter; the app hands a channel to an IRC app after a dialog. `/api/status` lists an
+  `irc` row, between `gopher` and `magnet`.
 
 ## 0.1.7 (2026-11-23)
 

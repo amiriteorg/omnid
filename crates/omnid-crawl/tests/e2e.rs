@@ -1,6 +1,6 @@
 //! Crawls a local site end to end: robots.txt, redirects, content-type
 //! refusal, the blocked-terms gate, magnet harvesting, cross-network links,
-//! resuming from the crawl store, and pausing.
+//! resuming from the crawl store, and pausing; and a local Gopher hole.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -513,4 +513,155 @@ async fn crawls_a_forums_threads_and_leaves_the_rest() {
     assert_eq!(pecans[0].routes[0].url, format!("{base}post/1"));
     assert!(hits(&index, "verification", &[]).is_empty(), "the bot check is not a page");
     assert_eq!(stats.failed, 1, "the bot check is asked again later: {stats:?}");
+}
+
+/// A Gopher hole on 127.0.0.1: a root menu, a phlog menu, a text post, a
+/// binary, a link to the web and a robots.txt that keeps `/secret` out.
+/// Returns its port and the selectors asked for.
+async fn serve_gopher() -> (u16, Arc<std::sync::Mutex<Vec<String>>>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = asked.clone();
+    tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n") {
+                    let Ok(byte) = stream.read_u8().await else { return };
+                    request.push(byte);
+                }
+                let selector = String::from_utf8_lossy(&request[..request.len() - 2]).into_owned();
+                log.lock().unwrap().push(selector.clone());
+                let item =
+                    |kind: char, name: &str, selector: &str| format!("{kind}{name}\t{selector}\t127.0.0.1\t{port}\r\n");
+                let answer = match selector.as_str() {
+                    "" => [
+                        "i  _/\\_  \t\terror.host\t1\r\n".to_owned(),
+                        "iWelcome to the quiet hole\t\terror.host\t1\r\n".to_owned(),
+                        item('1', "Phlog", "/phlog/"),
+                        item('0', "Secret notes", "/secret/notes.txt"),
+                        item('9', "A tarball", "/files/hole.tar.gz"),
+                        "hThe web site\tURL:http://web.example/\t127.0.0.1\t70\r\n".to_owned(),
+                        ".\r\n".to_owned(),
+                    ]
+                    .concat(),
+                    "/phlog/" => [item('0', "On lichen", "/phlog/lichen.txt"), ".\r\n".to_owned()].concat(),
+                    "/phlog/lichen.txt" => {
+                        "On lichen\r\n\r\nLichen grows slowly on the north side of stones.\r\n".to_owned()
+                    }
+                    "robots.txt" => "User-agent: *\r\nDisallow: /secret\r\n".to_owned(),
+                    other => format!("3'{other}' does not exist\terror.host\t1\r\n"),
+                };
+                let _ = stream.write_all(answer.as_bytes()).await;
+            });
+        }
+    });
+    (port, asked)
+}
+
+#[tokio::test]
+async fn crawls_a_gopher_hole_and_leaves_binaries_alone() {
+    let (port, asked) = serve_gopher().await;
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let no_delay = Politeness { concurrency: 4, site_delay: Duration::ZERO };
+    let cfg = CrawlConfig { politeness: HashMap::from([(Network::Gopher, no_delay)]), ..CrawlConfig::default() };
+    let gateway =
+        Gateway::new(GatewayConfig { tor_dir: None, allow_private_addresses: true, ..GatewayConfig::default() })
+            .unwrap();
+    let crawler = Crawler::new(
+        Arc::new(gateway),
+        index.clone(),
+        Arc::new(Safety::default()),
+        store,
+        CrawlConfig { commit_interval: Duration::from_millis(100), ..cfg },
+    );
+    crawl(crawler, &[&format!("gopher://127.0.0.1:{port}/")]).await;
+
+    let post = hits(&index, "lichen stones", &[Network::Gopher]);
+    assert_eq!(post.len(), 1, "{post:?}");
+    assert_eq!(post[0].routes[0].url, format!("gopher://127.0.0.1:{port}/0/phlog/lichen.txt"));
+    assert_eq!(post[0].title, "On lichen", "a text item's first line");
+    let root = hits(&index, "quiet hole", &[Network::Gopher]);
+    assert_eq!(root.first().map(|h| h.title.as_str()), Some("Welcome to the quiet hole"));
+    let asked = asked.lock().unwrap().clone();
+    assert!(asked.contains(&"robots.txt".to_owned()), "{asked:?}");
+    assert!(!asked.iter().any(|s| s.starts_with("/secret")), "robots.txt keeps it out: {asked:?}");
+    assert!(!asked.iter().any(|s| s.starts_with("/files")), "a binary is never asked for: {asked:?}");
+}
+
+/// An IRC server on 127.0.0.1 that lists three channels to whoever
+/// registers, counting connections and keeping what was sent.
+async fn serve_irc() -> (u16, Arc<AtomicUsize>, Arc<std::sync::Mutex<String>>) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let connections = Arc::new(AtomicUsize::new(0));
+    let heard = Arc::new(std::sync::Mutex::new(String::new()));
+    let (count, log) = (connections.clone(), heard.clone());
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            count.fetch_add(1, Ordering::SeqCst);
+            let log = log.clone();
+            tokio::spawn(async move {
+                let (read, mut write) = stream.into_split();
+                let mut lines = BufReader::new(read).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    log.lock().unwrap().push_str(&format!("{line}\n"));
+                    let reply = if line.starts_with("USER ") {
+                        ":s 001 omnid :Welcome\r\n:s 005 omnid NETWORK=Localnet :ok\r\n:s 376 omnid :End\r\n".to_owned()
+                    } else if line.starts_with("LIST") {
+                        [
+                            ":s 322 omnid #lichens 40 :All about lichens: https://lichen.example/ and ircs://irc.other.example/#moss\r\n",
+                            ":s 322 omnid #tiny 2 :a chat between two\r\n",
+                            ":s 322 omnid #Ferns 25 :Ferns and fronds\r\n",
+                            ":s 323 omnid :End of /LIST\r\n",
+                        ]
+                        .concat()
+                    } else {
+                        continue;
+                    };
+                    let _ = write.write_all(reply.as_bytes()).await;
+                }
+            });
+        }
+    });
+    (port, connections, heard)
+}
+
+#[tokio::test]
+async fn lists_an_irc_network_once_for_all_its_channels() {
+    let (port, connections, heard) = serve_irc().await;
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let no_delay = Politeness { concurrency: 4, site_delay: Duration::ZERO };
+    let gateway =
+        Gateway::new(GatewayConfig { tor_dir: None, allow_private_addresses: true, ..GatewayConfig::default() })
+            .unwrap();
+    let cfg = CrawlConfig {
+        politeness: HashMap::from([(Network::Irc, no_delay)]),
+        commit_interval: Duration::from_millis(100),
+        ..CrawlConfig::default()
+    };
+    let crawler = Crawler::new(Arc::new(gateway), index.clone(), Arc::new(Safety::default()), store, cfg);
+    crawl(crawler, &[&format!("irc://127.0.0.1:{port}/")]).await;
+
+    // The channel first; the network's page, which names its largest
+    // channels, after it.
+    let lichens = hits(&index, "lichens", &[Network::Irc]);
+    assert_eq!(lichens.len(), 2, "{lichens:?}");
+    assert_eq!(lichens[1].title, "Localnet");
+    assert_eq!(lichens[0].routes[0].url, format!("irc://127.0.0.1:{port}/#lichens"));
+    assert!(lichens[0].description.starts_with("40 people on Localnet."), "{}", lichens[0].description);
+    assert_eq!(hits(&index, "fronds", &[Network::Irc])[0].title, "#Ferns");
+    assert!(hits(&index, "between", &[]).is_empty(), "a channel of two is not listed");
+    assert_eq!(hits(&index, "localnet", &[Network::Irc]).len(), 3, "the network and its two channels");
+    assert_eq!(connections.load(Ordering::SeqCst), 1, "one list for the network and every channel");
+    let heard = heard.lock().unwrap().clone();
+    assert!(heard.contains("LIST") && !heard.contains("JOIN"), "{heard}");
 }

@@ -1,0 +1,10 @@
+# A capsule
+
+Some text.
+=> /log/ The log
+=>gemini://b.example/
+* item
+> quote
+```art
+# not a heading
+```

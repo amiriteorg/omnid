@@ -10,6 +10,9 @@
 //! | hyphanet | a node's FProxy, of one node or several             |
 //! | ipfs     | an IPFS gateway's paths, of one gateway or several  |
 //! | nostr    | relays over WebSocket, [`Gateway::nostr`]            |
+//! | gemini   | TLS to the capsule, on the network its host is on   |
+//! | gopher   | TCP to the hole, on the network its host is on      |
+//! | irc      | a server's channel list, [`Gateway::irc_list`]       |
 //! | magnet   | not yet: needs the DHT module                       |
 //!
 //! Redirects are resolved here, against the source that issued them, so a
@@ -19,11 +22,15 @@
 //! over several connections at once.
 
 mod download;
+mod gemini;
+mod gopher;
 mod guard;
 mod http;
+mod irc;
 mod nostr;
 mod routers;
 mod sam;
+mod small_web;
 mod tailnet;
 mod tor;
 mod ws;
@@ -34,7 +41,9 @@ mod ws;
 #[doc(hidden)]
 pub mod fuzzing {
     pub use crate::download::fuzz::headers as download_headers;
+    pub use crate::gemini::fuzz::header as gemini_header;
     pub use crate::http::fuzz::{decode as http_decode, response as http_response};
+    pub use crate::irc::fuzz::lines as irc_lines;
     pub use crate::nostr::fuzz::relay as nostr_relay;
     pub use crate::sam::fuzz::replies as sam_replies;
     pub use crate::ws::fuzz::frames as ws_frames;
@@ -56,9 +65,12 @@ use crate::tor::Circuits;
 pub use download::{
     Download, DownloadError, DownloadOptions, Expected, MAX_CONNECTIONS, Progress, Route, sanitize_filename,
 };
+pub use gopher::{MENU_TYPE as GOPHER_MENU_TYPE, content_type as gopher_content_type};
 pub use guard::is_public_ip;
+pub use irc::{IrcChannel, IrcListing, MIN_USERS as IRC_MIN_USERS};
 pub use nostr::{Event as NostrEvent, Filter as NostrFilter, MAX_EVENTS as NOSTR_MAX_EVENTS};
 pub use sam::{DEFAULT_PORT as DEFAULT_SAM_PORT, beside as sam_beside};
+pub use small_web::SmallWeb;
 
 /// The name `http://hyphanet/USK@…` gives the Hyphanet node's FProxy, for the
 /// app's browser and the SOCKS proxy. A single label, so no real host has it;
@@ -66,6 +78,10 @@ pub use sam::{DEFAULT_PORT as DEFAULT_SAM_PORT, beside as sam_beside};
 pub const HYPHANET_HOST: &str = "hyphanet";
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// How long registering and reading a network's channel list may take:
+/// Libera.Chat's runs to a few megabytes.
+const IRC_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Where i2pd's HTTP proxy, a Hyphanet node's FProxy and an IPFS node's
 /// gateway (kubo's) listen by default.
@@ -314,7 +330,7 @@ impl Gateway {
             };
             match redirect {
                 Some(next)
-                    if hops < opts.max_redirects && !self.leaves_anonymity(current.network(), next.network()) =>
+                    if hops < opts.max_redirects && !self.leaves_anonymity(current.transport(), next.transport()) =>
                 {
                     hops += 1;
                     current = next;
@@ -350,6 +366,9 @@ impl Gateway {
             probe(&self.fproxy, Network::Hyphanet, "FProxy").await,
             probe(&self.ipfs, Network::Ipfs, "IPFS gateway").await,
             self.nostr_status(),
+            self.per_host_status(Network::Gemini),
+            self.per_host_status(Network::Gopher),
+            self.per_host_status(Network::Irc),
             RouterStatus {
                 network: Network::Magnet,
                 state: RouterState::Unsupported,
@@ -374,6 +393,18 @@ impl Gateway {
         }
     }
 
+    /// Gemini's, Gopher's and IRC's way out: no router of their own, a
+    /// connection to each server, as the clearnet's (an onion's through Tor,
+    /// `.i2p` through I2P).
+    fn per_host_status(&self, network: Network) -> RouterStatus {
+        let way = if self.cfg.clearnet_via_tor { "through Tor" } else { "direct" };
+        RouterStatus {
+            network,
+            state: RouterState::Ready,
+            detail: format!("{way}; onions through Tor, .i2p through I2P"),
+        }
+    }
+
     /// The HTTP proxies' state, and the SAM bridges': whether the browser's
     /// sites get I2P identities of their own.
     async fn i2p_status(&self) -> RouterStatus {
@@ -386,15 +417,15 @@ impl Gateway {
 
     async fn fetch_once(&self, source: &Source, opts: &FetchOptions) -> Result<http::RawResponse, FetchError> {
         let network = source.network();
-        let timeout = match network {
+        let timeout = match source.transport() {
             Network::Clearnet => self.cfg.clearnet_timeout,
             _ => self.cfg.overlay_timeout,
         };
         // A first bootstrap downloads the consensus and can outlast a request
         // timeout, so it is waited for outside of one.
-        let over_tor = match source {
-            Source::Onion(_) => true,
-            Source::Clearnet(_) => self.cfg.clearnet_via_tor,
+        let over_tor = match source.transport() {
+            Network::Onion => true,
+            Network::Clearnet => self.cfg.clearnet_via_tor,
             _ => false,
         };
         if let (true, Some(tor)) = (over_tor, &self.tor) {
@@ -434,7 +465,11 @@ impl Gateway {
                     };
                     via_routers(&self.ipfs, network, "no IPFS gateway configured", page, ipfs_answer, opts).await
                 }
+                Source::Gemini(_) | Source::Gopher(_) => {
+                    Ok(self.small_web_on(source, opts, Circuits::Shared, false).await?.into_raw())
+                }
                 Source::Nostr(_) => Err(unavailable(network, "Nostr events come from relays: Gateway::nostr")),
+                Source::Irc(_) => Err(unavailable(network, "IRC servers are listed, not fetched: Gateway::irc_list")),
                 Source::Magnet(_) => Err(unavailable(
                     network,
                     "fetching torrent metadata (BEP 9) needs the DHT module, which is not built yet",
@@ -442,6 +477,82 @@ impl Gateway {
             }
         };
         tokio::time::timeout(timeout, fetch).await.map_err(|_| FetchError::Timeout(timeout))?
+    }
+
+    /// A Gemini capsule's or a Gopher hole's answer for `source`. With
+    /// [`Route::Direct`], on the network its host is on, as
+    /// [`Gateway::connect`] routes; with [`Route::Browser`], as the built-in
+    /// browser's streams go ([`Gateway::connect_browser`]): never directly.
+    /// Redirects are left to the caller, in [`SmallWeb::Redirect`].
+    pub async fn small_web(&self, source: &Source, opts: &FetchOptions, route: &Route) -> Result<SmallWeb, FetchError> {
+        let (circuits, browser) = match route {
+            Route::Direct => (Circuits::Shared, false),
+            Route::Browser { site } => (Circuits::Site(site), true),
+        };
+        let timeout = self.cfg.overlay_timeout;
+        tokio::time::timeout(timeout, self.small_web_on(source, opts, circuits, browser))
+            .await
+            .map_err(|_| FetchError::Timeout(timeout))?
+    }
+
+    async fn small_web_on(
+        &self,
+        source: &Source,
+        opts: &FetchOptions,
+        circuits: Circuits<'_>,
+        browser: bool,
+    ) -> Result<SmallWeb, FetchError> {
+        let network = source.network();
+        let transport = |error: BoxError| FetchError::Transport { network, error };
+        let url = source.small_web_url().ok_or_else(|| unavailable(network, "not a Gemini or Gopher address"))?;
+        let host = url.host_str().ok_or_else(|| transport("an address without a host".into()))?;
+        let default = if network == Network::Gemini { 1965 } else { 70 };
+        let port = url.port().unwrap_or(default);
+        // A Gopher item's type is known before asking: a binary is never
+        // asked for, and a type the caller refuses is not connected for.
+        if let Some((item_type, _)) = source.gopher_item() {
+            let content_type = gopher::content_type(item_type)
+                .ok_or_else(|| transport(format!("Gopher item type {item_type:?} is not text").into()))?;
+            if !(opts.accept)(Some(content_type)) {
+                return Ok(SmallWeb::Page { content_type: content_type.to_owned(), body: None, truncated: false });
+            }
+        }
+        let stream = if browser {
+            self.connect_browser_on(host, port, circuits).await?
+        } else {
+            self.connect_on(host, port, circuits).await?
+        };
+        match source.gopher_item() {
+            Some((item_type, selector)) => gopher::get(stream, item_type, &selector, opts).await,
+            None => gemini::get(stream, url, opts).await,
+        }
+        .map_err(transport)
+    }
+
+    /// An IRC network's channels, from the server `source` names (its
+    /// channel, if any, aside), reached on the network its host is on.
+    /// omnid lists and leaves; it never joins a channel.
+    pub async fn irc_list(&self, source: &Source) -> Result<IrcListing, FetchError> {
+        let network = Network::Irc;
+        let Source::Irc(server) = source else { return Err(unavailable(network, "not an IRC address")) };
+        let transport = |error: BoxError| FetchError::Transport { network, error };
+        let stream = self.connect_on(&server.host, server.port(), Circuits::Shared).await?;
+        let nick = format!("omnid{:04}", rand::random::<u16>() % 10_000);
+        let list = async {
+            if !server.tls {
+                return irc::list(stream, &nick).await;
+            }
+            // An onion's or an eepsite's address is what proves the server;
+            // a certificate for its name is seldom there.
+            let tls = if matches!(source.transport(), Network::Onion | Network::I2p) {
+                gemini::tls_config()?
+            } else {
+                std::sync::Arc::new(tls_config()?)
+            };
+            let name = rustls::pki_types::ServerName::try_from(server.host.trim_matches(['[', ']']).to_owned())?;
+            irc::list(tokio_rustls::TlsConnector::from(tls).connect(name, stream).await?, &nick).await
+        };
+        tokio::time::timeout(IRC_TIMEOUT, list).await.map_err(|_| FetchError::Timeout(IRC_TIMEOUT))?.map_err(transport)
     }
 
     /// Opens a raw stream to `host:port` over the network its name implies:
@@ -538,9 +649,15 @@ impl Gateway {
     /// whose node asks its peers for the content itself. An onion site linking
     /// a CID of its own could learn who fetched it as easily as from a
     /// clearnet address.
+    ///
+    /// It takes a [`Source::transport`]: a Gemini capsule or a Gopher hole is
+    /// reached on the network its host is on. Asked about Gemini or Gopher
+    /// themselves, it answers as for the clearnet.
     pub fn reaches_directly(&self, network: Network) -> bool {
         match network {
-            Network::Clearnet | Network::Nostr => !self.cfg.clearnet_via_tor,
+            Network::Clearnet | Network::Nostr | Network::Gemini | Network::Gopher | Network::Irc => {
+                !self.cfg.clearnet_via_tor
+            }
             Network::Ipfs => true,
             Network::Onion | Network::I2p | Network::Hyphanet | Network::Magnet => false,
         }

@@ -262,7 +262,8 @@ impl CrawlStore {
 
     /// Makes the addresses on `network` that wait out a deferral due now:
     /// they were put off because its router was missing ([`Visit::Deferred`]),
-    /// and it is back. Returns how many.
+    /// and it is back. A Gemini capsule or Gopher hole on `.i2p` waits for
+    /// I2P's router ([`Source::transport`]). Returns how many.
     pub fn retry_deferred(&self, network: Network, now: i64) -> rusqlite::Result<usize> {
         let db = self.db();
         let waiting: Vec<String> = db
@@ -271,7 +272,7 @@ impl CrawlStore {
             .collect::<rusqlite::Result<_>>()?;
         let mut due = db.prepare_cached("UPDATE pages SET next_visit = ?2 WHERE url = ?1 AND state = 0")?;
         let mut retried = 0;
-        for url in waiting.iter().filter(|url| Source::parse(url).is_ok_and(|s| s.network() == network)) {
+        for url in waiting.iter().filter(|url| Source::parse(url).is_ok_and(|s| s.transport() == network)) {
             retried += due.execute(params![url, now])?;
         }
         Ok(retried)
@@ -344,11 +345,12 @@ fn name(job: &Job) -> Option<&str> {
 /// How long a page that answered stays fresh. Onion and I2P sites churn more
 /// than the clearnet; Hyphanet content is immutable per edition, and IPFS
 /// content per CID (an IPNS name moves, but is checked as seldom). A Nostr
-/// event never changes, but a profile's latest notes do.
+/// event never changes, but a profile's latest notes do. Gemini capsules and
+/// Gopher holes change as seldom as the web; IRC channels' topics more often.
 fn revisit_after(network: Network) -> i64 {
     match network {
-        Network::Onion | Network::I2p | Network::Magnet | Network::Nostr => 3 * DAY,
-        Network::Clearnet | Network::Hyphanet | Network::Ipfs => 7 * DAY,
+        Network::Onion | Network::I2p | Network::Magnet | Network::Nostr | Network::Irc => 3 * DAY,
+        Network::Clearnet | Network::Hyphanet | Network::Ipfs | Network::Gemini | Network::Gopher => 7 * DAY,
     }
 }
 

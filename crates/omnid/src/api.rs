@@ -55,6 +55,7 @@ pub fn router(state: AppState, listen: SocketAddr, token: Option<String>) -> Rou
         .route("/hyphanet/{*key}", get(hyphanet))
         .route("/ipfs/{*path}", get(|state, Path(path): Path<String>| ipfs(state, format!("/ipfs/{path}"))))
         .route("/ipns/{*path}", get(|state, Path(path): Path<String>| ipfs(state, format!("/ipns/{path}"))))
+        .route("/read", get(crate::reader::read))
         .with_state(state);
     if let Some(token) = token {
         router = router.layer(middleware::from_fn_with_state(Arc::<str>::from(token), require_token));
