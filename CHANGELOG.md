@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.8 (2026-11-24)
 
+- The app's browser is on GeckoView 161, with Firefox 161's security fixes. It was on 160.
 - Fixed: IPv6 addresses outside the public internet passed the private-address guard. On a
   machine running Yggdrasil, an address in its 200::/7 was fetched directly, as were the discard
   prefix (100::/64), IPv6's newer documentation range (3fff::/20) and 6to4 addresses carrying a
