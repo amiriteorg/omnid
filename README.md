@@ -583,9 +583,10 @@ What it does not hide:
 The daemon itself:
 
 - Clearnet fetches and proxied connections refuse loopback, private,
-  link-local, CGNAT and other non-public addresses, checked after DNS
-  resolution so rebinding cannot get around it. `--allow-private-addresses`
-  turns this off.
+  link-local, CGNAT and other non-public addresses, and any IPv6 address
+  outside global unicast (2000::/3), Yggdrasil's 200::/7 among them, checked
+  after DNS resolution so rebinding cannot get around it.
+  `--allow-private-addresses` turns this off.
 - Compressed responses decode under the same size cap as plain ones, so a
   compression bomb stays small.
 - The API binds to loopback and rejects requests whose `Host` is not

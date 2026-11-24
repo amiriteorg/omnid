@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: IPv6 addresses outside the public internet passed the private-address guard. On a
+  machine running Yggdrasil, an address in its 200::/7 was fetched directly, as were the discard
+  prefix (100::/64), IPv6's newer documentation range (3fff::/20) and 6to4 addresses carrying a
+  private IPv4 address. Only global unicast (2000::/3) counts as public now.
+
 ## 0.1.7 (2026-11-23)
 
 - Fixed: an eepsite opened as `http://` that has no HTTPS could leave the app's browser on a blank

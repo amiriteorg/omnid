@@ -9,7 +9,8 @@ use url::{Host, Url};
 
 /// Whether an address is reachable on the public internet. Loopback,
 /// private, link-local, CGNAT, documentation, benchmarking, multicast and
-/// reserved ranges are not.
+/// reserved ranges are not, and in IPv6 nothing outside global unicast
+/// (2000::/3), Yggdrasil's 200::/7 among it.
 pub fn is_public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => is_public_v4(ip),
@@ -43,12 +44,17 @@ fn is_public_v6(ip: Ipv6Addr) -> bool {
         let [.., hi, lo] = segments;
         return is_public_v4(Ipv4Addr::from(((hi as u32) << 16) | lo as u32));
     }
-    !(ip.is_unspecified()
-        || ip.is_loopback()
-        || ip.is_multicast()
-        || ip.is_unique_local()
-        || ip.is_unicast_link_local()
-        || (segments[0] == 0x2001 && segments[1] == 0x0db8))
+    if segments[0] == 0x2002 {
+        // 6to4: the next 32 bits are the IPv4 address it reaches.
+        return is_public_v4(Ipv4Addr::from(((segments[1] as u32) << 16) | segments[2] as u32));
+    }
+    // The public internet is global unicast, 2000::/3. Outside it are not
+    // only the reserved and local ranges but Yggdrasil's (200::/7), a network
+    // of its own that a machine running it reaches as if it were the
+    // internet.
+    let global_unicast = segments[0] & 0xe000 == 0x2000;
+    let documentation = (segments[0] == 0x2001 && segments[1] == 0x0db8) || segments[0] & 0xfff0 == 0x3ff0;
+    global_unicast && !documentation
 }
 
 /// IP-literal hosts never reach the resolver, so they are checked here.
@@ -110,6 +116,17 @@ mod tests {
             "2001:db8::1",
             "::ffff:192.168.1.1",
             "64:ff9b::a00:1",
+            // Outside global unicast (2000::/3): Yggdrasil's nodes and
+            // subnets (200::/7), the discard prefix, deprecated site-local.
+            "200:1111:2222:3333::1",
+            "300:1111:2222:3333::1",
+            "100::1",
+            "fec0::1",
+            "5f00::1",
+            // Inside it, but documentation (RFC 9637), or 6to4 carrying a
+            // private IPv4 address.
+            "3fff::1",
+            "2002:c0a8:101::1",
         ] {
             assert!(!public(ip), "{ip} should not be public");
         }
@@ -117,7 +134,9 @@ mod tests {
 
     #[test]
     fn accepts_public_ranges() {
-        for ip in ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "::ffff:1.1.1.1", "64:ff9b::101:101"] {
+        for ip in
+            ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "::ffff:1.1.1.1", "64:ff9b::101:101", "2002:808:808::1"]
+        {
             assert!(public(ip), "{ip} should be public");
         }
     }
