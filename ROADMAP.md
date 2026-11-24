@@ -19,20 +19,20 @@ phone, IPFS goes through a gateway on the owner's computer.
 
 ## Next
 
-1. **More networks: the OMNIdaemon.** Unreleased: Gemini and Gopher, with a reader. Next,
-   each its own pull request:
-   - **IRC**: a directory of channels from each network's channel list (names, topics, user
-     counts), on Libera.Chat, OFTC, hackint and others, onion servers through Tor and Irc2P
-     through I2P. It never joins a channel or keeps what is said in one.
+1. **More networks: the OMNIdaemon.** Unreleased: Gemini and Gopher, with a reader, and
+   IRC's channel directories. Next, each its own pull request:
+   - **Yggdrasil**: its sites, `http://[200:…]/` and the rest of 200::/7, through a
+     Yggdrasil node on the owner's machine or yggstack's SOCKS proxy.
+   - **Veilid**: what it makes public and readable, once that is clear: Veilid has no web of
+     its own, so this starts with a look at what a search engine could index there.
    - **The fediverse** (ActivityPub: Mastodon, Lemmy, Misskey and the rest): public posts and
      profiles of accounts that opted into search (Mastodon's `indexable`), and nothing from one
      that did not.
    - **Social results**: posts and profiles from Nostr and the fediverse shown as posts (author,
      handle, time; no images from elsewhere), an author's page of their posts, IRC channels as
-     channels, `irc://` handed to an IRC app; `gemini://` links in the app's browser opened in
-     the reader.
+     channels (people, topic); `gemini://` links in the app's browser opened in the reader.
    - Later: Matrix's public rooms, Bluesky (AT Protocol), Usenet, Spartan, Nex and Finger,
-     Yggdrasil and Lokinet.
+     and Lokinet.
 2. **On the owner's phones.** 0.1.7 runs on a Pixel with GrapheneOS and a OnePlus 15. Not yet
    checked one by one:
    - per-site I2P identities through the i2pd app's own SAM bridge;

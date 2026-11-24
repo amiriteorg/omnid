@@ -8,6 +8,7 @@
 
 mod doc;
 mod ipfs;
+pub mod irc;
 pub mod lang;
 pub mod nostr;
 mod source;

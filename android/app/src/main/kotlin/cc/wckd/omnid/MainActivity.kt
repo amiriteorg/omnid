@@ -112,6 +112,8 @@ class MainActivity : Activity() {
                         askTorrentApp(uri.toString(), offerIndex = false)
                     } else if (uri.scheme.equals("nostr", ignoreCase = true)) {
                         askNostrApp(uri.toString())
+                    } else if (uri.scheme.equals("irc", ignoreCase = true) || uri.scheme.equals("ircs", ignoreCase = true)) {
+                        askIrcApp(uri.toString())
                     } else if (BrowserConfig.isWebPage(uri.scheme, uri.host)) {
                         val open = ActivityOptions.makeCustomAnimation(this@MainActivity, R.anim.browser_open_enter, R.anim.browser_open_exit)
                         startActivity(

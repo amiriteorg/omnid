@@ -593,3 +593,75 @@ async fn crawls_a_gopher_hole_and_leaves_binaries_alone() {
     assert!(!asked.iter().any(|s| s.starts_with("/secret")), "robots.txt keeps it out: {asked:?}");
     assert!(!asked.iter().any(|s| s.starts_with("/files")), "a binary is never asked for: {asked:?}");
 }
+
+/// An IRC server on 127.0.0.1 that lists three channels to whoever
+/// registers, counting connections and keeping what was sent.
+async fn serve_irc() -> (u16, Arc<AtomicUsize>, Arc<std::sync::Mutex<String>>) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let connections = Arc::new(AtomicUsize::new(0));
+    let heard = Arc::new(std::sync::Mutex::new(String::new()));
+    let (count, log) = (connections.clone(), heard.clone());
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            count.fetch_add(1, Ordering::SeqCst);
+            let log = log.clone();
+            tokio::spawn(async move {
+                let (read, mut write) = stream.into_split();
+                let mut lines = BufReader::new(read).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    log.lock().unwrap().push_str(&format!("{line}\n"));
+                    let reply = if line.starts_with("USER ") {
+                        ":s 001 omnid :Welcome\r\n:s 005 omnid NETWORK=Localnet :ok\r\n:s 376 omnid :End\r\n".to_owned()
+                    } else if line.starts_with("LIST") {
+                        [
+                            ":s 322 omnid #lichens 40 :All about lichens: https://lichen.example/ and ircs://irc.other.example/#moss\r\n",
+                            ":s 322 omnid #tiny 2 :a chat between two\r\n",
+                            ":s 322 omnid #Ferns 25 :Ferns and fronds\r\n",
+                            ":s 323 omnid :End of /LIST\r\n",
+                        ]
+                        .concat()
+                    } else {
+                        continue;
+                    };
+                    let _ = write.write_all(reply.as_bytes()).await;
+                }
+            });
+        }
+    });
+    (port, connections, heard)
+}
+
+#[tokio::test]
+async fn lists_an_irc_network_once_for_all_its_channels() {
+    let (port, connections, heard) = serve_irc().await;
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let no_delay = Politeness { concurrency: 4, site_delay: Duration::ZERO };
+    let gateway =
+        Gateway::new(GatewayConfig { tor_dir: None, allow_private_addresses: true, ..GatewayConfig::default() })
+            .unwrap();
+    let cfg = CrawlConfig {
+        politeness: HashMap::from([(Network::Irc, no_delay)]),
+        commit_interval: Duration::from_millis(100),
+        ..CrawlConfig::default()
+    };
+    let crawler = Crawler::new(Arc::new(gateway), index.clone(), Arc::new(Safety::default()), store, cfg);
+    crawl(crawler, &[&format!("irc://127.0.0.1:{port}/")]).await;
+
+    // The channel first; the network's page, which names its largest
+    // channels, after it.
+    let lichens = hits(&index, "lichens", &[Network::Irc]);
+    assert_eq!(lichens.len(), 2, "{lichens:?}");
+    assert_eq!(lichens[1].title, "Localnet");
+    assert_eq!(lichens[0].routes[0].url, format!("irc://127.0.0.1:{port}/#lichens"));
+    assert!(lichens[0].description.starts_with("40 people on Localnet."), "{}", lichens[0].description);
+    assert_eq!(hits(&index, "fronds", &[Network::Irc])[0].title, "#Ferns");
+    assert!(hits(&index, "between", &[]).is_empty(), "a channel of two is not listed");
+    assert_eq!(hits(&index, "localnet", &[Network::Irc]).len(), 3, "the network and its two channels");
+    assert_eq!(connections.load(Ordering::SeqCst), 1, "one list for the network and every channel");
+    let heard = heard.lock().unwrap().clone();
+    assert!(heard.contains("LIST") && !heard.contains("JOIN"), "{heard}");
+}

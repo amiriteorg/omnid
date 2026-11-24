@@ -208,6 +208,11 @@
     <string name="nostr_open">Open in Nostr app</string>
     <string name="nostr_invalid">Not a Nostr link OMNId can hand on.</string>
     <string name="nostr_no_app">No Nostr app is installed.</string>
+    <string name="irc_ask">Open this in an IRC app?</string>
+    <string name="irc_ask_detail">An IRC app connects to the network its own way, outside OMNId and Tor unless you set it up otherwise: the network sees your address and the channels you join. Settings → Proxy for other apps can carry it through Tor.</string>
+    <string name="irc_open">Open in IRC app</string>
+    <string name="irc_invalid">Not an IRC link OMNId can hand on.</string>
+    <string name="irc_no_app">No IRC app is installed.</string>
 
     <!-- The browser's menu. -->
     <string name="browser_share">Share</string>

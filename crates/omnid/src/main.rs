@@ -342,6 +342,18 @@ async fn fetch(common: &Common, data_dir: &Path, address: &str) -> Result<()> {
         }
         return Ok(());
     }
+    if let Source::Irc(_) = &source {
+        let listing = gateway.irc_list(&source).await?;
+        println!("network       irc");
+        println!("address       {source}");
+        println!("name          {}", listing.network.as_deref().unwrap_or("-"));
+        println!("channels      {} with {} or more people", listing.listed, omnid_net::IRC_MIN_USERS);
+        for channel in listing.channels.iter().take(20) {
+            let topic: String = channel.topic.chars().take(80).collect();
+            println!("  {:>6}  {:<24} {topic}", channel.users, channel.name);
+        }
+        return Ok(());
+    }
     // The same content-type gate as the crawler: media is never downloaded.
     let opts = FetchOptions { accept: is_indexable_type, ..FetchOptions::default() };
     let page = gateway.fetch(&source, &opts).await?;

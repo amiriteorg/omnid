@@ -346,10 +346,10 @@ fn name(job: &Job) -> Option<&str> {
 /// than the clearnet; Hyphanet content is immutable per edition, and IPFS
 /// content per CID (an IPNS name moves, but is checked as seldom). A Nostr
 /// event never changes, but a profile's latest notes do. Gemini capsules and
-/// Gopher holes change as seldom as the web.
+/// Gopher holes change as seldom as the web; IRC channels' topics more often.
 fn revisit_after(network: Network) -> i64 {
     match network {
-        Network::Onion | Network::I2p | Network::Magnet | Network::Nostr => 3 * DAY,
+        Network::Onion | Network::I2p | Network::Magnet | Network::Nostr | Network::Irc => 3 * DAY,
         Network::Clearnet | Network::Hyphanet | Network::Ipfs | Network::Gemini | Network::Gopher => 7 * DAY,
     }
 }

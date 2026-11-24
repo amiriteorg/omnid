@@ -1,0 +1,5 @@
+:s 001 omnid :Welcome
+:s 005 omnid NETWORK=Libera.Chat ELIST=CMNTU BOT=B :are supported
+PING :x
+:s 322 omnid #rust 900 :[+nt] Rust 04,12red
+:s 323 omnid :End
