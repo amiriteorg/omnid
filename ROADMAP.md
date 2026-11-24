@@ -19,12 +19,9 @@ phone, IPFS goes through a gateway on the owner's computer.
 
 ## Next
 
-1. **More networks: the OMNIdaemon.** Unreleased: Gemini and Gopher, with a reader, and
-   IRC's channel directories. Next, each its own pull request:
-   - **Yggdrasil**: its sites, `http://[200:…]/` and the rest of 200::/7, through a
-     Yggdrasil node on the owner's machine or yggstack's SOCKS proxy.
-   - **Veilid**: what it makes public and readable, once that is clear: Veilid has no web of
-     its own, so this starts with a look at what a search engine could index there.
+1. **More networks: the OMNIdaemon.** Unreleased: Gemini and Gopher, with a reader, IRC's
+   channel directories, and Yggdrasil's sites (to be live tested against a node; names,
+   Alfis's `.ygg` and meshname, are not resolved yet). Next, each its own pull request:
    - **The fediverse** (ActivityPub: Mastodon, Lemmy, Misskey and the rest): public posts and
      profiles of accounts that opted into search (Mastodon's `indexable`), and nothing from one
      that did not.
@@ -33,6 +30,10 @@ phone, IPFS goes through a gateway on the owner's computer.
      channels (people, topic); `gemini://` links in the app's browser opened in the reader.
    - Later: Matrix's public rooms, Bluesky (AT Protocol), Usenet, Spartan, Nex and Finger,
      and Lokinet.
+   - **Veilid**, on hold: it has no public, findable content to index. Its DHT records are
+     encrypted by default and read only by whoever is given a key, and no directory or web of
+     its own exists yet. At most, a reader for a record key someone pastes, in one of the
+     formats built on it (Roselite's sites), once those settle.
 2. **On the owner's phones.** 0.1.7 runs on a Pixel with GrapheneOS and a OnePlus 15. Not yet
    checked one by one:
    - per-site I2P identities through the i2pd app's own SAM bridge;
