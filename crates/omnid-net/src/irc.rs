@@ -39,8 +39,8 @@ pub struct IrcListing {
     /// The name the server gives its network (ISUPPORT `NETWORK=`).
     pub network: Option<String>,
     pub channels: Vec<IrcChannel>,
-    /// Channels the list had with at least [`MIN_USERS`] people, before
-    /// [`MAX_CHANNELS`] kept the largest.
+    /// Channels the list had with at least [`MIN_USERS`] people, before the
+    /// largest 2,000 were kept.
     pub listed: usize,
 }
 
