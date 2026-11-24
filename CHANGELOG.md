@@ -28,6 +28,12 @@
   its onion, hackint, EFnet, IRCnet, Undernet and Irc2P. The search page and the app have an
   IRC filter; the app hands a channel to an IRC app after a dialog. `/api/status` lists an
   `irc` row, between `gopher` and `magnet`.
+- Yggdrasil is a network: sites at addresses in its 200::/7, and Gemini, Gopher and IRC servers
+  there, reached through a Yggdrasil node on the same machine (on a phone, the Yggdrasil app's
+  VPN) or through yggstack's SOCKS5 proxy (`--yggdrasil-socks`; `--no-yggdrasil` turns it off).
+  Nothing else is sent that way, and the app's browser does not reach it. New default seeds
+  from Yggdrasil's list of services. A Yggdrasil filter in the search page and the app, and a
+  `yggdrasil` row in `/api/status`, between `irc` and `magnet`.
 
 ## 0.1.7 (2026-11-23)
 

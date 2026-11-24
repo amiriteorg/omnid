@@ -230,6 +230,9 @@ fn gateway(data_dir: &Path, options: &Options, networks: bool) -> Result<Gateway
         // No IPFS node runs on a phone: only a gateway elsewhere, if one is set.
         ipfs_gateways: elsewhere(&options.ipfs_gateway, "IPFS gateway", &["http", "https"])?.into_iter().collect(),
         nostr_relays: if networks && options.nostr { GatewayConfig::default().nostr_relays } else { Vec::new() },
+        // Through the Yggdrasil app's VPN, when it runs: the phone then has
+        // an address in 200::/7.
+        yggdrasil: networks,
         ..GatewayConfig::default()
     };
     if let Some(node) = elsewhere(&options.hyphanet_node, "Hyphanet node", &["http", "https"])? {
@@ -467,6 +470,7 @@ fn phone_crawl(speed: CrawlSpeed) -> CrawlConfig {
             (Network::Gemini, politeness(2, 2)),
             (Network::Gopher, politeness(2, 2)),
             (Network::Irc, politeness(2, 1)),
+            (Network::Yggdrasil, politeness(2, 3)),
             (Network::Magnet, politeness(4, 0)),
         ]),
         ..CrawlConfig::default()

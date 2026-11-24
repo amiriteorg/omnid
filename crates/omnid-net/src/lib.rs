@@ -13,6 +13,7 @@
 //! | gemini   | TLS to the capsule, on the network its host is on   |
 //! | gopher   | TCP to the hole, on the network its host is on      |
 //! | irc      | a server's channel list, [`Gateway::irc_list`]       |
+//! | yggdrasil| a node on this machine, or yggstack's SOCKS5 proxy  |
 //! | magnet   | not yet: needs the DHT module                       |
 //!
 //! Redirects are resolved here, against the source that issued them, so a
@@ -34,6 +35,7 @@ mod small_web;
 mod tailnet;
 mod tor;
 mod ws;
+mod yggdrasil;
 
 /// The parsers' entry points for the fuzz targets in `fuzz/`, built only by
 /// cargo-fuzz (`cfg(fuzzing)`). Not part of the API.
@@ -126,6 +128,12 @@ pub struct GatewayConfig {
     /// clearnet is: directly, or through Tor exits with `clearnet_via_tor`.
     /// Empty disables Nostr.
     pub nostr_relays: Vec<Url>,
+    /// Yggdrasil: reached through a node on this machine when one runs
+    /// (an address in 200::/7 on an interface), and otherwise through these
+    /// SOCKS5 proxies (`socks5://host:port`, yggstack's `-socks`), best
+    /// first. `false` disables Yggdrasil.
+    pub yggdrasil: bool,
+    pub yggdrasil_socks: Vec<Url>,
     /// Lets clearnet fetches reach loopback, private and link-local
     /// addresses. Off by default: otherwise any submitted URL turns the
     /// daemon into a proxy into the operator's LAN.
@@ -148,6 +156,8 @@ impl Default for GatewayConfig {
             fproxies: vec![Url::parse(DEFAULT_FPROXY).expect("valid default")],
             ipfs_gateways: vec![Url::parse(DEFAULT_IPFS_GATEWAY).expect("valid default")],
             nostr_relays: DEFAULT_NOSTR_RELAYS.iter().map(|r| Url::parse(r).expect("valid default")).collect(),
+            yggdrasil: true,
+            yggdrasil_socks: Vec::new(),
             allow_private_addresses: false,
             clearnet_via_tor: false,
         }
@@ -369,6 +379,7 @@ impl Gateway {
             self.per_host_status(Network::Gemini),
             self.per_host_status(Network::Gopher),
             self.per_host_status(Network::Irc),
+            self.yggdrasil_status().await,
             RouterStatus {
                 network: Network::Magnet,
                 state: RouterState::Unsupported,
@@ -403,6 +414,34 @@ impl Gateway {
             state: RouterState::Ready,
             detail: format!("{way}; onions through Tor, .i2p through I2P"),
         }
+    }
+
+    /// Whether Yggdrasil can be reached, and how: a node here, or the first
+    /// SOCKS proxy that accepts a connection.
+    async fn yggdrasil_status(&self) -> RouterStatus {
+        let network = Network::Yggdrasil;
+        if !self.cfg.yggdrasil {
+            return disabled(network);
+        }
+        if let Some(ip) = yggdrasil::local_node() {
+            return RouterStatus {
+                network,
+                state: RouterState::Ready,
+                detail: format!("a node on this machine, {ip}"),
+            };
+        }
+        for proxy in &self.cfg.yggdrasil_socks {
+            let address = (proxy.host_str().unwrap_or_default().trim_matches(['[', ']']), proxy.port().unwrap_or(1080));
+            let up = tokio::time::timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(address)).await;
+            if matches!(up, Ok(Ok(_))) {
+                return RouterStatus { network, state: RouterState::Ready, detail: format!("yggstack at {proxy}") };
+            }
+        }
+        let detail = match self.cfg.yggdrasil_socks.first() {
+            Some(proxy) => format!("no Yggdrasil node on this machine, and nothing answers at {proxy}"),
+            None => "no Yggdrasil node on this machine; run one, or yggstack with --yggdrasil-socks".into(),
+        };
+        RouterStatus { network, state: RouterState::Unreachable, detail }
     }
 
     /// The HTTP proxies' state, and the SAM bridges': whether the browser's
@@ -449,6 +488,7 @@ impl Gateway {
                     let tor = self.tor.as_ref().ok_or_else(|| unavailable(network, "Tor is disabled"))?;
                     tor.get(url, opts).await.map_err(|error| FetchError::Transport { network, error })
                 }
+                Source::Yggdrasil(url) => self.yggdrasil_get(url, opts).await,
                 Source::I2p(url) => {
                     let page = |_: &Url| Ok(url.clone());
                     via_routers(&self.i2p, network, "no I2P proxy configured", page, any_answer, opts).await
@@ -591,6 +631,7 @@ impl Gateway {
             match network {
                 Network::I2p => self.i2p_tunnel(&host, port).await,
                 Network::Hyphanet => self.fproxy_stream(port).await,
+                Network::Yggdrasil => self.yggdrasil_stream(&host, port).await,
                 _ => self.direct(&host, port).await,
             }
         };
@@ -621,6 +662,8 @@ impl Gateway {
             match network {
                 Network::I2p => return self.i2p_isolated(&host, port, circuits).await,
                 Network::Hyphanet => return self.fproxy_stream(port).await,
+                // Not through Tor, which cannot reach it, and not directly.
+                Network::Yggdrasil => return Err(unavailable(network, "OMNId's browser does not reach Yggdrasil")),
                 _ => {}
             }
             let tor = self.tor.as_ref().ok_or_else(|| unavailable(network, "Tor is disabled"))?;
@@ -658,7 +701,8 @@ impl Gateway {
             Network::Clearnet | Network::Nostr | Network::Gemini | Network::Gopher | Network::Irc => {
                 !self.cfg.clearnet_via_tor
             }
-            Network::Ipfs => true,
+            // A Yggdrasil site sees the node's address, which stays the same.
+            Network::Ipfs | Network::Yggdrasil => true,
             Network::Onion | Network::I2p | Network::Hyphanet | Network::Magnet => false,
         }
     }
@@ -690,6 +734,64 @@ impl Gateway {
     /// replaces it, so streams opened under it can end then.
     pub fn identity(&self) -> tokio_util::sync::CancellationToken {
         self.identity.lock().expect("identity lock poisoned").clone()
+    }
+
+    /// A stream to a Yggdrasil address (`[200:…]` or bare): straight there
+    /// when a node runs on this machine, else through the SOCKS proxies in
+    /// turn. Only addresses in 200::/7, so this reaches nothing else.
+    async fn yggdrasil_stream(&self, host: &str, port: u16) -> Result<BoxStream, FetchError> {
+        let network = Network::Yggdrasil;
+        if !self.cfg.yggdrasil {
+            return Err(unavailable(network, "Yggdrasil is disabled"));
+        }
+        let ip: std::net::Ipv6Addr = host
+            .trim_matches(['[', ']'])
+            .parse()
+            .ok()
+            .filter(|ip| omnid_core::is_yggdrasil(*ip))
+            .ok_or_else(|| unavailable(network, "Yggdrasil names are not resolved; only addresses in 200::/7"))?;
+        let transport = |error: BoxError| FetchError::Transport { network, error };
+        if yggdrasil::local_node().is_some() {
+            let stream = tokio::net::TcpStream::connect((ip, port)).await.map_err(|e| transport(e.into()))?;
+            return Ok(Box::new(stream));
+        }
+        let mut last = unavailable(network, "no Yggdrasil node on this machine, and no yggstack (--yggdrasil-socks)");
+        for proxy in &self.cfg.yggdrasil_socks {
+            if let Err(error) = routers::askable(network, proxy) {
+                last = error;
+                continue;
+            }
+            match yggdrasil::socks5(proxy, ip, port).await {
+                Ok(stream) => return Ok(Box::new(stream)),
+                // A proxy that is not there says nothing of the site.
+                Err(error) if error.downcast_ref::<std::io::Error>().is_some() => {
+                    last = unavailable(network, &format!("nothing answers at {proxy}: {error}"));
+                }
+                Err(error) => return Err(transport(error)),
+            }
+        }
+        Err(last)
+    }
+
+    /// A page from a Yggdrasil site, over one stream; HTTPS is checked
+    /// against the web's certificate authorities, as few of its sites have it.
+    async fn yggdrasil_get(&self, url: &Url, opts: &FetchOptions) -> Result<http::RawResponse, FetchError> {
+        let network = Network::Yggdrasil;
+        let transport = |error: BoxError| FetchError::Transport { network, error };
+        let host = url.host_str().ok_or_else(|| transport("an address without a host".into()))?;
+        let port = url.port_or_known_default().unwrap_or(80);
+        let stream = self.yggdrasil_stream(host, port).await?;
+        let mut sender = if url.scheme() == "https" {
+            let ip: std::net::IpAddr =
+                host.trim_matches(['[', ']']).parse().map_err(|e: std::net::AddrParseError| transport(e.into()))?;
+            let tls = tokio_rustls::TlsConnector::from(std::sync::Arc::new(tls_config().map_err(transport)?));
+            let stream = tls.connect(rustls::pki_types::ServerName::IpAddress(ip.into()), stream).await;
+            http::handshake(stream.map_err(|e| transport(e.into()))?).await.map_err(transport)?
+        } else {
+            http::handshake(stream).await.map_err(transport)?
+        };
+        let (response, _) = http::get(&mut sender, url, &self.cfg.user_agent, opts).await.map_err(transport)?;
+        Ok(response)
     }
 
     /// A direct TCP connection, refusing non-public addresses unless allowed;
@@ -774,15 +876,7 @@ impl Gateway {
 /// its name puts it on.
 fn stream_target(host: &str) -> (String, Network) {
     let host = host.trim_end_matches('.').to_ascii_lowercase();
-    let network = if host.ends_with(".onion") {
-        Network::Onion
-    } else if host.ends_with(".i2p") {
-        Network::I2p
-    } else if host == HYPHANET_HOST {
-        Network::Hyphanet
-    } else {
-        Network::Clearnet
-    };
+    let network = if host == HYPHANET_HOST { Network::Hyphanet } else { omnid_core::host_network(&host) };
     (host, network)
 }
 
