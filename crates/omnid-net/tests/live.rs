@@ -1,5 +1,6 @@
 //! Live tests against the real Tor network, i2pd, a Hyphanet node, an IPFS
-//! node, Nostr relays, and Gemini and Gopher servers.
+//! node, Nostr relays, Gemini, Gopher and IRC servers, and Yggdrasil through
+//! yggstack.
 //! Ignored by default; `scripts/live-routers.sh all` starts the routers and
 //! runs them. A test whose router is not running fails and says how to start
 //! it, rather than passing.
@@ -326,4 +327,17 @@ async fn live_tor_lists_an_onion_irc_network() {
     let onion = "ircs://oftcnet6xg6roj6d7id4y4cu6dchysacqj2ldgea73qzdagufflqxrid.onion/";
     let listing = gateway.irc_list(&Source::parse(onion).unwrap()).await.unwrap();
     assert_eq!(listing.network.as_deref(), Some("OFTC"));
+}
+
+#[tokio::test]
+#[ignore = "live: Yggdrasil, through yggstack (scripts/live-routers.sh up)"]
+async fn live_yggdrasil_reads_a_site_through_yggstack() {
+    require_router(1080, "yggstack's SOCKS proxy");
+    let socks = Url::parse("socks5://127.0.0.1:1080").unwrap();
+    let gateway =
+        Gateway::new(GatewayConfig { tor_dir: None, yggdrasil_socks: vec![socks], ..GatewayConfig::default() })
+            .unwrap();
+    // The Yggdrasil project's own site, on its subnet.
+    let page = fetch_with_retries(&gateway, "http://[300:8101:e046:d91e::5]/").await;
+    assert!(text(&page).contains("Yggdrasil"), "{}", text(&page).chars().take(200).collect::<String>());
 }

@@ -251,14 +251,13 @@ pub const DEFAULT_SEEDS: &[&str] = &[
     "irc://irc.ircnet.com/",
     "irc://irc.undernet.org/",
     "irc://irc.postman.i2p/",
-    // Yggdrasil, from its own list of services (yggdrasil-network.github.io,
-    // 2026-11-24; not fetched by omnid yet: no node ran where it was
-    // written): its search engine, a web directory, the HowTo wiki and a
-    // forum.
+    // Yggdrasil, from its own list of services (yggdrasil-network.github.io),
+    // each fetched through yggstack: Mimir (its search engine), a web
+    // directory, its community forum and the project's site.
     "http://[200:b48d:469e:c7c7:3e13:c41d:ba4d:d2b8]/",
     "http://[21e:a51c:885b:7db0:166e:927:98cd:d186]/",
-    "http://[222:a8e4:50cd:55c:788e:b0a5:4e2f:a92c]/",
     "http://[21a:34aa:c782:3ad2:1bf8:73f8:141:66e8]/",
+    "http://[300:8101:e046:d91e::5]/",
     // IPFS, by DNSLink name: its documentation, specifications and blog, and
     // the Distributed Wikipedia Mirror's snapshots,
     // put on IPFS against censorship (English, Turkish, Russian).
