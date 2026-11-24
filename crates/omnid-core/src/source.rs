@@ -753,12 +753,14 @@ fn small_web_host(url: &Url) -> Result<String, SourceError> {
     let raw = url.host_str().filter(|h| !h.is_empty()).ok_or_else(bad)?;
     let decoded = percent_decode(raw);
     let decoded = std::str::from_utf8(&decoded).map_err(|_| bad())?.trim_end_matches('.');
-    let host = canonical_host(decoded).ok_or_else(bad)?;
+    // Trailing dots go after IDNA too, which drops some characters
+    // (`a.example.\u{34f}` became `a.example.`).
+    let host = canonical_host(decoded).ok_or_else(bad)?.trim_end_matches('.').to_owned();
     // The canonical form is a host as it stands: one that parsing would
     // change again (`4444444444..` became `4444444444`, an IPv4 address out
     // of range; found by fuzz/fuzz_targets/source_parse.rs and source_join.rs)
     // is no address.
-    if canonical_host(&host).as_deref() != Some(host.as_str()) {
+    if host.is_empty() || canonical_host(&host).as_deref() != Some(host.as_str()) {
         return Err(bad());
     }
     if host.ends_with(".onion") {
@@ -1085,6 +1087,10 @@ mod tests {
         assert_eq!((onion.network(), onion.transport()), (Network::Gemini, Network::Onion));
         assert_eq!(Source::parse("gemini://x.i2p/").unwrap().transport(), Network::I2p);
         assert_eq!(canonical("gemini://a.example../x"), "gemini://a.example/x");
+        // A character IDNA drops (U+034F) can leave a trailing dot behind
+        // (found by fuzz/fuzz_targets/source_parse.rs in CI).
+        assert_eq!(canonical("gemini://a.example.\u{34f}/"), "gemini://a.example/");
+        assert_eq!(canonical("gemini://a.example.\u{34f}/"), canonical("gemini://a.example/"));
         for bad in [
             "gemini://user@a.example/",
             "gemini:///path",
