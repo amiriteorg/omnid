@@ -32,3 +32,11 @@
 "\xef\xbb\xbf"
 "\xff\xfe"
 "\xfe\xff"
+# Gemini's lines and Gopher's menus.
+"=>"
+"```"
+"###"
+"* "
+"\x09"
+"\x0d\x0a.\x0d\x0a"
+"URL:"

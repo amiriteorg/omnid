@@ -464,6 +464,8 @@ fn phone_crawl(speed: CrawlSpeed) -> CrawlConfig {
             (Network::Hyphanet, politeness(2, 2)),
             (Network::Ipfs, politeness(2, 1)),
             (Network::Nostr, politeness(2, 1)),
+            (Network::Gemini, politeness(2, 2)),
+            (Network::Gopher, politeness(2, 2)),
             (Network::Magnet, politeness(4, 0)),
         ]),
         ..CrawlConfig::default()

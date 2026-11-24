@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Gemini and Gopher are networks: capsules (`gemini://`) and holes (`gopher://`) on the clearnet,
+  onions and I2P, each reached on the network its host is on. Gemini pages, Gopher menus and text
+  items are indexed and their links followed; a Gopher item's type is read before it is asked
+  for, so binaries never are. Each obeys its own robots.txt, as Gemini's `indexer` and Gopher's
+  `veronica` too. New default seeds: Project Gemini's capsule, Kennedy's and Lupa's lists of
+  known capsules, an onion capsule, Floodgap's server and list of holes, OGUP's list and SDF. The
+  search page and the app have Gemini and Gopher filters, and `/api/status` lists `gemini` and
+  `gopher` rows, between `nostr` and `magnet`.
+- The reader, `/read?url=…`: a Gemini page or a Gopher menu in the search page and the app, its
+  lines shown as text (headings, lists, quotes, preformatted blocks, links), its links followed
+  within Gemini and Gopher, and a Gemini page's question answered with a form. It reaches servers
+  as the app's browser does, through Tor and never directly.
+- A text file's first line, when short, is its title (a phlog post's, an RFC's), instead of its
+  address.
+
 ## 0.1.7 (2026-11-23)
 
 - Fixed: an eepsite opened as `http://` that has no HTTPS could leave the app's browser on a blank

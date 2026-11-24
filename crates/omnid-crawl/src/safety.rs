@@ -64,7 +64,14 @@ pub fn is_indexable_type(content_type: Option<&str>) -> bool {
         return false;
     };
     let mime = content_type.split(';').next().unwrap_or_default().trim().to_ascii_lowercase();
-    matches!(mime.as_str(), "text/html" | "application/xhtml+xml" | "text/plain")
+    matches!(
+        mime.as_str(),
+        "text/html"
+            | "application/xhtml+xml"
+            | "text/plain"
+            | crate::small_web::GEMTEXT_TYPE
+            | crate::small_web::GOPHER_MENU_TYPE
+    )
 }
 
 impl Safety {

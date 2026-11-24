@@ -144,9 +144,9 @@ async fn searches_with_counts_snippets_and_filters() {
     assert_eq!(filtered["total"], 1);
     assert_eq!(filtered["hits"][0]["routes"][0]["network"], "i2p");
 
-    let (status, body) = send(&api.router, get("/api/search?network=gopher").body(Body::empty()).unwrap()).await;
+    let (status, body) = send(&api.router, get("/api/search?network=finger").body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["error"].as_str().unwrap().contains("gopher"));
+    assert!(body["error"].as_str().unwrap().contains("finger"));
 }
 
 #[tokio::test]
@@ -210,12 +210,14 @@ async fn reports_status_for_every_network() {
     api.control.pause_because("waiting for a charger");
     let (_, body) = send(&api.router, get("/api/status").body(Body::empty()).unwrap()).await;
     let networks: Vec<_> = body["routers"].as_array().unwrap().iter().map(|r| r["network"].as_str().unwrap()).collect();
-    assert_eq!(networks, ["clearnet", "onion", "i2p", "hyphanet", "ipfs", "nostr", "magnet"]);
+    assert_eq!(networks, ["clearnet", "onion", "i2p", "hyphanet", "ipfs", "nostr", "gemini", "gopher", "magnet"]);
+    assert_eq!(body["routers"][6]["state"], "ready", "Gemini needs no router");
+    assert!(body["routers"][7]["detail"].as_str().unwrap().starts_with("direct"));
     assert_eq!(body["routers"][1]["state"], "disabled", "Tor is off in this test");
     assert_eq!(body["routers"][4]["state"], "disabled", "no IPFS gateway is configured");
     assert_eq!(body["routers"][5]["state"], "ready", "the default relays, named without being asked");
     assert!(body["routers"][5]["detail"].as_str().unwrap().starts_with("relays: nos.lol, relay.primal.net"));
-    assert_eq!(body["routers"][6]["state"], "disabled", "so is the DHT: torrents say off, not missing");
+    assert_eq!(body["routers"][8]["state"], "disabled", "so is the DHT: torrents say off, not missing");
     assert_eq!(body["routers"][0]["detail"], "direct", "the crawler's way to the clearnet");
     assert_eq!(body["index"]["documents"], 2);
     assert_eq!(body["pause_reason"], "waiting for a charger");
@@ -290,4 +292,41 @@ async fn sends_hyphanet_keys_to_the_node() {
     assert_eq!(status, StatusCode::FORBIDDEN, "the denylist holds");
     let (status, _) = send(&api(None).router, get(&format!("/hyphanet/{key}")).body(Body::empty()).unwrap()).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "no node configured");
+}
+
+/// The reader's page for `path`: its status, its CSP and its HTML.
+async fn read(router: &axum::Router, path: &str) -> (StatusCode, String, String) {
+    let response = router.clone().oneshot(get(path).body(Body::empty()).unwrap()).await.unwrap();
+    let status = response.status();
+    let csp = response.headers().get(header::CONTENT_SECURITY_POLICY).unwrap().to_str().unwrap().to_owned();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, csp, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+#[tokio::test]
+async fn the_reader_opens_only_gemini_and_gopher_and_never_directly() {
+    // A Gopher hole on this machine that counts who connects: without Tor,
+    // the reader has no way there, and must not take a direct one.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = connected.clone();
+    tokio::spawn(async move {
+        let _ = listener.accept().await;
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    let api = api(None);
+    let (status, csp, page) = read(&api.router, &format!("/read?url=gopher%3A%2F%2F127.0.0.1%3A{port}%2F")).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert!(page.contains("Could not reach it") && page.contains("Tor"), "{page}");
+    assert!(!connected.load(std::sync::atomic::Ordering::SeqCst), "no direct connection");
+    assert!(csp.contains("default-src 'none'") && !csp.contains("script-src"), "{csp}");
+
+    for other in ["https%3A%2F%2Fexample.com%2F", "nostr%3Anpub1x", "%3Cscript%3E"] {
+        let (status, _, page) = read(&api.router, &format!("/read?url={other}")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{other}");
+        assert!(!page.contains("<script>"), "the address is shown escaped: {page}");
+    }
+    let (status, _, _) = read(&api.router, "/read?url=gemini%3A%2F%2Fdenied.example%2F").await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "the denylist holds in the reader");
 }

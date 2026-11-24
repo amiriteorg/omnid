@@ -1,5 +1,7 @@
 //! robots.txt, fetched once per site through the same gateway as the page,
-//! so an onion's robots.txt is read over Tor.
+//! so an onion's robots.txt is read over Tor. A Gemini capsule's and a
+//! Gopher hole's come from the capsule or hole, not from the website on the
+//! same host.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -14,18 +16,25 @@ const TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const SERVER_ERROR_TTL: Duration = Duration::from_secs(60 * 60);
 const MAX_ROBOTS_BYTES: usize = 512 << 10;
 
+/// The virtual user agent Gemini's robots.txt convention gives search
+/// engines' crawlers, besides `*`.
+const GEMINI_INDEXER: &str = "indexer";
+/// Gopher's search engine, whose robots.txt groups holes write for indexers.
+const GOPHER_INDEXER: &str = "veronica";
+
 enum Rules {
     AllowAll,
     DisallowAll,
-    Parsed(Box<Robot>),
+    /// Each agent's rules, all of which must allow.
+    Parsed(Vec<Robot>),
 }
 
 impl Rules {
-    /// What a robots.txt that came with a 2xx answer says to `agent`. One
+    /// What a robots.txt that came with a 2xx answer says to `agents`. One
     /// that cannot be read allows everything.
-    fn parse(agent: &str, body: &[u8]) -> Self {
-        match Robot::new(agent, body) {
-            Ok(robot) => Rules::Parsed(Box::new(robot)),
+    fn parse(agents: &[&str], body: &[u8]) -> Self {
+        match agents.iter().map(|agent| Robot::new(agent, body)).collect::<Result<Vec<_>, _>>() {
+            Ok(robots) => Rules::Parsed(robots),
             Err(_) => Rules::AllowAll,
         }
     }
@@ -34,8 +43,20 @@ impl Rules {
         match self {
             Rules::AllowAll => true,
             Rules::DisallowAll => false,
-            Rules::Parsed(robot) => robot.allowed(url),
+            Rules::Parsed(robots) => robots.iter().all(|robot| robot.allowed(url)),
         }
+    }
+}
+
+/// What a robots.txt's rules are matched against: a URL's path and query,
+/// and a Gopher item's selector, which is what its rules name.
+fn rule_path(source: &Source) -> String {
+    match source.gopher_item() {
+        Some((_, selector)) => {
+            let selector = String::from_utf8_lossy(&selector);
+            if selector.starts_with('/') { selector.into_owned() } else { format!("/{selector}") }
+        }
+        None => source.to_string(),
     }
 }
 
@@ -56,8 +77,16 @@ impl RobotsCache {
         let Some(robots) = source.robots_txt() else {
             return Ok(true);
         };
-        let site = source.site_key();
-        let url = source.to_string();
+        // The website and the capsule on one host are different sites here.
+        let site = format!("{}:{}", source.network(), source.site_key());
+        let url = rule_path(source);
+        // An indexer obeys the groups written for indexers too, and the most
+        // restrictive of them wins.
+        let agents: &[&str] = match source {
+            Source::Gemini(_) => &[&self.agent, GEMINI_INDEXER],
+            Source::Gopher(_) => &[&self.agent, GOPHER_INDEXER],
+            _ => &[&self.agent],
+        };
         if let Some((expires, rules)) = self.sites.lock().expect("robots lock poisoned").get(&site)
             && *expires > Instant::now()
         {
@@ -71,7 +100,7 @@ impl RobotsCache {
         };
         let page = gateway.fetch(&robots, &opts).await?;
         let (rules, ttl) = match page.status {
-            200..300 => (page.body.as_deref().map_or(Rules::AllowAll, |body| Rules::parse(&self.agent, body)), TTL),
+            200..300 => (page.body.as_deref().map_or(Rules::AllowAll, |body| Rules::parse(agents, body)), TTL),
             500.. => (Rules::DisallowAll, SERVER_ERROR_TTL),
             _ => (Rules::AllowAll, TTL),
         };
@@ -87,7 +116,7 @@ pub(crate) mod fuzz {
     /// Whether a robots.txt `body` that came with a 200 lets `agent` fetch
     /// `url`.
     pub fn allows(agent: &str, body: &[u8], url: &str) -> bool {
-        super::Rules::parse(agent, body).allows(url)
+        super::Rules::parse(&[agent, super::GEMINI_INDEXER], body).allows(url)
     }
 }
 
@@ -164,6 +193,28 @@ mod tests {
         let source = Source::parse(&format!("http://127.0.0.1:{port}/")).unwrap();
         assert!(cache.allowed(&gateway(), &source).await.is_err());
         assert!(cache.sites.lock().unwrap().is_empty(), "nothing cached for a site that did not answer");
+    }
+
+    #[test]
+    fn every_agent_s_rules_must_allow() {
+        let body = b"User-agent: *\nDisallow: /private\n\nUser-agent: indexer\nDisallow: /log/\n";
+        let rules = Rules::parse(&["omnid", GEMINI_INDEXER], body);
+        assert!(!rules.allows("gemini://a.example/log/1.gmi"), "Gemini's virtual agent for search engines");
+        assert!(!rules.allows("gemini://a.example/private/x"), "and the * group for ours");
+        assert!(rules.allows("gemini://a.example/"));
+        assert!(Rules::parse(&["omnid"], body).allows("gemini://a.example/log/1.gmi"));
+    }
+
+    #[test]
+    fn gopher_rules_name_selectors() {
+        let menu = Source::parse("gopher://a.example/1/phlog/").unwrap();
+        assert_eq!(rule_path(&menu), "/phlog/");
+        assert_eq!(rule_path(&Source::parse("gopher://a.example/0notes.txt").unwrap()), "/notes.txt");
+        let rules = Rules::parse(&["omnid"], b"User-agent: *\nDisallow: /phlog\n");
+        assert!(!rules.allows(&rule_path(&menu)));
+        let for_veronica = Rules::parse(&["omnid", GOPHER_INDEXER], b"User-agent: veronica\nDisallow: /\n");
+        assert!(!for_veronica.allows(&rule_path(&menu)), "a hole that keeps search engines out");
+        assert!(rules.allows(&rule_path(&Source::parse("gopher://a.example/").unwrap())));
     }
 
     #[tokio::test]

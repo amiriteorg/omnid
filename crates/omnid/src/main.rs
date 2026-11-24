@@ -371,6 +371,9 @@ async fn download(common: &Common, data_dir: &Path, args: DownloadArgs) -> Resul
         Source::Magnet(_) => anyhow::bail!("a magnet is not a file; `omnid fetch` shows its metadata"),
         Source::Ipfs(_) => anyhow::bail!("downloading from IPFS is not built yet; `ipfs get` on your node fetches it"),
         Source::Nostr(_) => anyhow::bail!("a Nostr event is not a file; `omnid fetch` shows it"),
+        Source::Gemini(_) | Source::Gopher(_) => {
+            anyhow::bail!("downloading from Gemini or Gopher is not built yet; `omnid fetch` shows a page")
+        }
         source => source.url().cloned().context("no URL to download")?,
     };
     // A file named and already there is refused before anything is fetched.

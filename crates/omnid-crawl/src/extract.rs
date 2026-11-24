@@ -14,8 +14,12 @@ use html5ever::tendril::StrTendril;
 use html5ever::tokenizer::states::RawKind;
 use html5ever::tokenizer::{BufferQueue, Tag, TagKind, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerOpts};
 
+use crate::small_web;
+
 pub(crate) const MAX_TEXT_BYTES: usize = 100_000;
 const MAX_TITLE_BYTES: usize = 300;
+/// A plain text's first line longer than this is a paragraph, not a title.
+const MAX_TEXT_TITLE_BYTES: usize = 100;
 const MAX_DESCRIPTION_BYTES: usize = 500;
 const FALLBACK_DESCRIPTION_BYTES: usize = 280;
 const MAX_KEYWORDS: usize = 32;
@@ -60,8 +64,24 @@ pub fn extract(content_type: Option<&str>, body: &[u8]) -> Extracted {
     if html {
         return extract_html(&source);
     }
+    let mime = content_type.map(|ct| ct.split(';').next().unwrap_or_default().trim().to_ascii_lowercase());
+    match mime.as_deref() {
+        Some(small_web::GEMTEXT_TYPE) => return small_web::extract_gemtext(content_type, &source),
+        Some(small_web::GOPHER_MENU_TYPE) => return small_web::extract_menu(&source),
+        _ => {}
+    }
     let text = collapse(&source, MAX_TEXT_BYTES);
-    Extracted { description: truncate(&text, FALLBACK_DESCRIPTION_BYTES).to_owned(), text, ..Default::default() }
+    // A text file's first line, when it is short, is its title: a phlog
+    // post's, an RFC's.
+    let first = source.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or_default();
+    let title = if first.len() <= MAX_TEXT_TITLE_BYTES { collapse(first, MAX_TITLE_BYTES) } else { String::new() };
+    Extracted { title, description: truncate(&text, FALLBACK_DESCRIPTION_BYTES).to_owned(), text, ..Default::default() }
+}
+
+/// A text body as a string: by its byte-order mark, else the charset its
+/// content type declares, else UTF-8.
+pub fn decode<'a>(content_type: Option<&str>, body: &'a [u8]) -> Cow<'a, str> {
+    decode_text(content_type, body, false)
 }
 
 /// Decodes in the HTML spec's order of precedence: byte-order mark, the
@@ -403,6 +423,23 @@ mod tests {
         let e = extract(Some("text/plain"), b"line one\n\nline two <a href=x>");
         assert_eq!(e.text, "line one line two <a href=x>");
         assert!(e.links.is_empty());
+        assert_eq!(e.title, "line one", "a short first line is the title");
+        let long = format!("{}\nsecond", "word ".repeat(30));
+        assert_eq!(extract(Some("text/plain"), long.as_bytes()).title, "", "a paragraph is not");
+    }
+
+    #[test]
+    fn gemini_pages_and_gopher_menus_have_their_own_readers() {
+        let page = extract(Some("text/gemini; lang=de"), b"# Kapsel\n=> /a A\n");
+        assert_eq!(
+            (page.title.as_str(), page.links.as_slice(), page.lang.as_deref()),
+            ("Kapsel", &["/a".to_owned()][..], Some("de"))
+        );
+        let menu = extract(Some("text/x-gopher-menu"), b"iHello there\t\th\t1\r\n1Docs\t/docs\th.example\t70\r\n");
+        assert_eq!(
+            (menu.title.as_str(), menu.links.as_slice()),
+            ("Hello there", &["gopher://h.example/1/docs".to_owned()][..])
+        );
     }
 
     #[test]

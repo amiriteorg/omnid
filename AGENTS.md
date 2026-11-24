@@ -16,12 +16,17 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
   connection on Tor circuits of its own (`tor::Circuits::Own`), work stealing, retries on new
   circuits, `If-Range` so a changed file fails instead of being spliced. Tests in
   `tests/download.rs`.
+  Gemini (`gemini.rs`) and Gopher (`gopher.rs`) over `Gateway::connect`'s streams, so each server
+  is reached on the network its host is on (`Source::transport`); `Gateway::small_web` answers
+  in Gemini's own terms (`SmallWeb`), and `Gateway::fetch` maps that to HTTP's for the crawler.
 - `crates/omnid-dht` — read-only BitTorrent DHT client and its own bencode codec.
 - `crates/omnid-index` — Tantivy schema, analyzer, ranking, snippets, mirror folding.
 - `crates/omnid-crawl` — crawl store (SQLite), frontier, robots.txt, extraction, safety gate,
-  crawl loop. End-to-end tests in `crates/omnid-crawl/tests/e2e.rs`.
+  crawl loop; `small_web.rs` reads Gemini pages and Gopher menus line by line, for the
+  extractor and the reader. End-to-end tests in `crates/omnid-crawl/tests/e2e.rs`.
 - `crates/omnid` — the daemon as a library (`omnid::start`), the CLI, the HTTP API, the search page
-  (`src/ui`, compiled in), the proxy (`socks.rs`: SOCKS5 and HTTP on one port).
+  (`src/ui`, compiled in), the reader for Gemini and Gopher (`reader.rs`, `/read`), the proxy
+  (`socks.rs`: SOCKS5 and HTTP on one port).
 - `crates/omnid-android` + `android/` — JNI bridge and the Kotlin app (platform APIs only, plus
   GeckoView for the browser: `Browser.kt`, `BrowserActivity.kt`, `BrowserConfig.kt`, the plain-Kotlin
   rules in `Tabs.kt`, `Bookmarks.kt`, `SecurityLevel.kt`, `Routers.kt`, `Settings.kt` and
@@ -61,6 +66,9 @@ Dependencies point down this list; `omnid-core` depends on no other omnid crate.
   themselves. Its Gecko prefs send anything else to a dead-end port and are read back before a page
   loads (`BrowserConfig.critical`); keep both when changing either side. Bump GeckoView with every
   Firefox release: it carries the security fixes.
+- The reader (`/read`) reaches Gemini capsules and Gopher holes only as the browser reaches the
+  web (`Route::Browser`: Tor, a site's own circuits, `.i2p` through I2P), never directly, and shows
+  what they send as escaped text in a page that runs no script.
 - The proxy for other apps (`socks::Access::Apps`, the app's Settings and `--socks-password`) is
   routed like the browser's, through `Gateway::connect_browser`, never direct, with `app:` before
   the username as the isolation key so it never shares circuits with a browser site. Every proxy

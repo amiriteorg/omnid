@@ -46,6 +46,8 @@
         <label class="chip net-hyphanet"><input type="checkbox" value="hyphanet" checked><span class="check" data-icon="check"></span><span class="dot"></span>Hyphanet<span class="count" data-network="hyphanet"></span></label>
         <label class="chip net-ipfs"><input type="checkbox" value="ipfs" checked><span class="check" data-icon="check"></span><span class="dot"></span>IPFS<span class="count" data-network="ipfs"></span></label>
         <label class="chip net-nostr"><input type="checkbox" value="nostr" checked><span class="check" data-icon="check"></span><span class="dot"></span>Nostr<span class="count" data-network="nostr"></span></label>
+        <label class="chip net-gemini"><input type="checkbox" value="gemini" checked><span class="check" data-icon="check"></span><span class="dot"></span>Gemini<span class="count" data-network="gemini"></span></label>
+        <label class="chip net-gopher"><input type="checkbox" value="gopher" checked><span class="check" data-icon="check"></span><span class="dot"></span>Gopher<span class="count" data-network="gopher"></span></label>
       </fieldset>
     </form>
 
@@ -63,7 +65,7 @@
       <h2 id="add-title">Add an address</h2>
       <p>OMNId crawls it next and adds what it finds to your index.</p>
       <form id="submit" class="add-form">
-        <input id="url" placeholder="Onion, .i2p, magnet or web address" autocomplete="off" autocapitalize="off" spellcheck="false" required aria-label="Address to crawl">
+        <input id="url" placeholder="Onion, .i2p, Gemini, magnet or web address" autocomplete="off" autocapitalize="off" spellcheck="false" required aria-label="Address to crawl">
         <button class="button primary" type="submit"><span data-icon="plus"></span>Add</button>
       </form>
       <p id="submit-result" class="submit-result" aria-live="polite"></p>

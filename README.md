@@ -2,9 +2,9 @@
 
 # omnid
 
-One daemon that reaches the clearnet, Tor, I2P, Hyphanet, IPFS, Nostr and
-BitTorrent magnets, crawls them politely, and keeps a single search index over all of
-them. Content mirrored on several networks shows up as one result with every
+One daemon that reaches the clearnet, Tor, I2P, Hyphanet, IPFS, Nostr, Gemini,
+Gopher and BitTorrent magnets, crawls them politely, and keeps a single search index
+over all of them. Content mirrored on several networks shows up as one result with every
 route to it. It runs as a desktop/server daemon and as an Android app.
 
 ```
@@ -17,13 +17,14 @@ route to it. It runs as a desktop/server daemon and as an Android app.
                             Gateway::fetch / Gateway::connect route by network
       clearnet: reqwest (or Tor exits) │ onion: arti, in-process │ i2p: i2pd proxy │ hyphanet: FProxy
                          ipfs: an IPFS gateway (kubo's) │ nostr: relays, over WebSocket
+             gemini, gopher: the server itself, on the network its host is on (clearnet, onion, i2p)
 ```
 
 ## Status
 
 | Piece | State |
 |---|---|
-| Address parsing: URLs, bare hosts, v3 onions, `.i2p`, `freenet:` keys, `ipfs://`/`ipns://` (a CID in any base is one address), `nostr:` entities (NIP-19), magnets | done, unit and property tested |
+| Address parsing: URLs, bare hosts, v3 onions, `.i2p`, `freenet:` keys, `ipfs://`/`ipns://` (a CID in any base is one address), `nostr:` entities (NIP-19), `gemini://`, `gopher://`, magnets | done, unit and property tested |
 | Clearnet fetch, gzip/brotli/deflate | done, live tested |
 | Tor fetch, HTTP and HTTPS, via embedded arti, gzip over Tor | done, live tested against real onion services |
 | I2P via i2pd: fetching, crawling and the SOCKS tunnel | done, live tested against i2pd 3.0 (stats.i2p, reg.i2p, notbob.i2p) |
@@ -31,6 +32,8 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | IPFS via a gateway: CIDs, IPNS keys and DNSLink names, links through public gateways folded into the content | done, live tested against kubo 0.43.1 (docs.ipfs.tech, Wikipedia on IPFS); in the app through a gateway on your computer, run on the emulator |
 | Nostr from relays: notes, articles, profiles and public chat channels, every event's ID and signature checked | done, live tested against nos.lol, Primal and nostr.mom; in the app through Tor, run on the emulator |
 | Telegram's public channels, through their web previews | done, live tested (the Tor Project's channel) |
+| Gemini capsules and Gopher holes: pages, menus, text, their robots.txt; on the clearnet, onions and I2P | done, tested against local stand-ins, live tested (geminiprotocol.net, Floodgap, onion capsules over Tor) |
+| The reader: Gemini and Gopher in the search page and the app, through Tor | done, tested in-process |
 | Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested; 30-minute soak: 30/30 lookups, flat 11–12 MB |
 | DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
 | Index: stemming, accent folding, snippets, ranking, facets, paging, mirror folding | done, unit tested |
@@ -151,6 +154,22 @@ web page, and pages of web clients that show one entity (njump.me,
 primal.net and the like), are followed into Nostr; links in a note to the web
 are not.
 
+Gemini capsules (`gemini://`) and Gopher holes (`gopher://`) are asked
+directly, each server on the network its host is on: an onion's through Tor, a
+`.i2p` one through I2P, any other as the clearnet is (directly, or through Tor
+exits with `--clearnet-via-tor`). Gemini pages (text/gemini), Gopher menus and
+text items are indexed, their links followed across capsules and holes; a
+Gopher item's type says what it is before anything is asked, so binaries,
+images, searches and telnet sessions never are. robots.txt is the capsule's
+(`gemini://host/robots.txt`, whose `indexer` group omnid obeys besides its own
+and `*`) or the hole's (the item `robots.txt`, its `veronica` group too). A
+page that asks for input, or for a client certificate, is not indexed.
+`omnid fetch gemini://…` shows what one answers. No ordinary browser opens
+these addresses, so the search page opens them in its reader, `/read`, which
+shows a page's lines as text, follows its links within Gemini and Gopher,
+answers a Gemini page's question with a form, and reaches every server as the
+app's browser does: through Tor, never directly.
+
 An I2P router can run elsewhere in the same way: `--i2p-proxy
 http://<address>:4444` (in the app, ⋮ → Settings → I2P router). A router or
 node at a Tailscale address (100.64.0.0/10) is asked only while this machine
@@ -176,7 +195,7 @@ letters, so results come while it is being typed. When nothing matches, plain
 words are matched with a letter wrong, missing, extra or swapped (two from
 eight letters), and the results say so (`fuzzy`). On the search page, an
 address typed into the search field (an onion or `.i2p` host, a URL, a magnet,
-a Hyphanet key, an IPFS address or a Nostr entity) can be opened or added to the index right there.
+a Hyphanet key, an IPFS address, a Nostr entity or a Gemini or Gopher address) can be opened or added to the index right there.
 
 ### API
 
@@ -188,6 +207,11 @@ a Hyphanet key, an IPFS address or a Nostr entity) can be opened or added to the
 | `GET /api/status` | router states, index size, crawl counters, pause reason |
 | `GET /hyphanet/<key>` | a redirect to that Hyphanet key on the node's FProxy (keys only); the search page's Hyphanet links |
 | `GET /ipfs/<CID>/…`, `GET /ipns/<name>/…` | a redirect to that content on the IPFS gateway (CIDs and names only); the search page's IPFS links |
+| `GET /read?url=gemini://…` (or `gopher://…`; `&input=…` answers a Gemini page's question) | the reader: that page as HTML, fetched through Tor; the search page's Gemini and Gopher links |
+
+`/api/status` has a row per network, in the order of `network_counts`: `clearnet`, `onion`,
+`i2p`, `hyphanet`, `ipfs`, `nostr`, `gemini`, `gopher`, `magnet` (`gemini` and `gopher`
+were added after 0.1.7).
 
 `--api-token` (or `OMNID_API_TOKEN`) makes every request need
 `Authorization: Bearer <token>` or the `omnid_token` cookie.
@@ -235,7 +259,8 @@ default, means no IPFS, as no IPFS node runs on a phone, and the app's browser n
 opens IPFS (see Anonymity). Nostr's relays are read through Tor while "Crawl the web
 through Tor" is on, as the crawler reads the web; Settings → Nostr relays turns them off.
 A Nostr result opens in a Nostr app, after a dialog saying that the app reaches its
-relays its own way.
+relays its own way. Gemini and Gopher results open in the reader, in the app itself,
+through Tor.
 
 When a page does not load in the app's browser, the daemon logs why, under the
 tag `omnid`: `adb logcat -s omnid` shows lines such as "browser: a connection to
@@ -342,7 +367,7 @@ A new level reloads every open tab.
 - **The crawl survives restarts.** Every known address lives in SQLite with
   its next visit, consecutive failures and liveness; the in-memory frontier is
   a bounded working set pulled from it, shallowest first. Pages are revisited
-  after 3 days (onion, I2P, Nostr, magnets) or 7 (clearnet, Hyphanet, IPFS), failures back
+  after 3 days (onion, I2P, Nostr, magnets) or 7 (clearnet, Hyphanet, IPFS, Gemini, Gopher), failures back
   off from an hour to 30 days, 404/410 leave the index, and a router that is
   not running only defers its sites by 10 minutes.
 - **Ranking** multiplies BM25 by provenance and reliability:
@@ -381,15 +406,19 @@ A new level reloads every open tab.
   the Unofficial Guide to FMS, Bombe's flog and jSite, Arne Babenhauserheide's
   site, Sharesite, FLIP and dgof; and on IPFS its documentation,
   specifications and blog, and the Distributed Wikipedia Mirror in
-  English, Turkish and Russian; and on Nostr fiatjaf, jb55, Vitor Pamplona,
-  Edward Snowden and jack (`omnid::DEFAULT_SEEDS`).
+  English, Turkish and Russian; on Nostr fiatjaf, jb55, Vitor Pamplona,
+  Edward Snowden and jack; on Gemini the project's capsule, Kennedy's and
+  Lupa's lists of known capsules and an onion capsule; and on Gopher
+  Floodgap's server and its list of known ones, OGUP's list and SDF
+  (`omnid::DEFAULT_SEEDS`).
   An onion site on Ahmia's blocklist is not made a seed (five older seeds are
   on it wrongly; see Safety). An eepsite is named when the address book a new
   i2pd starts with has the name, and otherwise given by its b32 address, which
   any router resolves. A network's seeds wait while its router is down.
 - **Politeness.** Per network: clearnet 32 concurrent with 1 s per site,
   onion 16 with 5 s, I2P 4 with 5 s, Hyphanet 2 with 2 s, IPFS 8 with 1 s,
-  Nostr 4 with 1 s (the phone uses 6/8/3/2/2/2). One request per site at a time. robots.txt is honored and fetched
+  Nostr 4 with 1 s, Gemini and Gopher 8 each with 2 s (the phone uses
+  6/8/3/2/2/2/2/2). One request per site at a time. robots.txt is honored and fetched
   over the same network as the page.
 - **Link following.** Overlay and magnet links are always harvested.
   Clearnet links are followed only from clearnet pages, and by default only
@@ -514,7 +543,9 @@ What it does not hide:
   machine you control; the setup in Quick start keeps them on your tailnet for
   your own devices only.
 - **Which Nostr events the crawler asks for**, from your address unless the
-  clearnet goes through Tor: relays see what they are asked.
+  clearnet goes through Tor: relays see what they are asked. The same goes
+  for the Gemini capsules and Gopher holes the crawler reads; the reader
+  reaches them through Tor.
 - **What your IPFS node fetches.** IPFS is not an anonymity network: its
   peers see your node's address ask for each CID. OMNId's browser never
   reaches IPFS, and the crawler goes there only from pages it fetched from
@@ -543,8 +574,9 @@ What it does not hide:
 ## Safety
 
 - **The crawler never downloads media.** Only `text/html`,
-  `application/xhtml+xml` and `text/plain` bodies are read; the check runs on
-  the response headers before the body is fetched. A missing Content-Type is
+  `application/xhtml+xml`, `text/plain`, Gemini pages and Gopher menus are
+  read; the check runs on the response headers before the body is fetched
+  (on a Gopher item's type, before it is asked for). A missing Content-Type is
   refused. A file of any type is downloaded only when you ask for it
   (`omnid download`, a download in the app's browser).
 - **Denylist** (`--denylist`): hostnames (subdomains included), Hyphanet keys,
@@ -631,6 +663,12 @@ The Android app's browser:
 
 ## Known limitations
 
+- Gemini servers' certificates are taken as they come, as Gemini clients
+  take them on first use: most capsules have self-signed ones. omnid keeps no
+  record of them, so on a network that can intercept a clearnet connection a
+  capsule's pages could be forged; an onion capsule's address authenticates
+  it. Gemini pages for holders of a client certificate, and Gopher's search
+  servers (item type 7), are not read.
 - HTTPS onions need a certificate that validates; expired or self-signed ones
   are refused. Facebook's onion rejects the TLS handshake (HTTPS onions such
   as BBC's work).

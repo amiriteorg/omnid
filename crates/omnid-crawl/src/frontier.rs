@@ -40,6 +40,9 @@ impl Politeness {
             Network::Ipfs => (8, 1),
             // Each fetch asks up to four relays at once.
             Network::Nostr => (4, 1),
+            // Capsules and holes are mostly one small server each, many on
+            // a home connection: a gentler pace per site than the web's.
+            Network::Gemini | Network::Gopher => (8, 2),
             // Magnets are indexed from the link itself, without a fetch.
             Network::Magnet => (16, 0),
         };
