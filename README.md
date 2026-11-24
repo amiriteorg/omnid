@@ -36,7 +36,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Gemini capsules and Gopher holes: pages, menus, text, their robots.txt; on the clearnet, onions and I2P | done, tested against local stand-ins, live tested (geminiprotocol.net, Floodgap, onion capsules over Tor) |
 | The reader: Gemini and Gopher in the search page and the app, through Tor | done, tested in-process |
 | IRC: networks' channel lists (names, topics, people), never what is said in a channel | done, tested against a stand-in server, live tested (Libera.Chat, OFTC and its onion, hackint, EFnet, IRCnet, Undernet, Irc2P) |
-| Yggdrasil: sites at addresses in 200::/7, through a node on the machine or yggstack | done, tested against a stand-in yggstack; not yet live tested |
+| Yggdrasil: sites at addresses in 200::/7, through a node on the machine or yggstack | done, tested against a stand-in yggstack, live tested through yggstack 1.0.7 (48 pages in two minutes from the seeds) |
 | Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested; 30-minute soak: 30/30 lookups, flat 11–12 MB |
 | DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
 | Index: stemming, accent folding, snippets, ranking, facets, paging, mirror folding | done, unit tested |
@@ -446,8 +446,9 @@ A new level reloads every open tab.
   Lupa's lists of known capsules and an onion capsule; on Gopher
   Floodgap's server and its list of known ones, OGUP's list and SDF; and on
   IRC Libera.Chat, OFTC and its onion, hackint, EFnet, IRCnet, Undernet and
-  Irc2P; and on Yggdrasil, from its list of services, its search engine, a
-  web directory, the HowTo wiki and a forum (`omnid::DEFAULT_SEEDS`).
+  Irc2P; and on Yggdrasil, from its list of services, Mimir (its search
+  engine), a web directory, its community forum and the project's site
+  (`omnid::DEFAULT_SEEDS`).
   An onion site on Ahmia's blocklist is not made a seed (five older seeds are
   on it wrongly; see Safety). An eepsite is named when the address book a new
   i2pd starts with has the name, and otherwise given by its b32 address, which

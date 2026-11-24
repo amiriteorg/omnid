@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Runs omnid's live tests against real routers: Tor (arti, in-process), the
-# BitTorrent DHT, a client-only i2pd, a temporary Hyphanet node and a
-# temporary IPFS node (kubo).
+# BitTorrent DHT, a client-only i2pd, a temporary Hyphanet node, a temporary
+# IPFS node (kubo) and a temporary Yggdrasil node (yggstack).
 #
-#   scripts/live-routers.sh up      start i2pd, Hyphanet and kubo, wait until they serve
+#   scripts/live-routers.sh up      start i2pd, Hyphanet, kubo and yggstack, wait until they serve
 #   scripts/live-routers.sh test    cargo test --workspace -- --ignored (all live tests)
 #   scripts/live-routers.sh down    stop them and delete their state
 #   scripts/live-routers.sh all     up, test, down
@@ -11,12 +11,16 @@
 # i2pd runs with --notransit, so it relays nobody else's traffic. The Hyphanet
 # node joins opennet with a 256 MiB store of other users' encrypted blocks; `down`
 # deletes it. kubo is a DHT client only, providing nothing to others, with a
-# repo `down` deletes. Downloads are cached in target/live/cache and checked
-# against pinned hashes and the Hyphanet release key before anything runs.
+# repo `down` deletes. yggstack peers out to a few public Yggdrasil nodes and
+# listens for none; while it runs it is a node like any, which may carry other
+# nodes' traffic between its peers. `down` stops it and deletes its keys.
+# Downloads are cached in target/live/cache and checked against pinned hashes
+# and the Hyphanet release key before anything runs.
 #
 # Needs: i2pd and kubo (brew install i2pd kubo, or your package manager), Java
-# 17+, curl, gpg. Ports: 4444/4447/7070/7656 (i2pd), 8888/9481 (Hyphanet) and
-# 8080/5001 (kubo), all on 127.0.0.1, and 4001 (kubo's peers).
+# 17+, curl, gpg, python3. Ports: 4444/4447/7070/7656 (i2pd), 8888/9481
+# (Hyphanet), 8080/5001 (kubo) and 1080 (yggstack's SOCKS proxy), all on
+# 127.0.0.1, and 4001 (kubo's peers).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -36,6 +40,17 @@ JNA_SHA256=4fb141dd8ef6b0585ffceea4bc49602fbc6312fa977e2c488794ea3e6aafecae
 JNA_PLATFORM_SHA256=3b3864f5b449e9c3c24b16861524b622b086563f44e0cd8384c8efc5a6052f82
 # A freesite every node bookmarks, to tell when Hyphanet can serve content.
 HYPHANET_PROBE='USK@62H8KFSZWMyQ2MQgwvNhEYJ2m3SQl696PfsVfWQ-HQo,cJrPvdNz4AnrHJQXNteDV7k3YnAVY-MClt84gwH2qEo,AQACAAE/freenet-first-steps/24/'
+
+YGGSTACK_VERSION=1.0.7
+YGGSTACK_URL=https://github.com/yggdrasil-network/yggstack/releases/download/$YGGSTACK_VERSION
+# Public peers from github.com/yggdrasil-network/public-peers (Germany, the
+# Netherlands, Sweden). The list pins some peers' public keys (`?key=`); those
+# are left out here, as a scanner takes the hex for a secret, and a temporary
+# node needs no pin: Yggdrasil encrypts end to end whoever carries the traffic.
+YGGSTACK_PEERS='tls://ygg.mkg20001.io:443
+tls://cirno.nadeko.net:44442
+tls://5.252.118.13:443
+tls://dmwp.suckmost.org:8647'
 
 say() { printf '%s\n' "live: $*" >&2; }
 die() { say "$*"; exit 1; }
@@ -200,6 +215,45 @@ start_kubo() {
   say "kubo ready"
 }
 
+start_yggstack() {
+  local dir=$LIVE/yggstack asset sha
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64) asset=yggstack-darwin-arm64 sha=7d6a41ff251fc5544d32fa9e755ae86539f92cb9649b19aa5d30dbe682a9819d ;;
+    Darwin-x86_64) asset=yggstack-darwin-amd64 sha=1a26e9494a998e2ab0cd018dd4a7d5a74c9a000dfd0791fab7984c6f61674bfb ;;
+    Linux-x86_64) asset=yggstack-linux-amd64-static sha=148bcd928b70ad383e08081f341d7cb1e54d4c5dc444804b79d794a30d7c6555 ;;
+    Linux-aarch64) asset=yggstack-linux-arm64-static sha=75513a28938a10cf77afa95f1f86d9f460cc9d3238ca0e37bbae142322f4b448 ;;
+    *) die "no yggstack build pinned for $(uname -s)-$(uname -m)" ;;
+  esac
+  if [ -f "$dir/yggstack.pid" ] && kill -0 "$(cat "$dir/yggstack.pid")" 2>/dev/null; then
+    say "yggstack already running"
+  elif nc -z 127.0.0.1 1080 2>/dev/null; then
+    # A Yggdrasil proxy of the machine's own, or something else on the port,
+    # which the live test then says plainly; `down` leaves it alone.
+    say "using what is already on 127.0.0.1:1080"
+    return
+  else
+    say "starting yggstack (peers out, listens for none)"
+    mkdir -p "$CACHE"
+    fetch_pinned "$YGGSTACK_URL/$asset" "$CACHE/$asset-$YGGSTACK_VERSION" "$sha"
+    rm -rf "$dir" && mkdir -p "$dir"
+    cp "$CACHE/$asset-$YGGSTACK_VERSION" "$dir/yggstack" && chmod +x "$dir/yggstack"
+    "$dir/yggstack" -genconf -json >"$dir/conf.json"
+    YGGSTACK_PEERS=$YGGSTACK_PEERS python3 - "$dir/conf.json" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+conf = json.load(open(path))
+conf.update(Peers=os.environ["YGGSTACK_PEERS"].split(), Listen=[], MulticastInterfaces=[], AdminListen="none")
+json.dump(conf, open(path, "w"))
+PY
+    chmod 600 "$dir/conf.json"
+    (exec nohup "$dir/yggstack" -useconffile "$dir/conf.json" -socks 127.0.0.1:1080 >"$dir/yggstack.log" 2>&1) &
+    echo $! >"$dir/yggstack.pid"
+  fi
+  wait_for 60 "yggstack's SOCKS proxy" nc -z 127.0.0.1 1080
+  wait_for 90 "a Yggdrasil peer" grep -q "Connected outbound" "$dir/yggstack.log"
+  say "yggstack ready"
+}
+
 stop() { # DIR PIDFILE NAME
   local pid
   if [ -f "$1/$2" ] && pid=$(cat "$1/$2") && kill "$pid" 2>/dev/null; then
@@ -214,14 +268,19 @@ stop() { # DIR PIDFILE NAME
 }
 
 case "${1:-}" in
-  up) start_i2pd; start_hyphanet; start_kubo ;;
+  up) start_i2pd; start_hyphanet; start_kubo; start_yggstack ;;
   # --no-fail-fast: one failing network must not hide the others' results.
   test) cd "$ROOT" && cargo test --workspace --no-fail-fast -- --ignored --test-threads=4 ;;
-  down) stop "$LIVE/i2pd" i2pd.pid i2pd; stop "$LIVE/hyphanet" java.pid Hyphanet; stop "$LIVE/kubo" kubo.pid kubo ;;
+  down)
+    stop "$LIVE/i2pd" i2pd.pid i2pd
+    stop "$LIVE/hyphanet" java.pid Hyphanet
+    stop "$LIVE/kubo" kubo.pid kubo
+    stop "$LIVE/yggstack" yggstack.pid yggstack
+    ;;
   all)
     trap '"$0" down' EXIT
     "$0" up
     "$0" test
     ;;
-  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
