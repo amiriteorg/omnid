@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: IPv6 addresses outside the public internet passed the private-address guard. On a
+  machine running Yggdrasil, an address in its 200::/7 was fetched directly, as were the discard
+  prefix (100::/64), IPv6's newer documentation range (3fff::/20) and 6to4 addresses carrying a
+  private IPv4 address. Only global unicast (2000::/3) counts as public now.
 - Gemini and Gopher are networks: capsules (`gemini://`) and holes (`gopher://`) on the clearnet,
   onions and I2P, each reached on the network its host is on. Gemini pages, Gopher menus and text
   items are indexed and their links followed; a Gopher item's type is read before it is asked
