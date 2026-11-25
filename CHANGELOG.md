@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.9 (2026-11-25)
 
 - IRC is off by default, in the daemon and in the app. The app crawls through Tor, and most IRC
   networks refuse Tor exits: on 2026-11-24 Libera.Chat and hackint K-lined the crawler, EFnet
