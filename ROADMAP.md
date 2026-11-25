@@ -19,9 +19,10 @@ phone, IPFS goes through a gateway on the owner's computer.
 
 ## Next
 
-1. **More networks: the OMNIdaemon.** Unreleased: Gemini and Gopher, with a reader, IRC's
-   channel directories, and Yggdrasil's sites (live tested through yggstack; names, Alfis's
-   `.ygg` and meshname, are not resolved yet). Next, each its own pull request:
+1. **More networks: the OMNIdaemon.** In 0.1.8: Gemini and Gopher, with a reader, IRC's
+   channel directories (now off by default, as most networks refuse Tor exits), and
+   Yggdrasil's sites (live tested through yggstack; names, Alfis's `.ygg` and meshname, are
+   not resolved yet). Next, each its own pull request:
    - **The fediverse** (ActivityPub: Mastodon, Lemmy, Misskey and the rest): public posts and
      profiles of accounts that opted into search (Mastodon's `indexable`), and nothing from one
      that did not.

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- IRC is off by default, in the daemon and in the app. The app crawls through Tor, and most IRC
+  networks refuse Tor exits: on 2026-11-24 Libera.Chat and hackint K-lined the crawler, EFnet
+  banned it and IRCnet refused it, and only OFTC answered, so the app asked again and again for
+  nothing. `--irc` turns it on for the daemon. While it is off, IRC addresses wait, the IRC seeds
+  among them, and are crawled once it is on; `/api/status`'s `irc` row says `disabled`, and
+  `omnid fetch` refuses an IRC address. Channels already indexed stay.
+
 ## 0.1.8 (2026-11-24)
 
 - The app's browser is on GeckoView 161, with Firefox 161's security fixes. It was on 160.

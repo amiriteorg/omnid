@@ -19,7 +19,8 @@ agents changing the code. The eng kit's manual is `.agents/README.md`.
   Gemini (`gemini.rs`) and Gopher (`gopher.rs`) over `Gateway::connect`'s streams, so each server
   is reached on the network its host is on (`Source::transport`); `Gateway::small_web` answers
   in Gemini's own terms (`SmallWeb`), and `Gateway::fetch` maps that to HTTP's for the crawler.
-  IRC (`irc.rs`): `Gateway::irc_list` registers, lists a network's channels and quits; it never
+  IRC (`irc.rs`), off unless `GatewayConfig::irc` (`--irc`; never in the app):
+  `Gateway::irc_list` registers, lists a network's channels and quits; it never
   joins a channel. Yggdrasil (`yggdrasil.rs`): addresses in 200::/7 only, through a node on the
   machine or yggstack's SOCKS5 proxy; never the browser's way.
 - `crates/omnid-dht` — read-only BitTorrent DHT client and its own bencode codec.

@@ -85,7 +85,7 @@ pub struct DaemonConfig {
 /// networks. Each answered on 2026-11-21 (the IPFS ones through kubo 0.43.1,
 /// the Nostr ones from nos.lol, Primal and nostr.mom, on 2026-11-22, the
 /// Gemini, Gopher and IRC ones on 2026-11-24). A network's seeds wait while
-/// its router is down.
+/// its router is down, and IRC's while IRC is off, as it is by default.
 /// An onion site on Ahmia's blocklist is not added, though the seeds are
 /// exempt from it: five older ones are on it wrongly. An eepsite is named
 /// only if a new i2pd's address book has the name; otherwise it is given by
@@ -547,14 +547,14 @@ impl Daemon {
 const ROUTER_CHECK: Duration = Duration::from_secs(30);
 
 /// When the I2P router, the Hyphanet node, the IPFS gateway or a way into
-/// Yggdrasil comes up (the i2pd app started, a node set), what was put off for
-/// want of it is crawled now instead of after its deferral.
+/// Yggdrasil comes up (the i2pd app started, a node set), or IRC is on, what
+/// was put off for want of it is crawled now instead of after its deferral.
 async fn watch_routers(gateway: Arc<Gateway>, store: Arc<CrawlStore>, shutdown: CancellationToken) {
     let mut was_ready = HashSet::new();
     loop {
         let ready: HashSet<Network> =
             gateway.status().await.into_iter().filter(|r| r.state == RouterState::Ready).map(|r| r.network).collect();
-        for network in [Network::I2p, Network::Hyphanet, Network::Ipfs, Network::Yggdrasil] {
+        for network in [Network::I2p, Network::Hyphanet, Network::Ipfs, Network::Yggdrasil, Network::Irc] {
             if ready.contains(&network) && !was_ready.contains(&network) {
                 let store = store.clone();
                 match tokio::task::spawn_blocking(move || store.retry_deferred(network, now_secs())).await {
