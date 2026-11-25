@@ -134,6 +134,12 @@ pub struct GatewayConfig {
     /// first. `false` disables Yggdrasil.
     pub yggdrasil: bool,
     pub yggdrasil_socks: Vec<Url>,
+    /// IRC networks' channel lists ([`Gateway::irc_list`]). Off by default:
+    /// most networks refuse connections from Tor exits (Libera.Chat,
+    /// hackint, EFnet and IRCnet did on 2026-11-24), the way the app
+    /// reaches the clearnet. Off, an IRC address waits as one whose router
+    /// is down does.
+    pub irc: bool,
     /// Lets clearnet fetches reach loopback, private and link-local
     /// addresses. Off by default: otherwise any submitted URL turns the
     /// daemon into a proxy into the operator's LAN.
@@ -158,6 +164,7 @@ impl Default for GatewayConfig {
             nostr_relays: DEFAULT_NOSTR_RELAYS.iter().map(|r| Url::parse(r).expect("valid default")).collect(),
             yggdrasil: true,
             yggdrasil_socks: Vec::new(),
+            irc: false,
             allow_private_addresses: false,
             clearnet_via_tor: false,
         }
@@ -378,7 +385,7 @@ impl Gateway {
             self.nostr_status(),
             self.per_host_status(Network::Gemini),
             self.per_host_status(Network::Gopher),
-            self.per_host_status(Network::Irc),
+            if self.cfg.irc { self.per_host_status(Network::Irc) } else { disabled(Network::Irc) },
             self.yggdrasil_status().await,
             RouterStatus {
                 network: Network::Magnet,
@@ -571,9 +578,13 @@ impl Gateway {
 
     /// An IRC network's channels, from the server `source` names (its
     /// channel, if any, aside), reached on the network its host is on.
-    /// omnid lists and leaves; it never joins a channel.
+    /// omnid lists and leaves; it never joins a channel. Unavailable while
+    /// [`GatewayConfig::irc`] is off, without a connection.
     pub async fn irc_list(&self, source: &Source) -> Result<IrcListing, FetchError> {
         let network = Network::Irc;
+        if !self.cfg.irc {
+            return Err(unavailable(network, "IRC is off"));
+        }
         let Source::Irc(server) = source else { return Err(unavailable(network, "not an IRC address")) };
         let transport = |error: BoxError| FetchError::Transport { network, error };
         let stream = self.connect_on(&server.host, server.port(), Circuits::Shared).await?;

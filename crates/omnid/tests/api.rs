@@ -216,6 +216,7 @@ async fn reports_status_for_every_network() {
     );
     assert_eq!(body["routers"][6]["state"], "ready", "Gemini needs no router");
     assert!(body["routers"][7]["detail"].as_str().unwrap().starts_with("direct"));
+    assert_eq!(body["routers"][8]["state"], "disabled", "IRC is off unless turned on");
     assert_eq!(body["routers"][1]["state"], "disabled", "Tor is off in this test");
     assert_eq!(body["routers"][4]["state"], "disabled", "no IPFS gateway is configured");
     assert_eq!(body["routers"][5]["state"], "ready", "the default relays, named without being asked");

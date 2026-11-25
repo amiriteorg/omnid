@@ -233,6 +233,9 @@ fn gateway(data_dir: &Path, options: &Options, networks: bool) -> Result<Gateway
         // Through the Yggdrasil app's VPN, when it runs: the phone then has
         // an address in 200::/7.
         yggdrasil: networks,
+        // Off: most IRC networks refuse Tor exits, which the app crawls
+        // through by default.
+        irc: false,
         ..GatewayConfig::default()
     };
     if let Some(node) = elsewhere(&options.hyphanet_node, "Hyphanet node", &["http", "https"])? {

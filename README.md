@@ -35,7 +35,7 @@ route to it. It runs as a desktop/server daemon and as an Android app.
 | Telegram's public channels, through their web previews | done, live tested (the Tor Project's channel) |
 | Gemini capsules and Gopher holes: pages, menus, text, their robots.txt; on the clearnet, onions and I2P | done, tested against local stand-ins, live tested (geminiprotocol.net, Floodgap, onion capsules over Tor) |
 | The reader: Gemini and Gopher in the search page and the app, through Tor | done, tested in-process |
-| IRC: networks' channel lists (names, topics, people), never what is said in a channel | done, tested against a stand-in server, live tested (Libera.Chat, OFTC and its onion, hackint, EFnet, IRCnet, Undernet, Irc2P) |
+| IRC: networks' channel lists (names, topics, people), never what is said in a channel | done, off by default (`--irc`; most networks refuse Tor exits), tested against a stand-in server, live tested (Libera.Chat, OFTC and its onion, hackint, EFnet, IRCnet, Undernet, Irc2P) |
 | Yggdrasil: sites at addresses in 200::/7, through a node on the machine or yggstack | done, tested against a stand-in yggstack, live tested through yggstack 1.0.7 (48 pages in two minutes from the seeds) |
 | Magnets: names, file lists and swarm size from the DHT (BEP 5/9), never content | done, live tested; 30-minute soak: 30/30 lookups, flat 11–12 MB |
 | DHT harvesting (BEP 51), opt-in | done, live tested (about 1,700 info hashes in 30 s) |
@@ -186,8 +186,16 @@ name, its topic (colours and modes taken out) and how many people it has; the
 addresses in a topic are followed. A channel that leaves the list leaves the
 index. Servers are reached as Gemini's are: onions through Tor (an onion's or
 `.i2p` server's certificate is not checked, as its address proves it), Irc2P
-through I2P. `omnid fetch ircs://irc.oftc.net/` shows a network's largest
+through I2P. `omnid --irc fetch ircs://irc.oftc.net/` shows a network's largest
 channels.
+
+IRC is off by default, and in the app: most networks refuse connections
+from Tor exits, which the app crawls through. On 2026-11-24 Libera.Chat and
+hackint K-lined the crawler there, EFnet banned it and IRCnet refused it;
+only OFTC answered. `--irc` turns it on for the daemon. While it is off, IRC
+addresses wait, the IRC seeds among them, and `/api/status`'s `irc` row says
+`disabled`; they are crawled once it is on. Channels already in the index
+stay there.
 
 Yggdrasil's sites are web pages at addresses in its 200::/7
 (`http://[200:b48d:…]/`); a Gemini capsule, Gopher hole or IRC server at
@@ -292,7 +300,8 @@ opens IPFS (see Anonymity). Nostr's relays are read through Tor while "Crawl the
 through Tor" is on, as the crawler reads the web; Settings → Nostr relays turns them off.
 A Nostr result opens in a Nostr app, after a dialog saying that the app reaches its
 relays its own way. Gemini and Gopher results open in the reader, in the app itself,
-through Tor. An IRC result opens in an IRC app, after a dialog saying that the app
+through Tor. The app lists no IRC networks itself: IRC is off in it. An IRC result (from an
+index made with IRC on) opens in an IRC app, after a dialog saying that the app
 connects to the network its own way (Settings → Proxy for other apps can carry it
 through Tor).
 
@@ -446,7 +455,7 @@ A new level reloads every open tab.
   Lupa's lists of known capsules and an onion capsule; on Gopher
   Floodgap's server and its list of known ones, OGUP's list and SDF; and on
   IRC Libera.Chat, OFTC and its onion, hackint, EFnet, IRCnet, Undernet and
-  Irc2P; and on Yggdrasil, from its list of services, Mimir (its search
+  Irc2P, which wait while IRC is off; and on Yggdrasil, from its list of services, Mimir (its search
   engine), a web directory, its community forum and the project's site
   (`omnid::DEFAULT_SEEDS`).
   An onion site on Ahmia's blocklist is not made a seed (five older seeds are
@@ -584,8 +593,8 @@ What it does not hide:
 - **Which Nostr events the crawler asks for**, from your address unless the
   clearnet goes through Tor: relays see what they are asked. The same goes
   for the Gemini capsules and Gopher holes the crawler reads (the reader
-  reaches them through Tor), and the IRC networks it lists, which see the
-  crawler connect and ask for their channels.
+  reaches them through Tor), and the IRC networks it lists with `--irc`,
+  which see the crawler connect and ask for their channels.
 - **Your Yggdrasil node's address**, which every Yggdrasil site the crawler
   reads sees, and which stays the same unless the node's keys change. Your
   node's peers see your IP address.

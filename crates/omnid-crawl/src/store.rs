@@ -263,7 +263,8 @@ impl CrawlStore {
     /// Makes the addresses on `network` that wait out a deferral due now:
     /// they were put off because its router was missing ([`Visit::Deferred`]),
     /// and it is back. A Gemini capsule or Gopher hole on `.i2p` waits for
-    /// I2P's router ([`Source::transport`]). Returns how many.
+    /// I2P's router ([`Source::transport`]); an IRC address also waits for
+    /// IRC to be on. Returns how many.
     pub fn retry_deferred(&self, network: Network, now: i64) -> rusqlite::Result<usize> {
         let db = self.db();
         let waiting: Vec<String> = db
@@ -272,7 +273,8 @@ impl CrawlStore {
             .collect::<rusqlite::Result<_>>()?;
         let mut due = db.prepare_cached("UPDATE pages SET next_visit = ?2 WHERE url = ?1 AND state = 0")?;
         let mut retried = 0;
-        for url in waiting.iter().filter(|url| Source::parse(url).is_ok_and(|s| s.transport() == network)) {
+        let on = |s: Source| s.transport() == network || s.network() == network;
+        for url in waiting.iter().filter(|url| Source::parse(url).is_ok_and(on)) {
             retried += due.execute(params![url, now])?;
         }
         Ok(retried)
@@ -423,7 +425,7 @@ mod tests {
     #[test]
     fn retries_what_waited_for_a_router() {
         let store = CrawlStore::in_memory().unwrap();
-        let waiting = ["http://a.i2p/", "http://b.example/", "freenet:USK@abc,def,AQACAAE/site/1/"];
+        let waiting = ["http://a.i2p/", "http://b.example/", "freenet:USK@abc,def,AQACAAE/site/1/", "irc://c.example/"];
         let jobs: Vec<_> = waiting.iter().map(|url| job(url, 0, 0.5)).collect();
         store.schedule(&jobs, 0).unwrap();
         for job in &jobs {
@@ -431,13 +433,16 @@ mod tests {
             assert!(store.claim(&url, 0).unwrap());
             store.finish(&url, job.source.network(), Visit::Deferred, 100).unwrap();
         }
-        assert!(store.take_due(200, 10).unwrap().is_empty(), "all three wait out the deferral");
+        assert!(store.take_due(200, 10).unwrap().is_empty(), "all wait out the deferral");
         // The I2P router is up: its address is due, the others still wait.
         assert_eq!(store.retry_deferred(Network::I2p, 200).unwrap(), 1);
         assert_eq!(urls(&store.take_due(200, 10).unwrap()), ["http://a.i2p/"]);
         assert_eq!(store.retry_deferred(Network::Hyphanet, 200).unwrap(), 1);
         assert_eq!(urls(&store.take_due(200, 10).unwrap()), ["freenet:USK@abc,def,AQACAAE/site/1/"]);
         assert_eq!(store.retry_deferred(Network::I2p, 200).unwrap(), 0, "nothing twice");
+        // IRC is on: its address is due, though the clearnet carries it.
+        assert_eq!(store.retry_deferred(Network::Irc, 200).unwrap(), 1);
+        assert_eq!(urls(&store.take_due(200, 10).unwrap()), ["irc://c.example/"]);
     }
 
     #[test]

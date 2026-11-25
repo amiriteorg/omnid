@@ -85,6 +85,10 @@ struct Common {
     /// Do not reach Yggdrasil
     #[arg(long, global = true, conflicts_with = "yggdrasil_socks")]
     no_yggdrasil: bool,
+    /// List IRC networks' channels. Off by default: most networks refuse
+    /// connections from Tor exits
+    #[arg(long, global = true)]
+    irc: bool,
 }
 
 #[derive(Subcommand)]
@@ -351,6 +355,7 @@ async fn fetch(common: &Common, data_dir: &Path, address: &str) -> Result<()> {
         return Ok(());
     }
     if let Source::Irc(_) = &source {
+        anyhow::ensure!(common.irc, "IRC is off; --irc turns it on");
         let listing = gateway.irc_list(&source).await?;
         println!("network       irc");
         println!("address       {source}");
@@ -561,6 +566,7 @@ fn gateway_config(common: &Common, data_dir: &Path) -> GatewayConfig {
         nostr_relays: if common.no_nostr { Vec::new() } else { common.nostr_relay.clone() },
         yggdrasil: !common.no_yggdrasil,
         yggdrasil_socks: common.yggdrasil_socks.clone(),
+        irc: common.irc,
         allow_private_addresses: common.allow_private_addresses,
         clearnet_via_tor: common.clearnet_via_tor,
         ..GatewayConfig::default()

@@ -313,7 +313,7 @@ async fn live_tor_reads_an_onion_capsule() {
 #[tokio::test]
 #[ignore = "live: IRC networks"]
 async fn live_irc_lists_a_networks_channels() {
-    let gateway = Gateway::new(GatewayConfig { tor_dir: None, ..GatewayConfig::default() }).unwrap();
+    let gateway = Gateway::new(GatewayConfig { tor_dir: None, irc: true, ..GatewayConfig::default() }).unwrap();
     let listing = gateway.irc_list(&Source::parse("ircs://irc.oftc.net/").unwrap()).await.unwrap();
     assert_eq!(listing.network.as_deref(), Some("OFTC"));
     assert!(listing.channels.len() > 50, "{}", listing.channels.len());
@@ -323,7 +323,7 @@ async fn live_irc_lists_a_networks_channels() {
 #[tokio::test]
 #[ignore = "live: Tor network and OFTC's onion"]
 async fn live_tor_lists_an_onion_irc_network() {
-    let gateway = gateway("irc", GatewayConfig::default());
+    let gateway = gateway("irc", GatewayConfig { irc: true, ..GatewayConfig::default() });
     let onion = "ircs://oftcnet6xg6roj6d7id4y4cu6dchysacqj2ldgea73qzdagufflqxrid.onion/";
     let listing = gateway.irc_list(&Source::parse(onion).unwrap()).await.unwrap();
     assert_eq!(listing.network.as_deref(), Some("OFTC"));

@@ -640,9 +640,13 @@ async fn lists_an_irc_network_once_for_all_its_channels() {
     let index = Arc::new(SearchIndex::in_memory().unwrap());
     let store = Arc::new(CrawlStore::in_memory().unwrap());
     let no_delay = Politeness { concurrency: 4, site_delay: Duration::ZERO };
-    let gateway =
-        Gateway::new(GatewayConfig { tor_dir: None, allow_private_addresses: true, ..GatewayConfig::default() })
-            .unwrap();
+    let gateway = Gateway::new(GatewayConfig {
+        tor_dir: None,
+        allow_private_addresses: true,
+        irc: true,
+        ..GatewayConfig::default()
+    })
+    .unwrap();
     let cfg = CrawlConfig {
         politeness: HashMap::from([(Network::Irc, no_delay)]),
         commit_interval: Duration::from_millis(100),
@@ -664,4 +668,27 @@ async fn lists_an_irc_network_once_for_all_its_channels() {
     assert_eq!(connections.load(Ordering::SeqCst), 1, "one list for the network and every channel");
     let heard = heard.lock().unwrap().clone();
     assert!(heard.contains("LIST") && !heard.contains("JOIN"), "{heard}");
+}
+
+#[tokio::test]
+async fn an_irc_network_waits_while_irc_is_off() {
+    let (port, connections, _) = serve_irc().await;
+    let index = Arc::new(SearchIndex::in_memory().unwrap());
+    let store = Arc::new(CrawlStore::in_memory().unwrap());
+    let no_delay = Politeness { concurrency: 4, site_delay: Duration::ZERO };
+    // IRC as the gateway has it by default.
+    let gateway =
+        Gateway::new(GatewayConfig { tor_dir: None, allow_private_addresses: true, ..GatewayConfig::default() })
+            .unwrap();
+    let cfg = CrawlConfig {
+        politeness: HashMap::from([(Network::Irc, no_delay)]),
+        commit_interval: Duration::from_millis(100),
+        ..CrawlConfig::default()
+    };
+    let crawler = Crawler::new(Arc::new(gateway), index.clone(), Arc::new(Safety::default()), store.clone(), cfg);
+    crawl(crawler, &[&format!("irc://127.0.0.1:{port}/")]).await;
+
+    assert_eq!(connections.load(Ordering::SeqCst), 0, "nothing connects");
+    assert!(hits(&index, "localnet", &[]).is_empty());
+    assert_eq!(store.retry_deferred(Network::Irc, omnid_core::now_secs()).unwrap(), 1, "the network waits");
 }
